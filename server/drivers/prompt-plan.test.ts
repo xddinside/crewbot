@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -24,7 +25,7 @@ describe("prompt.plan writer", () => {
   beforeAll(() => ensureDirs());
 
   it("writes one validated content-free receipt", () => {
-    const threadId = "prompt-plan-writer-utf8";
+    const threadId = `prompt-plan-writer-utf8-${randomUUID()}`;
     appendPromptPlan(threadId, { ...basePlan(), sections: [{ id: "memory", bytes: Buffer.byteLength("é", "utf8"), sent: true }] });
     const file = join(NATIVE_DIR, `${threadId}.ndjson`);
     expect(existsSync(file)).toBe(true);
@@ -36,7 +37,7 @@ describe("prompt.plan writer", () => {
   });
 
   it("rejects malformed measurements and duplicate section ids", () => {
-    const threadId = "prompt-plan-writer-invalid";
+    const threadId = `prompt-plan-writer-invalid-${randomUUID()}`;
     appendPromptPlan(threadId, { ...basePlan(), systemSentBytes: -1 });
     appendPromptPlan(threadId, { ...basePlan(), sections: [
       { id: "memory", bytes: 4, sent: true },

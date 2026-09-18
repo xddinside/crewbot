@@ -4256,16 +4256,17 @@ bus.subscribe((event: RuntimeEvent) => {
         // A delayed session.started from an earlier provider turn must not
         // bind the next room plan. Match the server-assigned turn id before
         // touching private cursor state.
-        if (!pending || event.turnId !== pending.turnId) break;
-        // A provider that rejected the old cursor starts a replacement native
-        // session. Drop only the old cursor; retain the in-flight marker until
-        // this replacement has been bound, then the settled turn commits its
-        // new anchor exactly once.
-        if (pending.plan.resumeCursor !== undefined && pending.plan.resumeCursor !== event.sessionId) {
-          clearRoomContinuationCursor(owner, event.providerInstanceId, pending.plan.resumeCursor);
-        }
-        if (pending.plan.instanceId === event.providerInstanceId) {
-          recordRoomSession(owner, event.providerInstanceId, event.sessionId, pending.plan);
+        if (pending && event.turnId === pending.turnId) {
+          // A provider that rejected the old cursor starts a replacement native
+          // session. Drop only the old cursor; retain the in-flight marker until
+          // this replacement has been bound, then the settled turn commits its
+          // new anchor exactly once.
+          if (pending.plan.resumeCursor !== undefined && pending.plan.resumeCursor !== event.sessionId) {
+            clearRoomContinuationCursor(owner, event.providerInstanceId, pending.plan.resumeCursor);
+          }
+          if (pending.plan.instanceId === event.providerInstanceId) {
+            recordRoomSession(owner, event.providerInstanceId, event.sessionId, pending.plan);
+          }
         }
       }
       if (typeof event.model === "string" && event.model) sessionModelByThread.set(event.threadId, event.model);

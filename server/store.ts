@@ -742,12 +742,12 @@ export class Store {
     const revoked = this.bots.filter((bot) => bot.managedSections?.some((section) => sectionKey(section) === name));
     if (revoked.length) {
       const grants = new Map(revoked.map((bot) => [bot.id, bot.managedSections!.filter((section) => sectionKey(section) !== name)]));
-      // Revoke durably before freeing the name. If the registry write then
-      // fails, authority stays narrowed; recreating a name can never revive
-      // its old grants. Update existing objects so in-flight checks see it.
+      // Fence provider continuations before changing authority. If the
+      // registry write then fails, a resumed provider session cannot retain
+      // the old grants while the live record is being reconciled.
+      for (const bot of revoked) invalidateRoomContinuationsForBot(bot.id);
       this.saveBots(this.bots.map((bot) => grants.has(bot.id) ? { ...bot, managedSections: grants.get(bot.id)! } : bot));
       for (const bot of revoked) bot.managedSections = grants.get(bot.id)!;
-      for (const bot of revoked) invalidateRoomContinuationsForBot(bot.id);
       for (const bot of revoked) this.emit({ type: "bot", botId: bot.id });
     }
     changeEmptySection(name, nextName);
@@ -1481,6 +1481,7 @@ export class Store {
       .some((key) => Object.prototype.hasOwnProperty.call(patch, key));
     // Runtime revocations must become effective in memory even when disk is
     // unavailable. Profile edits use the separate atomic path below.
+    if (modelChanged || roomRouteChanged) invalidateRoomContinuationsForBot(id);
     Object.assign(bot, patch);
     const task = this.activeTask(id);
     if (task) {
@@ -1492,7 +1493,6 @@ export class Store {
       bot.unread = bot.tasks!.some((candidate) => candidate.unread);
     }
     this.saveBots();
-    if (modelChanged || roomRouteChanged) invalidateRoomContinuationsForBot(id);
     this.emit({ type: "bot", botId: id });
     return bot;
   }
@@ -1631,11 +1631,14 @@ export class Store {
     const selected = id ? this.bot(id) : null;
     if (id && !selected) return null;
     const targetSection = sectionKey(selected?.section ?? section);
-    const changed: BotRecord[] = [];
-    for (const bot of this.bots) {
-      if (sectionKey(bot.section) !== targetSection) continue;
+    const changed = this.bots.filter((bot) => {
+      if (sectionKey(bot.section) !== targetSection) return false;
       const next = bot.id === id;
-      if (Boolean(bot.chiefOfStaff) === next && !(next && bot.hidden)) continue;
+      return !(Boolean(bot.chiefOfStaff) === next && !(next && bot.hidden));
+    });
+    for (const bot of changed) invalidateRoomContinuationsForBot(bot.id);
+    for (const bot of changed) {
+      const next = bot.id === id;
       if (next) {
         bot.chiefOfStaff = true;
         // A section's main contact must stay reachable in the sidebar.
@@ -1644,10 +1647,8 @@ export class Store {
         bot.chiefOfStaff = false;
         delete bot.managedSections;
       }
-      changed.push(bot);
     }
     if (changed.length) this.saveBots();
-    for (const bot of changed) invalidateRoomContinuationsForBot(bot.id);
     for (const bot of changed) this.emit({ type: "bot", botId: bot.id });
     return changed;
   }

@@ -85,7 +85,8 @@ export function sanitizeNativeMessage(source: string, message: unknown): unknown
   const isCodexTurn = method === "turn/start" || method === "turn/steer";
   const isOpenAiRequest = Array.isArray(root?.messages);
   const visit = (value: unknown, prompt = false, depth = 0, privateRun = false): unknown => {
-    if (depth > 16 || value === null || typeof value !== "object") return value;
+    if (depth > 16) return "[native diagnostic subtree omitted]";
+    if (value === null || typeof value !== "object") return value;
     if (Array.isArray(value)) return value.map((entry) => visit(entry, prompt, depth + 1, privateRun));
     const record = value as Record<string, unknown>;
     const out: Record<string, unknown> = {};

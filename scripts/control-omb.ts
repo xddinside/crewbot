@@ -619,11 +619,10 @@ export async function launchVerificationServer(
   }
 
   let closed = false;
-  let stopped = false;
-  const stop = async () => {
-    if (stopped) return;
-    stopped = true;
-    await waitForExit(child, { signal: "SIGTERM" });
+  let stopPromise: Promise<void> | undefined;
+  const stop = () => {
+    stopPromise ??= waitForExit(child, { signal: "SIGTERM" });
+    return stopPromise;
   };
   return {
     info: { url, pid: child.pid!, dataDir, logPath },
