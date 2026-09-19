@@ -58,8 +58,9 @@ function renderMessage(
   const rendered = input.textOverride?.messageId === message.id
     ? { ...message, text: input.textOverride.text }
     : message;
+  const person = message.sender?.name ?? input.userName;
   const speaker = message.role === "user"
-    ? message.via === "api" ? `${input.userName} (sent through the local API, not typed)` : input.userName
+    ? message.via === "api" ? `${person} (sent through the local API, not typed)` : person
     : message.from ? peerName(message.from.name) : "Bot";
   const line = `${speaker}: ${transcriptText(rendered, messagesById, input.userName)}`;
   if (!message.peerPost || !message.from || message.from.botId === input.readerBotId) return line;
