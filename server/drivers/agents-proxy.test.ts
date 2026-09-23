@@ -529,7 +529,9 @@ describe("agents-proxy MCP surface", () => {
       expect(page.result.content[0].text.length).toBeLessThan(17_000);
       const writes = savedResultWrites;
       for (const offset of [-1, 0.5, "0"]) {
-        expect((await callTool("tool_result_read", { id, offset })).result.isError).toBe(true);
+        const invalid = await callTool("tool_result_read", { id, offset });
+        expect(invalid.result.isError).toBe(true);
+        expect(invalid.result.content[0].text).toContain('{"id":"r-00000000-0000-4000-8000-000000000000","offset":0}');
       }
       expect(savedResultWrites).toBe(writes);
       failSavingResult = true;

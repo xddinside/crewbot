@@ -21,22 +21,33 @@ export async function landOnSearchHit(
 
   dispatch({ type: "select", id: ownerId });
   if (bot && bot.threadId !== hit.threadId) {
-    const result = await api(`/api/bots/${bot.id}/tasks/${hit.threadId}`, { method: "POST" });
+    const result = await api(`/api/bots/${bot.id}/tasks/${hit.threadId}?messages=200`, { method: "POST" });
     if (result?.bot) dispatch({ type: "taskSwitched", bot: result.bot });
   }
   if (group && group.threadId !== hit.threadId) {
-    const result = await api(`/api/groups/${group.id}/tasks/${hit.threadId}`, { method: "POST" });
+    const result = await api(`/api/groups/${group.id}/tasks/${hit.threadId}?messages=200`, { method: "POST" });
     if (result?.group) dispatch({ type: "groupPatched", group: result.group });
   }
+  let activeLeafId: string | null | undefined;
   if (bot && !hit.onActivePath) {
     const branch = await api(`/api/bots/${bot.id}/active-branch`, {
       method: "POST",
       body: JSON.stringify({ messageId: hit.messageId }),
     });
-    if (branch?.activeLeafId) {
-      dispatch({ type: "threadActive", threadId: hit.threadId, activeLeafId: branch.activeLeafId });
-    }
+    if (branch?.activeLeafId) activeLeafId = branch.activeLeafId;
   }
+  const page = await api<{ messages: AppState["bots"][number]["messages"]; hasMore?: boolean; activeLeafId?: string | null; activePathMessageIds?: string[] }>(
+    `/api/threads/${hit.threadId}/messages?around=${encodeURIComponent(hit.messageId)}&limit=200`,
+  );
+  dispatch({
+    type: "focusMessageWindow",
+    threadId: hit.threadId,
+    messageId: hit.messageId,
+    messages: page.messages,
+    hasMore: Boolean(page.hasMore),
+    activeLeafId: activeLeafId ?? page.activeLeafId ?? null,
+    activePathMessageIds: page.activePathMessageIds,
+  });
   dispatch({ type: "focusMessage", threadId: hit.threadId, messageId: hit.messageId });
 }
 

@@ -1141,10 +1141,26 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
     return !el || el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_FOLLOW_THRESHOLD;
   };
   const jumpToLatest = () => {
-    setBottomFollow(true);
-    setTranscriptWindow({ key: transcriptKey, start: tailWindowStart(messages.length), end: null });
-    requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    void api<{ messages: Message[]; hasMore?: boolean; activeLeafId?: string | null }>(
+      `/api/threads/${bot.threadId}/messages?limit=200`,
+    ).then((page) => {
+      const activeLeafId = page.activeLeafId ?? page.messages.at(-1)?.id;
+      if (!activeLeafId) return;
+      dispatch({
+        type: "focusMessageWindow",
+        threadId: bot.threadId,
+        messageId: activeLeafId,
+        messages: page.messages,
+        hasMore: Boolean(page.hasMore),
+        activeLeafId,
+      });
+      setBottomFollow(true);
+      setTranscriptWindow({ key: transcriptKey, start: tailWindowStart(page.messages.length), end: null });
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      });
+    }).catch((error: unknown) => {
+      dispatch({ type: "error", message: error instanceof Error ? error.message : t("chat.find.failed") });
     });
   };
 

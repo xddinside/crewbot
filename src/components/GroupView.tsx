@@ -1077,6 +1077,30 @@ export function GroupView({ group }: { group: Group }) {
     setTranscriptWindow((w) => ({ ...w, end: nextEnd >= group.messages.length ? null : nextEnd }));
   };
 
+  const jumpToLatest = () => {
+    void api<{ messages: Message[]; hasMore?: boolean; activeLeafId?: string | null }>(
+      `/api/threads/${group.threadId}/messages?limit=200`,
+    ).then((page) => {
+      const activeLeafId = page.activeLeafId ?? page.messages.at(-1)?.id;
+      if (!activeLeafId) return;
+      dispatch({
+        type: "focusMessageWindow",
+        threadId: group.threadId,
+        messageId: activeLeafId,
+        messages: page.messages,
+        hasMore: Boolean(page.hasMore),
+        activeLeafId,
+      });
+      setBottomFollow(true);
+      setTranscriptWindow({ key: transcriptKey, start: tailWindowStart(page.messages.length), end: null });
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      });
+    }).catch((error: unknown) => {
+      dispatch({ type: "error", message: error instanceof Error ? error.message : t("chat.find.failed") });
+    });
+  };
+
   // Scrollback across the network: the snapshot holds a bounded page, and
   // everything before it is still on the server. Asking for it prepends rows
   // exactly like expanding the local window, so the same height capture keeps
@@ -1404,13 +1428,7 @@ export function GroupView({ group }: { group: Group }) {
 
       {!follow && (
         <button
-          onClick={() => {
-            setBottomFollow(true);
-            setTranscriptWindow({ key: transcriptKey, start: tailWindowStart(group.messages.length), end: null });
-            requestAnimationFrame(() => {
-              scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-            });
-          }}
+          onClick={jumpToLatest}
           aria-label={t("chat.jumpToLatestAria")}
           className="animate-pop-in absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-hairline/40 bg-raised px-3 py-1.5 text-[12.5px] text-ink shadow-lg hover:bg-raised-hover"
           style={{ bottom: composerDock.height }}

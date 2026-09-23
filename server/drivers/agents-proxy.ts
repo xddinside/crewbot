@@ -1042,7 +1042,10 @@ async function callTool(name: string, args: Json): Promise<{ text: string; isErr
   if (name === "tool_result_read") {
     if (typeof args.id !== "string" || !/^r-[0-9a-f-]{36}$/.test(args.id) ||
       (args.offset !== undefined && (!Number.isSafeInteger(args.offset) || Number(args.offset) < 0))) {
-      return { text: "Use the saved result id and a non-negative integer offset from its notice.", isError: true };
+      return {
+        text: 'Use the saved result id and a non-negative integer offset from its notice. Example: {"id":"r-00000000-0000-4000-8000-000000000000","offset":0}.',
+        isError: true,
+      };
     }
     const r = await api(`/api/internal/tool-result?id=${encodeURIComponent(args.id)}&offset=${args.offset ?? 0}`, { signal: AbortSignal.timeout(3_000) });
     const text = String(r.text ?? "");

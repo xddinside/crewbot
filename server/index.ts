@@ -3206,7 +3206,16 @@ function messageWindow(threadId: string, messageId: string, limit: number) {
   const before = Math.floor((limit - 1) / 2);
   const start = Math.max(0, Math.min(index - before, all.length - limit));
   const stop = Math.min(all.length, start + limit);
-  return { messages: all.slice(start, stop).map(slimMessage), hasMore: start > 0 };
+  const messages = all.slice(start, stop);
+  const pageIds = new Set(messages.map((message) => message.id));
+  const activePathMessageIds = store.activePath(threadId)
+    .filter((message) => pageIds.has(message.id))
+    .map((message) => message.id);
+  return {
+    messages: messages.map(slimMessage),
+    hasMore: start > 0,
+    activePathMessageIds,
+  };
 }
 
 // ── SSE fan-out to clients ─────────────────────────────────────────────

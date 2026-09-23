@@ -13,7 +13,7 @@ import type { ModelSelection } from "./contracts.ts";
 import * as mdb from "./message-db.ts";
 import { peerAllowKey } from "./peer-approval-key.ts";
 import { canAccessTeam } from "./peer-roster.ts";
-import { Store, type BotRecord } from "./store.ts";
+import { mentionedBots, Store, type BotRecord } from "./store.ts";
 import type { TeamSetupRequest } from "../shared/team-setup.ts";
 import { SECTION_CONTEXTS_FILE } from "./section-context.ts";
 
@@ -155,6 +155,53 @@ describe("Store", () => {
     expect(whole.hasMore).toBe(false);
   });
 
+  it("pages the active branch when its leaf is older than the raw insertion tail", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({}, { seedMessages: false });
+    const root = store.appendMessage(bot.threadId, { role: "user", kind: "text", text: "root" });
+    let active = root;
+    for (let index = 0; index < 12; index += 1) {
+      active = store.appendMessage(bot.threadId, { role: "bot", kind: "text", text: `active ${index}` });
+    }
+    const abandoned = store.branchMessage(bot.threadId, root.id, "abandoned version");
+    if (!abandoned) throw new Error("expected branchMessage to create the abandoned version");
+    for (let index = 0; index < 12; index += 1) {
+      store.appendMessage(bot.threadId, { role: "bot", kind: "text", text: `abandoned ${index}` });
+    }
+    store.setActiveLeaf(bot.threadId, active.id);
+    expect(store.messagesFor(bot.threadId).map((message) => message.id)).toContain(abandoned.id);
+
+    const cold = new Store(selection).messagesTail(bot.threadId, 5);
+    expect(cold.messages.map((message) => message.id)).toEqual(
+      store.activePath(bot.threadId).slice(-5).map((message) => message.id),
+    );
+    expect(cold.activeLeafId).toBe(active.id);
+    expect(cold.messages.map((message) => message.id)).not.toContain(abandoned.id);
+    expect(cold.hasMore).toBe(true);
+  });
+
+  it("loads an active path when a cold SQL tail has the leaf and parent but misses the root", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({}, { seedMessages: false });
+    const root = store.appendMessage(bot.threadId, { role: "user", kind: "text", text: "root" });
+    const parent = store.appendMessage(bot.threadId, { role: "bot", kind: "text", text: "parent" });
+    const leaf = store.appendMessage(bot.threadId, { role: "user", kind: "text", text: "leaf" });
+    const sibling = store.branchMessage(bot.threadId, root.id, "sibling version");
+    if (!sibling) throw new Error("expected branchMessage to create the sibling version");
+    store.appendMessage(bot.threadId, { role: "bot", kind: "text", text: "sibling reply" });
+    store.setActiveLeaf(bot.threadId, leaf.id);
+
+    const cold = new Store(selection).messagesTail(bot.threadId, 4);
+    expect(cold.messages.map((message) => message.id)).toContain(root.id);
+    expect(cold.messages.map((message) => message.id)).toContain(parent.id);
+    expect(cold.messages.map((message) => message.id)).toContain(leaf.id);
+    expect(cold.messages.map((message) => message.id)).toContain(sibling.id);
+    expect(cold.activeLeafId).toBe(leaf.id);
+    // The page starts at the root, so rows omitted after that cursor do not
+    // make an older-page request possible.
+    expect(cold.hasMore).toBe(false);
+  });
+
   it("caches a complete tail but never caches a zero-message page as an empty thread", () => {
     const store = new Store(selection);
     const bot = store.createBot({}, { seedMessages: false });
@@ -204,6 +251,11 @@ describe("Store", () => {
     });
     store.appendMessage(bot.threadId, { role: "user", kind: "text", text: "later" });
     expect(store.messagesFor(bot.threadId).find((m) => m.id === ask.id)?.card?.dismissed).toBeUndefined();
+  });
+
+  it("routes Unicode text with lowercase expansion before a bot mention", () => {
+    const scout = { name: "Bot" };
+    expect(mentionedBots("İ (@Bot)", [scout])).toEqual([scout]);
   });
 
   it("does not dismiss an open options card for bot-authored messages", () => {

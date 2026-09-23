@@ -400,17 +400,20 @@ export function mentionedBots<T extends { name: string; hidden?: boolean }>(text
   const candidates = peers
     .filter((p) => !p.hidden && p.name.trim())
     .sort((a, b) => b.name.length - a.name.length);
-  const lower = text.toLowerCase();
   const found: T[] = [];
   let at = -1;
-  while ((at = lower.indexOf("@", at + 1)) !== -1) {
+  while ((at = text.indexOf("@", at + 1)) !== -1) {
     if (!isMentionBoundary(text, at)) continue; // user@host, not a tag
-    const rest = lower.slice(at + 1);
     const hit = candidates.find((p) => {
-      const name = p.name.toLowerCase();
-      if (!rest.startsWith(name)) return false;
-      const after = rest.slice(name.length); // must not run into a longer word
-      return !isMentionNameContinuation(after);
+      let folded = "";
+      let end = at + 1;
+      for (const character of text.slice(end)) {
+        folded += character.toLowerCase();
+        end += character.length;
+        if (folded.length >= p.name.toLowerCase().length) break;
+      }
+      if (folded !== p.name.toLowerCase()) return false;
+      return !isMentionNameContinuation(text.slice(end)); // must not run into a longer word
     });
     if (hit && !found.includes(hit)) found.push(hit);
   }
@@ -1147,8 +1150,22 @@ export class Store {
     if (!state) {
       const tail = mdb.readThreadTail(threadId, messagesFile(threadId), limit);
       const legacyRows = tail.hasMore !== undefined && tail.messages.some((m) => m.parentId === undefined);
-      if (tail.hasMore !== true || legacyRows) {
-        state = this.cacheThread(threadId, legacyRows ? mdb.readThread(threadId, messagesFile(threadId)) : tail);
+      const tailIds = new Set(tail.messages.map((message) => message.id));
+      const tailById = new Map(tail.messages.map((message) => [message.id, message]));
+      let current = tail.activeLeafId ? tailById.get(tail.activeLeafId) : undefined;
+      let activePathMayBeTruncated = Boolean(limit > 0 && tail.activeLeafId && !current);
+      let pathRows = 0;
+      while (limit > 0 && current && pathRows < limit) {
+        pathRows += 1;
+        if (pathRows === limit) break;
+        if (current.parentId && !tailIds.has(current.parentId)) {
+          activePathMayBeTruncated = true;
+          break;
+        }
+        current = current.parentId ? tailById.get(current.parentId) : undefined;
+      }
+      if (tail.hasMore !== true || legacyRows || activePathMayBeTruncated) {
+        state = this.cacheThread(threadId, legacyRows || activePathMayBeTruncated ? mdb.readThread(threadId, messagesFile(threadId)) : tail);
       } else {
         return {
           messages: tail.messages,
@@ -1158,8 +1175,19 @@ export class Store {
       }
     }
     const { messages, activeLeafId } = state;
-    const start = Math.max(0, messages.length - limit);
-    return { messages: messages.slice(start), hasMore: start > 0, activeLeafId };
+    const path = this.activePath(threadId);
+    const pathPage = limit === 0 ? [] : path.slice(-limit);
+    const included = new Set(pathPage.map((message) => message.id));
+    const spare = Math.max(0, limit - pathPage.length);
+    if (spare > 0) {
+      for (const message of messages.slice(-Math.max(spare, limit))) {
+        if (included.size >= limit) break;
+        included.add(message.id);
+      }
+    }
+    const page = messages.filter((message) => included.has(message.id));
+    const oldestIndex = page[0] ? messages.findIndex((message) => message.id === page[0].id) : messages.length;
+    return { messages: page, hasMore: oldestIndex > 0, activeLeafId };
   }
 
   /** Used only with newly allocated import threads. No live actions are

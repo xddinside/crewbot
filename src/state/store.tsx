@@ -947,6 +947,7 @@ export type Action =
   // scrollback: ask the server for the page before the oldest message held
   | { type: "loadOlderMessages"; threadId: string }
   | { type: "olderMessages"; threadId: string; generation: number; messages: Message[]; hasMore: boolean }
+  | { type: "focusMessageWindow"; threadId: string; messageId: string; messages: Message[]; hasMore: boolean; activeLeafId: string | null; activePathMessageIds?: string[] }
   // `threadId` is the thread the card was shown in; `groupId` when the card
   // is in a room: the message lives on the room's list, and the answer goes
   // to the room's thread
@@ -1227,6 +1228,14 @@ export function reducer(state: AppState, action: Action): AppState {
       const known = (id: string) => action.bots.some((b) => b.id === id) || action.groups.some((g) => g.id === id);
       const selectedId =
         state.selectedId && known(state.selectedId) ? state.selectedId : (action.bots[0]?.id ?? "");
+      const snapshotGeneration = Math.max(0, ...Object.values(state.transcriptGeneration)) + 1;
+      const transcriptGeneration = Object.fromEntries(
+        [...new Set([
+          ...Object.keys(state.transcriptGeneration),
+          ...action.bots.flatMap((bot) => [bot.threadId, ...(bot.tasks ?? []).map((task) => task.threadId)]),
+          ...action.groups.flatMap((group) => [group.threadId, ...(group.tasks ?? []).map((task) => task.threadId)]),
+        ])].map((threadId) => [threadId, snapshotGeneration]),
+      );
       const hydrated = {
         ...state,
         bots: action.bots,
@@ -1236,7 +1245,7 @@ export function reducer(state: AppState, action: Action): AppState {
         selectedId,
         backgroundThreadEvents: {},
         loadingOlder: {},
-        transcriptGeneration: {},
+        transcriptGeneration,
         modelVariantSessions: {},
       };
       return reconcileSnapshotQueues(
@@ -1272,6 +1281,46 @@ export function reducer(state: AppState, action: Action): AppState {
         loadingOlder,
         bots: state.bots.map((bot) => (bot.threadId === action.threadId ? prepend(bot) : bot)),
         groups: state.groups.map((group) => (group.threadId === action.threadId ? prepend(group) : group)),
+      };
+    }
+    case "focusMessageWindow": {
+      const byId = new Map(action.messages.map((message) => [message.id, message]));
+      const targetLeaf = action.activeLeafId && byId.has(action.activeLeafId) ? action.activeLeafId : undefined;
+      let activeLeafId = targetLeaf;
+      if (!activeLeafId) {
+        const activePathCandidates = action.activePathMessageIds?.filter((id) => byId.has(id));
+        activeLeafId = activePathCandidates?.at(-1);
+        if (!activeLeafId && !action.activePathMessageIds) {
+          for (const candidate of action.messages) {
+            let current: Message | undefined = candidate;
+            while (current) {
+              if (current.id === action.messageId) {
+                activeLeafId = candidate.id;
+                break;
+              }
+              current = current.parentId ? byId.get(current.parentId) : undefined;
+            }
+          }
+        }
+      }
+      activeLeafId ??= action.messageId;
+      const bot = state.bots.find((candidate) => candidate.threadId === action.threadId);
+      if (bot) {
+        return updateBot(bumpTranscriptGeneration(state, action.threadId), bot.id, (current) => ({
+          ...current,
+          messages: action.messages,
+          hasMore: action.hasMore,
+          activeLeafId,
+        }));
+      }
+      const group = state.groups.find((candidate) => candidate.threadId === action.threadId);
+      if (!group) return state;
+      const fenced = bumpTranscriptGeneration(state, action.threadId);
+      return {
+        ...fenced,
+        groups: fenced.groups.map((current) => current.id === group.id
+          ? { ...current, messages: action.messages, hasMore: action.hasMore, activeLeafId }
+          : current),
       };
     }
     case "sections":

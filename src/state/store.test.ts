@@ -14,6 +14,7 @@ import {
   reducer,
   requestConfirmedBotDeletion,
   visibleNotificationThread,
+  visibleMessages,
   type AppState,
   type Bot,
   type BotAnnouncement,
@@ -1693,6 +1694,126 @@ describe("scrollback pages", () => {
     expect(landed.bots[0].messages.map((m) => m.id)).toEqual(["m3", "m4"]);
     expect(landed.bots[0].hasMore).toBe(true);
     expect(landed.loadingOlder).toEqual({});
+  });
+
+  it("drops an older page that was in flight across reconnect hydration", () => {
+    const withLeaf = { ...bot, activeLeafId: "m4" } as never as Bot;
+    const loading = reducer({
+      ...initialState,
+      bots: [withLeaf],
+      transcriptGeneration: { "thread-1": 4 },
+    }, { type: "loadOlderMessages", threadId: "thread-1" });
+    const generation = loading.transcriptGeneration["thread-1"] ?? 0;
+
+    const hydrated = reducer(loading, {
+      type: "hydrate",
+      bots: [{ ...withLeaf, messages: [message("fresh-1", 10), message("fresh-2", 11)] }],
+      groups: [],
+      computerControl: {},
+    });
+    expect(hydrated.transcriptGeneration["thread-1"]).toBeGreaterThan(generation);
+
+    const landed = reducer(hydrated, {
+      type: "olderMessages",
+      threadId: "thread-1",
+      generation,
+      messages: [message("stale", 1)],
+      hasMore: false,
+    });
+    expect(landed.bots[0].messages.map((m) => m.id)).toEqual(["fresh-1", "fresh-2"]);
+    expect(landed.loadingOlder).toEqual({});
+  });
+
+  it("replaces a transcript with the bounded window that contains the focused hit", () => {
+    const next = reducer(state, {
+      type: "focusMessageWindow",
+      threadId: "thread-1",
+      messageId: "m3",
+      messages: [
+        { ...message("m2", 2), parentId: null },
+        { ...message("alternate", 3), parentId: "m2" },
+        { ...message("m3", 3), parentId: "m2" },
+      ],
+      hasMore: true,
+      activeLeafId: "missing-leaf",
+    });
+    expect(next.bots[0].messages.map((m) => m.id)).toEqual(["m2", "alternate", "m3"]);
+    expect(next.bots[0].activeLeafId).toBe("m3");
+    expect(visibleMessages(next.bots[0]).map((m) => m.id)).toEqual(["m2", "m3"]);
+  });
+
+  it("uses the selected branch hint when a centered window contains sibling descendants", () => {
+    const root = { ...message("root", 1), parentId: null } as never as Message;
+    const hit = { ...message("hit", 2), parentId: "root" } as never as Message;
+    const activeReply = { ...message("active-reply", 3), parentId: "hit" } as never as Message;
+    const abandonedReply = { ...message("abandoned-reply", 4), parentId: "hit" } as never as Message;
+    const stateWithBranches = {
+      ...initialState,
+      bots: [{ ...bot, messages: [root, hit, activeReply, abandonedReply], activeLeafId: "active-reply" } as never as Bot],
+    };
+
+    const next = reducer(stateWithBranches, {
+      type: "focusMessageWindow",
+      threadId: "thread-1",
+      messageId: "hit",
+      messages: [root, hit, activeReply, abandonedReply],
+      hasMore: true,
+      activeLeafId: "active-leaf",
+      activePathMessageIds: ["root", "hit", "active-reply"],
+    });
+
+    expect(next.bots[0].activeLeafId).toBe("active-reply");
+    expect(visibleMessages(next.bots[0]).map((m) => m.id)).toEqual(["root", "hit", "active-reply"]);
+  });
+
+  it("returns old direct and group search windows to the latest bounded page", () => {
+    const oldRoot = { ...message("old-root", 1), parentId: null } as never as Message;
+    const oldHit = { ...message("old-hit", 2), parentId: "old-root" } as never as Message;
+    const latestRoot = { ...message("latest-root", 10), parentId: null } as never as Message;
+    const latestLeaf = { ...message("latest-leaf", 11), parentId: "latest-root" } as never as Message;
+    const direct = { ...bot, messages: [oldRoot, oldHit], activeLeafId: "old-hit" } as never as Bot;
+    let directState = reducer({ ...initialState, bots: [direct] }, {
+      type: "focusMessageWindow",
+      threadId: "thread-1",
+      messageId: "old-hit",
+      messages: [oldRoot, oldHit],
+      hasMore: true,
+      activeLeafId: "old-hit",
+    });
+    expect(visibleMessages(directState.bots[0]).map((m) => m.id)).toEqual(["old-root", "old-hit"]);
+    directState = reducer(directState, {
+      type: "focusMessageWindow",
+      threadId: "thread-1",
+      messageId: "latest-leaf",
+      messages: [latestRoot, latestLeaf],
+      hasMore: true,
+      activeLeafId: "latest-leaf",
+    });
+    expect(visibleMessages(directState.bots[0]).map((m) => m.id)).toEqual(["latest-root", "latest-leaf"]);
+
+    const room = {
+      id: "room-1",
+      threadId: "room-thread",
+      messages: [oldRoot, oldHit],
+      activeLeafId: "old-hit",
+    } as never as Group;
+    let groupState = reducer({ ...initialState, groups: [room] }, {
+      type: "focusMessageWindow",
+      threadId: "room-thread",
+      messageId: "old-hit",
+      messages: [oldRoot, oldHit],
+      hasMore: true,
+      activeLeafId: "old-hit",
+    });
+    groupState = reducer(groupState, {
+      type: "focusMessageWindow",
+      threadId: "room-thread",
+      messageId: "latest-leaf",
+      messages: [latestRoot, latestLeaf],
+      hasMore: true,
+      activeLeafId: "latest-leaf",
+    });
+    expect(groupState.groups[0].messages.map((m) => m.id)).toEqual(["latest-root", "latest-leaf"]);
   });
 
   it("still lands a page over messages that arrived while it was on the wire", () => {

@@ -9751,6 +9751,7 @@ describe("message pages", () => {
     expect(result.body.messages.map((message: { id: string }) => message.id)).toEqual(
       full.messages.slice(2, 7).map((message: { id: string }) => message.id),
     );
+    expect(result.body.activePathMessageIds).toEqual(full.messages.slice(2, 7).map((message: { id: string }) => message.id));
     expect(result.body.hasMore).toBe(true);
     expect((await api("GET", `/api/threads/${full.threadId}/messages?around=nope`)).status).toBe(404);
     expect((await api("GET", `/api/threads/${full.threadId}/messages?around=${target.id}&before=${target.id}`)).status).toBe(400);
