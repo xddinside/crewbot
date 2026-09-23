@@ -559,7 +559,7 @@ describe("PiDriver turns (fake CLI)", () => {
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as { argv: string[]; mcpConfig?: { mcpServers?: Record<string, any> } | null });
-    const mcpRow = rows.find((r) => r.mcpConfig != null);
+    const mcpRow = rows.find((r) => r.mcpConfig != null && Array.isArray(r.argv) && r.argv.includes("-e"));
     expect(mcpRow).toBeTruthy();
 
     // the extension rides `-e` so the external pi process mounts the servers

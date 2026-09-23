@@ -5,6 +5,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { rm as removeDirectory } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { ToolResults, TOOL_RESULT_MAX_CHARS } from "./tool-results.ts";
 import { extname, join } from "node:path";
 
 import { z } from "zod";
@@ -204,6 +205,7 @@ import { _loadPending, buildDelegationFailurePrompt, buildDelegationRevivalPromp
 import {
   cancelSteeredMessage,
   drainSteeredMessages,
+  hasQueuedSteeredMessages,
   holdSteeredQueue,
   onSteeredQueueChange,
   queuedSteerSnapshot,
@@ -3204,7 +3206,16 @@ function messageWindow(threadId: string, messageId: string, limit: number) {
   const before = Math.floor((limit - 1) / 2);
   const start = Math.max(0, Math.min(index - before, all.length - limit));
   const stop = Math.min(all.length, start + limit);
-  return { messages: all.slice(start, stop).map(slimMessage), hasMore: start > 0 };
+  const messages = all.slice(start, stop);
+  const pageIds = new Set(messages.map((message) => message.id));
+  const activePathMessageIds = store.activePath(threadId)
+    .filter((message) => pageIds.has(message.id))
+    .map((message) => message.id);
+  return {
+    messages: messages.map(slimMessage),
+    hasMore: start > 0,
+    activePathMessageIds,
+  };
 }
 
 // ── SSE fan-out to clients ─────────────────────────────────────────────
@@ -4030,7 +4041,10 @@ async function selectableComputers(bot: BotRecord) {
 function continueComputerSelection(threadId: string, generation: string | undefined, succeeded: boolean): boolean {
   const selection = computerSelectionTurns.get(threadId);
   if (!selection || selection.generation !== generation) return false;
-  if (!succeeded || !selection.selected) { computerSelectionTurns.delete(threadId); return false; }
+  if (!succeeded || !selection.selected || hasQueuedSteeredMessages(selection.botId, threadId)) {
+    computerSelectionTurns.delete(threadId);
+    return false; // Let ordinary settlement drain the person's newer request.
+  }
   const surface = selection.selected;
   setImmediate(() => {
     // Stop, deletion, a new user send, or any replacement generation wins.
@@ -4039,7 +4053,7 @@ function continueComputerSelection(threadId: string, generation: string | undefi
     const bot = store.projectBotForTask(selection.botId, threadId);
     if (!bot || bot.computer === "off" || threadBusy(bot.id, threadId)) return;
     if (store.taskByThread(bot.id, threadId)?.surface !== selection.previousSurface) return;
-    if (queuedThreadPosition(bot.id, threadId) !== null) return;
+    if (hasQueuedSteeredMessages(bot.id, threadId)) { drainQueuedSends(); return; }
     if (store.activePath(threadId).findLast(message => message.role === "user" && message.kind === "text")?.id !== selection.source.id) return;
     store.patchTask(bot.id, threadId, { surface });
     const text = `The computer selection is now ${surfaceLabel(surface)}. Continue the user's original request using the tools mounted for this turn; verify the result before claiming success.\n\n${selection.text}`;
@@ -4654,6 +4668,7 @@ bus.subscribe((event: RuntimeEvent) => {
       }
       const lastReported = turnUsage.get(event.threadId);
       turnUsage.delete(event.threadId);
+      const lastContext = turnContext.get(event.threadId);
       turnContext.delete(event.threadId);
       // group turns run on the room's thread — the speaking bot's task
       // tally is not the right home for a shared room's spend, so only
@@ -4697,8 +4712,6 @@ bus.subscribe((event: RuntimeEvent) => {
         const tokens = event.usage ?? lastReported;
         // the context figure: what the last model call's prompt held, with
         // the window from the driver or, failing that, the model's family
-        const lastContext = turnContext.get(event.threadId);
-        turnContext.delete(event.threadId);
         const contextModel = store.taskByThread(bot.id, event.threadId)?.modelSelection?.model ?? bot.modelSelection.model;
         store.addTaskUsage(bot.id, event.threadId, {
           input: tokens?.input,
@@ -4899,7 +4912,7 @@ function wakeDelegationSource(source: BotRecord, threadId: string, targetName: s
   // delegated reply is already in the thread, so nothing is lost, and the
   // source processes it the moment it is free rather than only on a later
   // user nudge.
-  if (threadBusy(source.id, threadId) || activeGroupTurnForBot(source.id)) {
+  if (threadBusy(source.id, threadId) || botAtThreadCapacity(source.id) || activeGroupTurnForBot(source.id)) {
     pendingDelegationWakes.set(threadId, { botId: source.id, targetName, failureReason, routineRunId });
     return;
   }
@@ -4999,7 +5012,10 @@ function drainDelegationWakes(): void {
       pendingDelegationWakes.delete(threadId);
       continue;
     }
-    if (threadBusy(entry.botId, threadId) || activeGroupTurnForBot(entry.botId)) continue;
+    // Completion can precede asynchronous digest/resource settlement. Keep
+    // the wake parked until a slot is actually free; a rejected async start
+    // could otherwise requeue after the last idle-release drain has run.
+    if (threadBusy(entry.botId, threadId) || botAtThreadCapacity(entry.botId) || activeGroupTurnForBot(entry.botId)) continue;
     pendingDelegationWakes.delete(threadId);
     dispatchDelegationWake(entry.botId, threadId, entry.targetName, entry.failureReason, entry.routineRunId, entry.budgetAcquired);
   }
@@ -5976,7 +5992,7 @@ async function startTurn(
     const windowIds = replayable.slice(-40).map((m) => m.id);
     return {
       turnText: withUnseenMessages(unseenBlock, contextTurnText),
-      resumeCursor, recoveryText, recoveryIsReplay,
+      resumeCursor, sessionReset: !resume, recoveryText, recoveryIsReplay,
       handoff: strictResume ? {
         botId: bot.id, instanceId, config, resumeCursor: typeof resumeCursor === "string" ? resumeCursor : undefined,
         started: sessionStart(contextOrder, contextTurnText !== userTurnText ? windowIds : [], carried),
@@ -6687,6 +6703,7 @@ async function startTurn(
         // the active task's own session — another task's cursor would
         // resume the wrong conversation and defeat the context bubble
         resumeCursor: dispatchContext.resumeCursor,
+        sessionReset: dispatchContext.sessionReset,
         ...(dispatchContext.recoveryText !== undefined ? { recoveryText: dispatchContext.recoveryText } : {}),
         ...(dispatchContext.recoveryIsReplay ? { recoveryIsReplay: true } : {}),
         transcript,
@@ -7582,6 +7599,10 @@ const agentRoutine = (
     instructions: safeInstructions.slice(0, 2_000),
     instructionsTruncated: safeInstructions.length > 2_000,
     continuity: routine.continuity === true,
+    overlap: routine.overlap ?? "skip",
+    skippedRuns: routine.skippedRuns ?? 0,
+    lastSkippedAt: routineTimestamp(routine.lastSkippedAt),
+    failureStreak: routine.failureStreak ?? 0,
     enabled: routine.enabled,
     runOn: routine.runOn,
     durationMinutes: routine.durationMinutes,
@@ -10731,6 +10752,7 @@ const workspaceBackupRoutes = createWorkspaceBackupRoutes({
   }, keepLocked),
 });
 
+const toolResults = new ToolResults();
 const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   let url: URL;
   try {
@@ -11217,6 +11239,23 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         return json(res, 200, { status: "pending", surface: option.surface,
           message: `End this turn now without using the previous computer tools. OpenMausBot will continue the original request on ${option.label} with a fresh tool connection.` });
+      }
+      if (method === "POST" && path === "/api/internal/tool-result") {
+        const body = await readInternalBody();
+        if (!body || typeof body.text !== "string" || !body.text || body.text.length > TOOL_RESULT_MAX_CHARS ||
+          (body.truncated !== undefined && typeof body.truncated !== "boolean")) {
+          return json(res, 400, { error: "Expected bounded text and an optional truncated boolean." });
+        }
+        return json(res, 201, toolResults.save(internalCapability, body.text, body.truncated));
+      }
+      if (method === "GET" && path === "/api/internal/tool-result") {
+        const id = url.searchParams.get("id") ?? "";
+        const offset = Number(url.searchParams.get("offset") ?? "0");
+        if (!/^r-[0-9a-f-]{36}$/.test(id) || !Number.isSafeInteger(offset) || offset < 0) {
+          return json(res, 400, { error: "Expected a saved result id and a non-negative integer offset." });
+        }
+        const result = toolResults.read(internalCapability, id, offset);
+        return result ? json(res, 200, result) : json(res, 404, { error: "Saved result unavailable in this bot's conversation, expired, or offset out of range. Do not repeat an action to retrieve its output." });
       }
       if (method === "POST" && path === "/api/internal/memory") {
         const body = await readInternalBody();
@@ -13788,6 +13827,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             schedule: routine.schedule,
             durationMinutes: routine.durationMinutes,
             ...(routine.timeoutMinutes === undefined ? {} : { timeoutMinutes: routine.timeoutMinutes }),
+            ...(routine.overlap ? { overlap: routine.overlap } : {}),
           });
           createdRoutineIds.push(created.id);
         }
@@ -13934,13 +13974,33 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (channelTaskSwitchBlocked(group, m[2])) {
         return json(res, 409, { error: "this channel is working or waiting on you in another task" });
       }
+      // Parsed before the switch: a rejected parameter must not leave the
+      // channel pointing at another thread.
+      const requestedMessages = url.searchParams.get("messages");
+      const switchLimit = pageSize(requestedMessages);
+      if (switchLimit === null) return json(res, 400, { error: "messages must be a non-negative whole number" });
       const switched = store.switchGroupTask(group.id, m[2]);
       if (!switched) return json(res, 404, { error: "no such channel task" });
-      const fresh = groupWithThread(switched);
-      broadcast({ kind: "group", group: fresh });
-      const responseGroup = url.searchParams.get("messages") === "0"
-        ? { ...publicGroupState(switched), tasks: store.groupTasks(switched.id) }
-        : fresh;
+      const switchedSettings = { ...publicGroupState(switched), tasks: store.groupTasks(switched.id) };
+      // The frame says the channel moved; it is not a transcript delivery.
+      // A long room's whole history over SSE is the payload `?messages=`
+      // exists to avoid, and it would also overwrite a bounded snapshot on
+      // every other client. One default page is enough to render the switch;
+      // anything earlier pages back through /api/threads/:id/messages.
+      broadcast({
+        kind: "group",
+        group: { ...switchedSettings, ...messagePage(switched.threadId, DEFAULT_PAGE) },
+      });
+      // "0" predates paging and means settings only — no `messages` key at
+      // all, which clients tell apart from an empty page. A positive page is
+      // the transcript a client can actually hold; omitting the parameter
+      // keeps the whole transcript, as it always did — and only that branch
+      // materialises it.
+      const responseGroup = requestedMessages === "0"
+        ? switchedSettings
+        : switchLimit === undefined
+          ? groupWithThread(switched)
+          : { ...switchedSettings, ...messagePage(switched.threadId, switchLimit) };
       return json(res, 200, { group: responseGroup });
     }
     if (m && method === "PATCH") {
@@ -16002,13 +16062,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 409, { error: "this bot is securely saving a credential — try again when it finishes" });
       }
       // Navigation only: execution owns its thread, never this selected id.
+      const requestedMessages = url.searchParams.get("messages");
+      const switchLimit = pageSize(requestedMessages);
+      if (switchLimit === null) return json(res, 400, { error: "messages must be a non-negative whole number" });
       const switched = store.switchTask(bot.id, m[2]);
       if (!switched) return json(res, 404, { error: "no such task" });
-      const fresh = botWithThread(switched);
-      broadcast({ kind: "bot", bot: fresh });
-      const responseBot = url.searchParams.get("messages") === "0"
-        ? { ...wireBot(switched), tasks: store.tasks(switched.id).map(wireTask) }
-        : fresh;
+      const switchedSettings = { ...wireBot(switched), tasks: store.tasks(switched.id).map(wireTask) };
+      // Bounded for the same reason as the channel switch above.
+      broadcast({
+        kind: "bot",
+        bot: { ...switchedSettings, ...messagePage(switched.threadId, DEFAULT_PAGE) },
+      });
+      // "0" is settings only, a positive page is a bounded transcript, and no
+      // parameter is the whole thread — the one branch that materialises it.
+      const responseBot = requestedMessages === "0"
+        ? switchedSettings
+        : switchLimit === undefined
+          ? botWithThread(switched)
+          : { ...switchedSettings, ...messagePage(switched.threadId, switchLimit) };
       return json(res, 200, { bot: responseBot });
     }
     if (m && method === "PATCH") {

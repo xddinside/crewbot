@@ -41,6 +41,8 @@
 //                      one tool_use (fresh id, that name and input) followed
 //                      by its tool_result (is_error unless ok, default true).
 //                      Unset, a turn makes the single default Bash call.
+//   FAKE_CLAUDE_CONTEXT_TOKENS report this latest-prompt size in a scripted
+//                      room-plan reply, for context-accounting fixtures.
 //   FAKE_CLAUDE_AUTH   in (default) | out | unsupported | malformed |
 //                      inherited-api-key — what `auth status` reports
 //   FAKE_CLAUDE_AUTO_UNAVAILABLE_MODELS comma-separated --model values for
@@ -320,7 +322,9 @@ const playTurn = (prompt: JsonValue) => {
   if (process.env.FAKE_CLAUDE_ROOM_PLAN) {
     const progress = (text: string) => out({ type: "assistant", message: { content: [{ type: "text", text }] } });
     void runRoomHandoffAgent(argv, process.env.FAKE_CLAUDE_ROOM_PLAN, prompt, undefined, progress).then(text => {
-      out({ type: "assistant", message: { content: [{ type: "text", text }] } });
+      const contextTokens = Number(process.env.FAKE_CLAUDE_CONTEXT_TOKENS);
+      const usage = Number.isSafeInteger(contextTokens) && contextTokens > 0 ? { input_tokens: contextTokens, output_tokens: 5 } : undefined;
+      out({ type: "assistant", message: { content: [{ type: "text", text }], ...(usage ? { usage } : {}) } });
       out({ type: "result", is_error: false, stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 5 } });
     }).catch(error => {
       out({ type: "result", is_error: true, result: String(error), stop_reason: "error" });

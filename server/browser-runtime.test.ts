@@ -196,14 +196,28 @@ describe("server-owned browser MCP runtime", () => {
     // the conversation's tools, and restarting the app. Nothing an agent can
     // call clears it, because every tool call passes the same gate.
     const value = runtime({ requestTimeoutMs: 60 });
-    await expect(value.agentRpc("s", spec(), "tools/call", { name: "hang" })).rejects.toThrow(/timed out/);
-    // The timeout stopped the transport, which SIGKILLs the child, so nothing
-    // is left running and the next call must be allowed to start a browser.
-    await expect(value.agentRpc("s", spec(), "tools/call", { name: "echo", arguments: { text: "back" } }))
-      .resolves.toMatchObject({ content: [{ text: expect.stringContaining("back") }] });
-    // and a person can still take control afterwards
-    await value.take("s", "owner");
-    expect(value.canControl("s", "owner")).toBe(true);
+    // Advance only the deliberately hung request's deadline. Real subprocess
+    // startup/stdio remain live, so a loaded runner cannot time out a healthy
+    // recovery echo merely because its 60 ms scheduling window elapsed.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await expect(value.agentRpc("s", spec(), "tools/list", {})).resolves.toMatchObject({ initialized: true });
+      const pending = value.agentRpc("s", spec(), "tools/call", { name: "hang" });
+      const observed = expect(pending).rejects.toThrow(/timed out/);
+      await vi.advanceTimersByTimeAsync(60);
+      await observed;
+      // The timeout stopped the transport, which SIGKILLs the child, so nothing
+      // is left running and the next call must be allowed to start a browser.
+      await expect(value.agentRpc("s", spec(), "tools/call", { name: "echo", arguments: { text: "back" } }))
+        .resolves.toMatchObject({ content: [{ text: expect.stringContaining("back") }] });
+      // and a person can still take control afterwards
+      await value.take("s", "owner");
+      expect(value.canControl("s", "owner")).toBe(true);
+    } finally {
+      // Process-tree cleanup polls real child exits with timers of its own.
+      vi.useRealTimers();
+      await value.closeAll();
+    }
   });
 
   it("still refuses an agent after a human's own interrupted command, browser alive", async () => {
