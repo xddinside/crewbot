@@ -31,7 +31,7 @@ import {
   ensureManagedComposioCredentials,
   managedComposioAccess,
   managedComposioChildEnvironment,
-  normalizeManagedComposioBrokerUrl,
+  resolveManagedComposioBrokerUrl,
 } from "./managed-composio.mjs";
 import {
   createManagedCompanionTunnel,
@@ -102,7 +102,6 @@ app.setPath(
 // 127.0.0.1 explicitly — vite binds IPv4; a bare "localhost" here can
 // resolve to ::1 and paint a black window
 const DEV_URL = process.env.ELECTRON_START_URL ?? "http://127.0.0.1:5199";
-const DEFAULT_COMPOSIO_BROKER_URL = "https://openmausbot-composio.milindsoni201.workers.dev";
 let SERVER_PORT = 8799;
 const APP_ICON = path.join(__dirname, "resources/app-icon.png");
 let desktopViewerWindow = null;
@@ -463,11 +462,7 @@ async function secureWorkspaceConfig() {
 }
 
 function composioBrokerUrl() {
-  const configured = process.env.CREWBOT_COMPOSIO_BROKER_URL?.trim()
-    || process.env.OMB_COMPOSIO_BROKER_URL?.trim();
-  return normalizeManagedComposioBrokerUrl(
-    configured || (app.isPackaged ? DEFAULT_COMPOSIO_BROKER_URL : ""),
-  );
+  return resolveManagedComposioBrokerUrl(process.env);
 }
 
 // The packaged app has no terminal: everything about the server child's life

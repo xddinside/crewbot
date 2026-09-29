@@ -1,12 +1,10 @@
 // Sign in with your email on a hosted server. The emailed code comes from the
-// OpenMausBot control plane (the account service the desktop companion and
-// `openmausbot login` already use), and this server decides who is welcome
+// explicitly configured control plane, and this server decides who is welcome
 // with an allow-list its owner controls. The result is an ordinary local
 // session, the same thing a pairing code produces, so every gate applies.
 //
 // Why through the control plane rather than a mail provider per server: a
-// self-hoster then needs no email credentials at all; the code arrives from
-// accounts.openmausbot.com. The exchange happens server-side, so a browser
+// self-hoster then needs no email credentials at all. The exchange happens server-side, so a browser
 // only ever talks to this server, and a server with an empty allow-list does
 // not expose the routes.
 import { resolveCompanionControlPlaneURL } from "../electron/companion-account-service.mjs";
@@ -61,16 +59,17 @@ export function createEmailSignIn(options: {
 }): EmailSignIn {
   const env = options.env ?? process.env;
   const allow = () => (typeof options.allow === "function" ? options.allow() : options.allow);
+  const configuredURL = () => resolveCompanionControlPlaneURL({ environment: env });
   let client: ControlPlaneClient | null = options.client ?? null;
   const controlPlane = (): ControlPlaneClient => {
     if (client) return client;
-    const url = resolveCompanionControlPlaneURL({ isPackaged: true, environment: env });
-    if (!url) throw new Error("OMB_CONTROL_PLANE_URL is set but is not an https address");
+    const url = configuredURL();
+    if (!url) throw new Error("Set CREWBOT_CONTROL_PLANE_URL to a valid fork-owned endpoint to enable hosted sign-in");
     client = createControlPlaneClient({ baseURL: url, fetchImpl: options.fetchImpl });
     return client;
   };
   return {
-    enabled: () => signInEnabled(allow()),
+    enabled: () => signInEnabled(allow()) && Boolean(configuredURL()),
     async start(rawEmail) {
       const email = normalizeAccountEmail(rawEmail);
       if (!email) return { ok: false, status: 400, error: "enter a valid email address" };

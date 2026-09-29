@@ -73,12 +73,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.next }}
         run: |
-          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "::error::v$VERSION already exists in $GITHUB_REPOSITORY"
-            exit 1
-          fi
-          if gh release view "v$VERSION" --repo milind-soni/openmausbot-releases > /dev/null 2>&1; then
-            echo "::error::v$VERSION already exists in the legacy updater mirror"
+          if gh release view "crewbot-v$VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::error::crewbot-v$VERSION already exists in $GITHUB_REPOSITORY"
             exit 1
           fi
           if git ls-remote --exit-code --heads origin "release/v$VERSION" > /dev/null 2>&1; then
@@ -110,7 +106,7 @@ jobs:
             --base main \
             --head "release/v$VERSION" \
             --title "chore(release): bump version to $VERSION" \
-            --body "Bumps OpenMausBot to \`$VERSION\`. Merging this PR automatically starts the existing release workflow and assembles a draft release from the exact merge commit.")
+            --body "Bumps crewbot to \`$VERSION\`. Merging this PR automatically starts the existing release workflow and assembles a draft release from the exact merge commit.")
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "### Release PR" >> "$GITHUB_STEP_SUMMARY"
           echo "$url" >> "$GITHUB_STEP_SUMMARY"

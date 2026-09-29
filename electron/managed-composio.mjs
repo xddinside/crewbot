@@ -14,6 +14,14 @@ export function normalizeManagedComposioBrokerUrl(value) {
   return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
 }
 
+/** Resolve an explicitly configured broker; the packaged app has no inherited host. */
+export function resolveManagedComposioBrokerUrl(environment = process.env) {
+  const configured = Object.hasOwn(environment, "CREWBOT_COMPOSIO_BROKER_URL")
+    ? environment.CREWBOT_COMPOSIO_BROKER_URL
+    : environment.OMB_COMPOSIO_BROKER_URL;
+  return normalizeManagedComposioBrokerUrl(configured);
+}
+
 export function managedComposioAccess(brokerUrl, credentials) {
   const url = normalizeManagedComposioBrokerUrl(brokerUrl);
   const token = credentials?.composioBrokerToken;

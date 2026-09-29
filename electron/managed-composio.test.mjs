@@ -4,11 +4,19 @@ import {
   managedComposioAccess,
   managedComposioChildEnvironment,
   normalizeManagedComposioBrokerUrl,
+  resolveManagedComposioBrokerUrl,
 } from "./managed-composio.mjs";
 
 const TOKEN = "a".repeat(64);
 
 describe("managed Composio desktop registration", () => {
+  it("has no packaged default and uses only an explicit validated override", () => {
+    expect(resolveManagedComposioBrokerUrl({})).toBe("");
+    expect(resolveManagedComposioBrokerUrl({ CREWBOT_COMPOSIO_BROKER_URL: "https://broker.crewbot.example/" })).toBe("https://broker.crewbot.example");
+    expect(resolveManagedComposioBrokerUrl({ OMB_COMPOSIO_BROKER_URL: "https://legacy-fork.example/" })).toBe("https://legacy-fork.example");
+    expect(resolveManagedComposioBrokerUrl({ CREWBOT_COMPOSIO_BROKER_URL: "", OMB_COMPOSIO_BROKER_URL: "https://legacy-fork.example" })).toBe("");
+    expect(resolveManagedComposioBrokerUrl({ CREWBOT_COMPOSIO_BROKER_URL: "http://broker.example" })).toBe("");
+  });
   it("publishes only a complete broker credential", () => {
     expect(managedComposioAccess("https://broker.example/", { composioBrokerToken: TOKEN })).toEqual({
       url: "https://broker.example",
@@ -56,6 +64,8 @@ describe("managed Composio desktop registration", () => {
       managedComposioChildEnvironment("http://[::1]:8787", credentials, { PATH: "/usr/bin" }),
     ).toEqual({
       PATH: "/usr/bin",
+      CREWBOT_COMPOSIO_BROKER_URL: "http://[::1]:8787",
+      CREWBOT_COMPOSIO_BROKER_TOKEN: TOKEN,
       OMB_COMPOSIO_BROKER_URL: "http://[::1]:8787",
       OMB_COMPOSIO_BROKER_TOKEN: TOKEN,
     });
