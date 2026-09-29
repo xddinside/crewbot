@@ -10,19 +10,25 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(SERVER_DIR, "..");
-const PORT = 18800 + Math.floor(Math.random() * 10_000);
-const WEBHOOK_PORT = 39000 + Math.floor(Math.random() * 10_000);
-const CLI_PORT = 28800 + Math.floor(Math.random() * 10_000);
-const CLI_WEBHOOK_PORT = 49000 + Math.floor(Math.random() * 10_000);
+let PORT = 0;
+let WEBHOOK_PORT = 0;
+let CLI_PORT = 0;
+let CLI_WEBHOOK_PORT = 0;
 
 let home: string;
 let child: ChildProcess;
 let stderr = "";
 
 beforeAll(async () => {
+  const basePort = await freePortBlock([0, 1, 2, 3]);
+  PORT = basePort;
+  WEBHOOK_PORT = basePort + 1;
+  CLI_PORT = basePort + 2;
+  CLI_WEBHOOK_PORT = basePort + 3;
   home = mkdtempSync(join(tmpdir(), "omb-legacy-test-"));
   const legacy = join(home, ".opengrokbot");
   mkdirSync(legacy, { recursive: true });

@@ -9,6 +9,7 @@ import { applyStartupPreferences, formatSessions, pairingBlock, parseArgs, qrToS
 import { SetupCancelled } from "./cli-prompts.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { startControlPlaneStub } from "./testing/control-plane-stub.ts";
+import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const setup = vi.hoisted(() => ({ migrateLegacyDataDir: vi.fn(), runSetup: vi.fn(), isSetupComplete: vi.fn(), readCliStartup: vi.fn(), saveCliStartup: vi.fn() }));
@@ -140,7 +141,7 @@ describe("crewbot command line", () => {
 
   it("serve: starts the server, prints the pairing link, and stops on SIGTERM", async () => {
     const home = mkdtempSync(join(tmpdir(), "omb-cli-serve-"));
-    const port = 21000 + Math.floor(Math.random() * 9000);
+    const port = await freePortBlock([0, 1]);
     const child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmausbot.ts"), "serve", "--port", String(port), "--data-dir", join(home, "data"), "--label", "cli test", "--public-url", "https://mini.example"], {
       cwd: join(SERVER_DIR, ".."),
       env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, OMB_WEBHOOK_PORT: String(port + 1), OMB_BROWSER_CONNECTION: join(home, "browser-connection.json") },
@@ -392,7 +393,7 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
 
   it("refuses without an account and says what to do; no local-only fallback", async () => {
     const home = mkdtempSync(join(tmpdir(), "omb-cli-tunnel-none-"));
-    const port = 21000 + Math.floor(Math.random() * 9000);
+    const port = await freePortBlock([0, 1]);
     const child = cli(["serve", "--tunnel", "--port", String(port), "--data-dir", join(home, "data")], { HOME: home, USERPROFILE: home });
     let err = "";
     child.stderr?.on("data", (chunk) => (err += String(chunk)));
@@ -418,8 +419,8 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
     const stub = await startControlPlaneStub();
     const fake = join(home, "cloudflared");
     writeFileSync(fake, "#!/bin/sh\nexec sleep 300\n", { mode: 0o755 });
-    const port = 21000 + Math.floor(Math.random() * 9000);
-    const originPort = 31000 + Math.floor(Math.random() * 9000);
+    const port = await freePortBlock([0, 1]);
+    const originPort = await freePortBlock([0], 31_000, 9_000);
     const fleetEnv = {
       HOME: home,
       USERPROFILE: home,
@@ -484,8 +485,8 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
     const quiet = { log: () => undefined, error: () => undefined, ask: async () => stub.otp };
     expect(await runLogin({ command: "login", port: 1, dataDir, tailscale: false, tunnel: false, client: false, pair: true, json: false, email: "cli@example.test" }, quiet)).toBe(0);
     vi.unstubAllEnvs();
-    const port = 21000 + Math.floor(Math.random() * 9000);
-    const originPort = 31000 + Math.floor(Math.random() * 9000);
+    const port = await freePortBlock([0, 1]);
+    const originPort = await freePortBlock([0], 31_000, 9_000);
     const child = cli(["serve", "--tunnel", "--port", String(port), "--data-dir", dataDir, "--label", "tunnel test"], {
       HOME: home,
       USERPROFILE: home,
@@ -675,7 +676,7 @@ describe.skipIf(process.platform === "win32")("serve --domain", () => {
     mkdirSync(dataDir, { recursive: true });
     const fake = join(home, "fake-caddy");
     writeFileSync(fake, `#!/bin/sh\necho "$@" > "${join(home, "caddy-args.txt")}"\necho $$ > "${join(home, "caddy.pid")}"\nexec sleep 300\n`, { mode: 0o755 });
-    const port = 21000 + Math.floor(Math.random() * 9000);
+    const port = await freePortBlock([0, 1]);
     const child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmausbot.ts"), "serve", "--domain", "omb.example.test", "--port", String(port), "--data-dir", dataDir], {
       cwd: join(SERVER_DIR, ".."),
       env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, OMB_WEBHOOK_PORT: String(port + 1), OMB_BROWSER_CONNECTION: join(home, "browser-connection.json"), OMB_CADDY_PATH: fake },
