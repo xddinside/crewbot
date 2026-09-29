@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterAll, afterEach } from "vitest";
 
 import { removeTempDir } from "./cleanup.ts";
-import { assertDataDirIsolated, resolveDataDir } from "./data-dir-guard.ts";
+import { assertDataDirIsolated } from "./data-dir-guard.ts";
 
 // Captured before the redirect below, because after it `homedir()` can no longer
 // tell us what the invoking user's real home was. Every assertion in this file
@@ -40,7 +40,20 @@ process.env.OMB_COMPANION_DIR = join(home, ".openmausbot-companion");
 // and a test that cleans its data dir deletes whatever it points at, live data
 // included. Both are cheap to check now and impossible to check after the
 // damage, so the run refuses to start instead. Throws DataDirIsolationError.
-assertDataDirIsolated(resolveDataDir(process.env, home), home, realHome);
+//
+// What this checks is the one thing globalSetup cannot: the value this worker's
+// config module actually resolved. globalSetup runs in the main process, before
+// the redirect, and only inspects the env overrides — it cannot see whether
+// `homedir()` agrees with `home`, nor whether config.ts bound DATA_DIR against
+// the real home. Re-deriving the path from env here would be tautological: the
+// deletes above leave no override, so the mirror can only ever yield
+// `home/.crewbot` and can never fail. Ask the module instead.
+//
+// The import must stay dynamic and must sit below the redirect. A static import
+// at the top of this file would hoist config.ts above it, bind DATA_DIR to the
+// real home, and make this assertion fire on every run for the wrong reason.
+const { DATA_DIR } = await import("../config.ts");
+assertDataDirIsolated(DATA_DIR, home, realHome);
 
 // Product code follows navigator.language, which makes English assertions
 // depend on the developer or CI host locale. Keep the shared default stable;
