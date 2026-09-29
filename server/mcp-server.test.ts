@@ -5,7 +5,6 @@ import {
   probeBaseUrls,
   processMcpMessage,
   request,
-  resolveBaseUrl,
   TOOLS,
   validateBaseUrl,
   validateToolArguments,
@@ -24,10 +23,9 @@ function jsonResponse(body: unknown, options: { ok?: boolean; status?: number; s
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
   globalThis.fetch = ORIGINAL_FETCH;
-  delete process.env.OPENMAUSBOT_TOKEN;
-  delete process.env.ALLOW_INSECURE_HTTP;
 });
 
 describe("MCP JSON-RPC protocol", () => {
@@ -717,6 +715,7 @@ describe("MCP tool execution", () => {
 
 describe("connection security and discovery", () => {
   it("accepts loopback HTTP and HTTPS origins, but rejects unsafe URL shapes", () => {
+    vi.stubEnv("ALLOW_INSECURE_HTTP", "");
     expect(validateBaseUrl("http://127.0.0.1:8799/")).toBe("http://127.0.0.1:8799");
     expect(validateBaseUrl("http://[::1]:8799")).toBe("http://[::1]:8799");
     expect(validateBaseUrl("https://maus.example.com")).toBe("https://maus.example.com");
@@ -744,7 +743,7 @@ describe("connection security and discovery", () => {
   });
 
   it("rejects successful non-JSON responses and sends an optional bearer token", async () => {
-    process.env.OPENMAUSBOT_TOKEN = "proxy-token";
+    vi.stubEnv("OPENMAUSBOT_TOKEN", "proxy-token");
     globalThis.fetch = vi.fn(async (_url: any, options: any) => {
       expect(new Headers(options.headers).get("Authorization")).toBe("Bearer proxy-token");
       return { ...jsonResponse({}), json: vi.fn(async () => { throw new Error("not json"); }) };
@@ -764,8 +763,15 @@ describe("connection security and discovery", () => {
   });
 
   it("requires an explicit destination before sending a bearer token", async () => {
-    process.env.CREWBOT_TOKEN = "proxy-token";
-    await expect(resolveBaseUrl()).rejects.toThrow("Set CREWBOT_URL or CREWBOT_PORT when using CREWBOT_TOKEN");
+    vi.stubEnv("CREWBOT_URL", "");
+    vi.stubEnv("OPENMAUSBOT_URL", "");
+    vi.stubEnv("CREWBOT_PORT", "");
+    vi.stubEnv("OMB_PORT", "");
+    vi.stubEnv("CREWBOT_TOKEN", "proxy-token");
+    vi.stubEnv("OPENMAUSBOT_TOKEN", "");
+    vi.resetModules();
+    const { resolveBaseUrl: resolveIsolatedBaseUrl } = await import("../scripts/mcp-server.ts");
+    await expect(resolveIsolatedBaseUrl()).rejects.toThrow("Set CREWBOT_URL or CREWBOT_PORT when using CREWBOT_TOKEN");
   });
 
   it("validates direct tool arguments", () => {
