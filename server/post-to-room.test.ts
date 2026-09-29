@@ -18,6 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { resolveDataDir } from "./testing/data-dir-guard.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { freePortBlock } from "./testing/ports.ts";
 
@@ -185,9 +186,9 @@ beforeAll(async () => {
   home = mkdtempSync(join(tmpdir(), "omb-post-to-room-"));
   fakeClaudeDump = join(home, "fake-claude-dump.json");
   mentionerDump = join(home, "mentioner-dump.json");
-  mkdirSync(join(home, ".openmausbot"), { recursive: true });
+  mkdirSync(resolveDataDir({}, home), { recursive: true });
   writeFileSync(
-    join(home, ".openmausbot", "config.json"),
+    join(resolveDataDir({}, home), "config.json"),
     JSON.stringify({
       instances: {
         claude: { driver: "claudeAgent", displayName: "Fixture Claude", config: { cli: FAKE_CLAUDE_CLI } },
@@ -460,8 +461,12 @@ describe("post_to_room", () => {
     const posted = await post(poster.id, poster.threadId, room.id, "deploy is green");
     expect(posted.status, JSON.stringify(posted.body)).toBe(201);
 
-    // a dispatched turn spawns the fake CLI, which writes this file
-    await new Promise((wake) => setTimeout(wake, 2_000));
+    // The post endpoint is the linearization point: it appends a bot message
+    // and returns without kicking responder selection. Check the durable room
+    // state and the public busy state immediately after that response rather
+    // than waiting an arbitrary interval for a turn that must never start.
+    const bots = (await api("GET", "/api/bots?messages=0")).body.bots;
+    expect(bots.find((bot: { id: string }) => bot.id === listener.id)?.busy).toBe(false);
     expect(existsSync(fakeClaudeDump), "post_to_room started a turn").toBe(false);
 
     const roomMessages = await messagesOf(room.threadId);

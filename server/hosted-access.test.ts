@@ -7,12 +7,14 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { resolveDataDir } from "./testing/data-dir-guard.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { SessionRegistry } from "./sessions.ts";
 import { HOSTED_CONTRACT_HEADER, HOSTED_CONTRACT_METADATA } from "./hosted-contract.ts";
+import { freePortBlock } from "./testing/ports.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const PORT = 35000 + Math.floor(Math.random() * 5000);
+let PORT = 0;
 const HOST = "acme.example.test";
 const EMAIL = "member@example.test";
 let home: string;
@@ -54,9 +56,10 @@ async function restart(env: NodeJS.ProcessEnv = {}) {
 }
 
 beforeAll(async () => {
+  PORT = await freePortBlock([0, 1]);
   home = mkdtempSync(join(tmpdir(), "omb-hosted-server-"));
   stateFile = join(home, "portal-fixture.json"); state();
-  const data = join(home, ".crewbot");
+  const data = resolveDataDir({}, home);
   const layer = join(home, "enterprise");
   mkdirSync(join(layer, "server"), { recursive: true });
   mkdirSync(join(home, "static"));
@@ -157,7 +160,7 @@ describe("hosted bridge in the full server", () => {
   it("uses explicit portal membership without local allow-list synchronization and still revokes quiet streams", async () => {
     await waitForExit(child, { signal: "SIGTERM" });
     state();
-    writeFileSync(join(home, ".crewbot", "config.json"), JSON.stringify({ signIn: { admins: [], members: [] }, instances: { fixture: { driver: "hosted-access-test-shadow" } } }));
+    writeFileSync(join(resolveDataDir({}, home), "config.json"), JSON.stringify({ signIn: { admins: [], members: [] }, instances: { fixture: { driver: "hosted-access-test-shadow" } } }));
     child = spawn(process.execPath, [join(ROOT, "server/index.ts")], { cwd: ROOT, env: { ...fixtureEnv, OMB_ADMIN_MEMBERSHIP: "portal" }, stdio: ["ignore", "pipe", "pipe"] });
     child.stderr?.on("data", (chunk) => log += chunk);
     await expect.poll(async () => {

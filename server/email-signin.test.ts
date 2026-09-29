@@ -9,13 +9,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { resolveDataDir } from "./testing/data-dir-guard.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { startControlPlaneStub, type ControlPlaneStub } from "./testing/control-plane-stub.ts";
 import { openSse } from "./testing/sse.ts";
+import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(SERVER_DIR, "..");
-const PORT = 24000 + Math.floor(Math.random() * 5000);
+let PORT = 0;
 const HOST = "agentada.test";
 
 let home: string;
@@ -89,13 +91,14 @@ async function openEvents(cookie: string) {
 }
 
 beforeAll(async () => {
+  PORT = await freePortBlock([0, 1]);
   stub = await startControlPlaneStub();
   home = mkdtempSync(join(tmpdir(), "omb-email-signin-"));
   const staticDir = join(home, "static");
-  mkdirSync(join(home, ".crewbot"), { recursive: true });
+  mkdirSync(resolveDataDir({}, home), { recursive: true });
   mkdirSync(join(staticDir, "assets"), { recursive: true });
   writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>Served UI</title>");
-  writeFileSync(join(home, ".crewbot", "config.json"), JSON.stringify({
+  writeFileSync(join(resolveDataDir({}, home), "config.json"), JSON.stringify({
     instances: { fixture: { driver: "email-signin-test-shadow" } },
     signIn: { admins: ["her@example.test", "@agentada.test"], members: ["staff@example.test"] },
   }));
@@ -262,7 +265,7 @@ describe("sign in with your email on a hosted server", () => {
   it("ends an idle email stream after an external allow-list removal and never revives the old cookie", async () => {
     const cookie = await signIn("staff@example.test");
     const stream = await openEvents(cookie);
-    const configPath = join(home, ".crewbot", "config.json");
+    const configPath = join(resolveDataDir({}, home), "config.json");
     const config = JSON.parse(readFileSync(configPath, "utf8"));
     try {
       // The fleet agent and CLI update this file outside the running server.

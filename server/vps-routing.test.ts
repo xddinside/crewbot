@@ -31,11 +31,13 @@ import {
 } from "./container-computer.ts";
 import { VPS_CONTAINER_LABEL, VPS_IMAGE, VPS_MANAGED_LABEL, VPS_VIEWER_LABEL, vpsContainerName } from "./vps-computer.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { resolveDataDir } from "./testing/data-dir-guard.ts";
+import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const FAKE_CLI = join(SERVER_DIR, "testing", "fake-acp-cli.ts");
-const PORT = 18800 + Math.floor(Math.random() * 10_000);
-const BASE = `http://127.0.0.1:${PORT}`;
+let PORT = 0;
+let BASE = "";
 const IMAGE_ID = `sha256:${"a".repeat(64)}`;
 const CONTAINER_ID = "b".repeat(64);
 
@@ -172,9 +174,11 @@ posixOnly("VPS turn routing e2e (fake ACP fleet + fake docker over SSH)", () => 
   };
 
   beforeAll(async () => {
+    PORT = await freePortBlock([0, 1]);
+    BASE = `http://127.0.0.1:${PORT}`;
     chmodSync(FAKE_CLI, 0o755);
     home = mkdtempSync(join(tmpdir(), "omb-vps-routing-"));
-    mkdirSync(join(home, ".openmausbot"), { recursive: true });
+    mkdirSync(resolveDataDir({}, home), { recursive: true });
     const fakeBin = join(home, "fakebin");
     mkdirSync(fakeBin, { recursive: true });
     gateFile = join(home, "turn.gate");
@@ -203,7 +207,7 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
     writeFileSync(dockerLog, "");
 
     writeFileSync(
-      join(home, ".openmausbot", "config.json"),
+      join(resolveDataDir({}, home), "config.json"),
       JSON.stringify({
         instances: {
           vps: {

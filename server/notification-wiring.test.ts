@@ -10,14 +10,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { resolveDataDir } from "./testing/data-dir-guard.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { openSse } from "./testing/sse.ts";
+import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const FAKE_CLI = join(SERVER_DIR, "testing", "fake-acp-cli.ts");
-const PORT = 18800 + Math.floor(Math.random() * 10_000);
-const WEBHOOK_PORT = 39000 + Math.floor(Math.random() * 10_000);
-const BASE = `http://127.0.0.1:${PORT}`;
+let PORT = 0;
+let WEBHOOK_PORT = 0;
+let BASE = "";
 const posixOnly = describe.skipIf(process.platform === "win32");
 
 let child: ChildProcess;
@@ -53,11 +55,14 @@ const api = async (
 
 posixOnly("routine failure notification wiring", () => {
   beforeAll(async () => {
+    PORT = await freePortBlock([0, 1]);
+    WEBHOOK_PORT = PORT + 1;
+    BASE = `http://127.0.0.1:${PORT}`;
     chmodSync(FAKE_CLI, 0o755);
     home = mkdtempSync(join(tmpdir(), "omb-notifications-e2e-"));
-    mkdirSync(join(home, ".openmausbot"), { recursive: true });
+    mkdirSync(resolveDataDir({}, home), { recursive: true });
     writeFileSync(
-      join(home, ".openmausbot", "config.json"),
+      join(resolveDataDir({}, home), "config.json"),
       JSON.stringify({
         instances: {
           grok: {

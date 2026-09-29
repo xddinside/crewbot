@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
+import { resolveDataDir } from "./testing/data-dir-guard.ts";
 
 // server/testing/setup.ts gives every worker a throwaway HOME before imports;
 // keeping DATA_DIR at its default still isolates this private file from live
@@ -38,7 +39,7 @@ const context = (ids: string[], deltaText = "delta") => ({
     sentMessages: Math.max(0, ids.length - 1),
   }),
 });
-const records = () => JSON.parse(readFileSync(join(process.env.HOME!, ".crewbot", "room-continuations.json"), "utf8")).records;
+const records = () => JSON.parse(readFileSync(join(resolveDataDir({}, process.env.HOME!), "room-continuations.json"), "utf8")).records;
 const initialContinuity = process.env.OMB_ROOM_SESSION_CONTINUITY;
 
 // Invalidation is intentionally feature-flagged. Keep the module-level unit
@@ -330,7 +331,7 @@ describe("room continuation planning", () => {
   });
 
   it("persists private state with restrictive permissions and deletion removes owners", () => {
-    const privateFile = join(process.env.HOME!, ".crewbot", "room-continuations.json");
+    const privateFile = join(resolveDataDir({}, process.env.HOME!), "room-continuations.json");
     if (process.platform !== "win32") expect(statSync(privateFile).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(privateFile, "utf8"))).toHaveProperty("version", 1);
     deleteThread(owner.groupId, owner.threadId);
