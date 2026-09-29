@@ -79,15 +79,16 @@ describe("migrateLegacyDataDir visibility", () => {
   });
 
   it("warns about a second legacy dir left behind after migrating the first", () => {
-    const first = makeLegacy(".opengrokbot");
-    const second = makeLegacy(".openmausbot");
+    const migrated = makeLegacy(".openmausbot");
+    const stranded = makeLegacy(".opengrokbot");
     const dest = join(home, ".crewbot");
 
     migrateLegacyDataDir(dest);
 
-    expect(errors.join("\n")).toContain("left behind");
-    expect(errors.join("\n")).toContain(second);
-    expect(errors.join("\n")).not.toContain(first);
+    const warning = errors.join("\n");
+    expect(warning).toContain(`${stranded} was left behind`);
+    expect(warning).toContain(`${migrated} was migrated to ${dest}`);
+    expect(warning).not.toContain(`${migrated} was left behind`);
   });
 
   // The normal upgrade path must not gain noise.
