@@ -461,9 +461,12 @@ describe("post_to_room", () => {
     const posted = await post(poster.id, poster.threadId, room.id, "deploy is green");
     expect(posted.status, JSON.stringify(posted.body)).toBe(201);
 
-    // The route appends a bot message without kicking responder selection, so
-    // inspect the durable message and busy state after the response instead
-    // of waiting an arbitrary interval for a turn that must never start.
+    // The post endpoint is the linearization point: it appends a bot message
+    // and returns without kicking responder selection. Check the durable room
+    // state and the public busy state immediately after that response rather
+    // than waiting an arbitrary interval for a turn that must never start.
+    const bots = (await api("GET", "/api/bots?messages=0")).body.bots;
+    expect(bots.find((bot: { id: string }) => bot.id === listener.id)?.busy).toBe(false);
     expect(existsSync(fakeClaudeDump), "post_to_room started a turn").toBe(false);
 
     const roomMessages = await messagesOf(room.threadId);
