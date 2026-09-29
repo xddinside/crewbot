@@ -1,4 +1,4 @@
-// Private receipts for the OpenMausBot instruction sections an ACP native
+// Private receipts for the crewbot instruction sections an ACP native
 // session has accepted. The receipt contains no prompt text and is keyed by
 // the complete provider/session identity so two bots cannot share state.
 import { createHash } from "node:crypto";

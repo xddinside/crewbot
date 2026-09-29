@@ -1,4 +1,4 @@
-# OpenMausBot harness server — hosted/self-hosted tenant image.
+# CrewBot harness server — hosted/self-hosted tenant image.
 #
 # Two stages: build the renderer + the self-contained server bundle, then ship
 # only those artifacts on a slim Node runtime. The server keeps binding
@@ -6,11 +6,11 @@
 # model); deploy/docker-compose.yml puts Caddy in the same network namespace
 # to terminate TLS and authentication at the edge.
 #
-#   docker build -t openmausbot .
-#   docker build --build-arg ENGINES="@anthropic-ai/claude-code @openai/codex" -t openmausbot .
+#   docker build -t crewbot .
+#   docker build --build-arg ENGINES="@anthropic-ai/claude-code @openai/codex" -t crewbot .
 #
 # HOME is the /data volume, so engine CLI logins (~/.claude, ~/.codex, ...) and
-# OpenMausBot's own state (~/.openmausbot) persist across container restarts.
+# CrewBot's own state (~/.crewbot) persist across container restarts.
 
 FROM node:24-bookworm-slim AS build
 WORKDIR /src
@@ -64,7 +64,8 @@ RUN npm install -g agent-browser@${AGENT_BROWSER_VERSION} \
 # which may be an existing mounted volume. Session state still lives in HOME.
 ENV HOME=/data \
     AGENT_BROWSER_EXECUTABLE_PATH=/opt/openmausbot-browser/chrome \
-    OMB_DATA_DIR=/data/.openmausbot \
+    CREWBOT_DATA_DIR=/data/.crewbot \
+    OMB_DATA_DIR=/data/.crewbot \
     OMB_STATIC_DIR=/app/dist \
     OMB_PORT=8799 \
     OMB_WEBHOOK_PORT=8800 \

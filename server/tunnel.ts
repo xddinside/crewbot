@@ -139,7 +139,7 @@ export function platformName(platform: NodeJS.Platform = process.platform): "dar
 export interface TunnelAccount {
   service: CompanionAccountService;
   credentials: TunnelCredentials;
-  /** "" when OMB_CONTROL_PLANE_URL is set to something unusable. */
+  /** "" when the crewbot control-plane endpoint is not configured or unusable. */
   controlPlane: string;
 }
 
@@ -168,20 +168,21 @@ export function createTunnelAccount(options: {
 }
 
 // ── a fleet's credential: no account file, no emailed code ───────────────
-export const FLEET_CREDENTIAL_ENV = "OMB_INSTALLATION_CREDENTIAL";
+export const FLEET_CREDENTIAL_ENV = "CREWBOT_INSTALLATION_CREDENTIAL";
+export const LEGACY_FLEET_CREDENTIAL_ENV = "OMB_INSTALLATION_CREDENTIAL";
 
 /** A container the fleet starts carries its installation credential in the
  * environment. Nothing is written to disk and nobody types a code; the
  * address and connector token are fetched fresh at every start. */
 export function fleetCredential(env: NodeJS.ProcessEnv = process.env): string | null {
-  const value = env[FLEET_CREDENTIAL_ENV]?.trim();
+  const value = (env[FLEET_CREDENTIAL_ENV] ?? env[LEGACY_FLEET_CREDENTIAL_ENV])?.trim();
   return value ? value : null;
 }
 
 export async function fleetAccess(options: { credential: string; env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch }): Promise<ManagedTunnelAccess> {
   const env = options.env ?? process.env;
   const controlPlane = resolveCompanionControlPlaneURL({ isPackaged: true, environment: env });
-  if (!controlPlane) throw new Error("OMB_CONTROL_PLANE_URL is set but is not an https address");
+  if (!controlPlane) throw new Error("Set CREWBOT_CONTROL_PLANE_URL to a valid crewbot-owned HTTPS endpoint to enable hosted access");
   const client = createControlPlaneClient({ baseURL: controlPlane, fetchImpl: options.fetchImpl });
   try {
     const { endpoint, connectorToken } = await client.ensureEndpoint(options.credential);

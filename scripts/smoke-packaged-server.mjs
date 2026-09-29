@@ -60,7 +60,7 @@ const fixtureEnv = {
   XDG_CONFIG_HOME: join(home, ".config"),
   XDG_CACHE_HOME: join(home, ".cache"),
   XDG_DATA_HOME: join(home, ".local", "share"),
-  OMB_DATA_DIR: join(home, ".openmausbot"),
+  CREWBOT_DATA_DIR: join(home, ".crewbot"),
   OMB_PORT: String(port),
   ...(browserBundle ? {
     OMB_RESOURCES_PATH: staging,

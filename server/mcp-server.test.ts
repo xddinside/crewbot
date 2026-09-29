@@ -311,16 +311,16 @@ describe("MCP tool execution", () => {
 
     await expect(handleToolCall("update_bot_profile", {
       bot_id: "bot-1", name: "Mira",
-    }, fetcher)).rejects.toThrow("OpenMausBot did not return the updated bot");
+    }, fetcher)).rejects.toThrow("crewbot did not return the updated bot");
     await expect(handleToolCall("update_channel", {
       channel_id: "channel-1", name: "Launch",
-    }, fetcher)).rejects.toThrow("OpenMausBot did not return the updated channel");
+    }, fetcher)).rejects.toThrow("crewbot did not return the updated channel");
     await expect(handleToolCall("create_task", {
       target_type: "bot", target_id: "bot-1", title: "Fresh",
-    }, fetcher)).rejects.toThrow("OpenMausBot did not return the created task");
+    }, fetcher)).rejects.toThrow("crewbot did not return the created task");
     await expect(handleToolCall("rename_task", {
       target_type: "bot", target_id: "bot-1", task_id: "task-1", title: "Renamed",
-    }, fetcher)).rejects.toThrow("OpenMausBot did not return the renamed task");
+    }, fetcher)).rejects.toThrow("crewbot did not return the renamed task");
   });
 
   it("searches with encoded, bounded parameters", async () => {
@@ -726,6 +726,14 @@ describe("connection security and discovery", () => {
     expect(() => validateBaseUrl("http://0.0.0.0:8799")).toThrow("Insecure cleartext HTTP");
   });
 
+  it.each(["openmausbot", "crewbot"])("accepts the %s health identity for discovery and direct health", async (app) => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ app, static: true })) as any;
+    await expect(probeBaseUrls(["http://127.0.0.1:8799"])).resolves.toBe("http://127.0.0.1:8799");
+    await expect(handleToolCall("get_system_health", {}, async () => ({ app, static: true }))).resolves.toMatchObject({
+      status: "connected", app, packaged: true,
+    });
+  });
+
   it("skips a foreign process and discovers the real fallback port", async () => {
     globalThis.fetch = vi.fn(async (url: any) => {
       if (String(url).includes(":8799")) return jsonResponse({ app: "not-openmausbot" });
@@ -756,8 +764,8 @@ describe("connection security and discovery", () => {
   });
 
   it("requires an explicit destination before sending a bearer token", async () => {
-    process.env.OPENMAUSBOT_TOKEN = "proxy-token";
-    await expect(resolveBaseUrl()).rejects.toThrow("OPENMAUSBOT_URL or OMB_PORT");
+    process.env.CREWBOT_TOKEN = "proxy-token";
+    await expect(resolveBaseUrl()).rejects.toThrow("Set CREWBOT_URL or CREWBOT_PORT when using CREWBOT_TOKEN");
   });
 
   it("validates direct tool arguments", () => {

@@ -47,7 +47,7 @@ if (typeof sdk.EmbeddedCuaDriverHost !== "function") {
   process.exit(1);
 }
 
-const host = new sdk.EmbeddedCuaDriverHost(binary, "com.openmausbot.app");
+const host = new sdk.EmbeddedCuaDriverHost(binary, "dev.xddinside.crewbot");
 try {
   const conn = await host.start({ signal: AbortSignal.timeout(15_000) });
   if (!conn?.socketPath) throw new Error("embedded host reported no socketPath");

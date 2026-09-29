@@ -36,6 +36,9 @@ export function resolveCompanionControlPlaneURL({
   isPackaged,
   environment = process.env,
 } = {}) {
+  if (Object.hasOwn(environment, "CREWBOT_CONTROL_PLANE_URL")) {
+    return normalizeControlPlaneURL(environment.CREWBOT_CONTROL_PLANE_URL);
+  }
   if (Object.hasOwn(environment, "OMB_CONTROL_PLANE_URL")) {
     return normalizeControlPlaneURL(environment.OMB_CONTROL_PLANE_URL);
   }
@@ -132,7 +135,7 @@ const FRIENDLY_MESSAGES = Object.freeze({
   unauthorized: "Your sign-in expired. Email yourself a new code to reconnect.",
   forbidden: "The secure connection request was not allowed. Try signing in again.",
   signed_out: "Your sign-in expired. Email yourself a new code to reconnect.",
-  network_unavailable: "OpenMausBot could not reach its secure connection service. Check your internet and try again.",
+  network_unavailable: "crewbot could not reach its secure connection service. Check your internet and try again.",
   rate_limited: "Too many attempts were made. Wait a little, then try again.",
   credential_rotation_rate_limited: "This computer was reconnected too often. Wait a little, then try again.",
   installation_limit_reached: "This account has reached its computer limit. Remove an old computer and try again.",

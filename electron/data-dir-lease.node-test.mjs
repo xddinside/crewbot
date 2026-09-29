@@ -130,7 +130,7 @@ test("an invalid child capability fails closed without acquisition or secret log
     assert.equal(result.code, 0);
     assert.equal(result.stderr, "");
     assert.deepEqual(JSON.parse(result.stdout), {
-      error: "The OpenMausBot desktop lease delegation is invalid; refusing to start to protect its state.",
+      error: "The crewbot desktop lease delegation is invalid; refusing to start to protect its state.",
       consumed: true,
     });
     assert.equal(result.stdout.includes(invalidCapability), false);
@@ -429,6 +429,14 @@ test("a lease left behind by an earlier boot is retired even though its pid is l
   const lease = acquireDataDirLease(dataDir);
   assert.equal(lease.ownerPid, process.pid);
   assert.equal(lease.release(), true);
+});
+
+test("an old binary's lease blocks a new binary in an explicitly shared OMB_DATA_DIR", () => {
+  const { dataDir } = temporaryDirectory();
+  const legacyLeasePath = path.join(dataDir, "openmausbot-server.lease");
+  plantOwner(dataDir, { pid: process.pid, token: randomUUID() });
+  assert.equal(JSON.parse(readFileSync(legacyLeasePath, "utf8")).pid, process.pid);
+  assert.throws(() => acquireDataDirLease(dataDir), /already using this data directory/i);
 });
 
 test("a live owner from the current boot still blocks a second instance", () => {

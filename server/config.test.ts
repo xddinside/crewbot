@@ -866,6 +866,19 @@ describe("credential env preference", () => {
     "OMB_TTS_KEY",
     "OMB_FISH_AUDIO_API_KEY",
     "OMB_OPENAI_IMAGE_KEY",
+    "OMB_CUSTOM_IMAGE_KEY",
+    "OMB_ANTHROPIC_API_KEY",
+    "OMB_ANTHROPIC_API_URL",
+    "CREWBOT_ANTHROPIC_API_KEY",
+    "CREWBOT_ANTHROPIC_API_URL",
+    "CREWBOT_TTS_KEY",
+    "CREWBOT_FISH_AUDIO_API_KEY",
+    "CREWBOT_OPENAI_IMAGE_KEY",
+    "CREWBOT_CUSTOM_IMAGE_KEY",
+    "OMB_SIGNIN_EMAILS",
+    "OMB_SIGNIN_MEMBER_EMAILS",
+    "CREWBOT_SIGNIN_EMAILS",
+    "CREWBOT_SIGNIN_MEMBER_EMAILS",
     "COMPOSIO_API_KEY",
   ] as const;
   let saved: Record<string, string | undefined>;
@@ -910,6 +923,22 @@ describe("credential env preference", () => {
     expect(cfg.opencodeGo).toEqual({ apiKey: "env-ocg" });
     expect(cfg.tts).toEqual({ key: "env-tts", fishKey: "env-fish", voice: "narrator" });
     expect(cfg.imageGen).toEqual({ key: "env-image" });
+  });
+
+  it("prefers CrewBot environment names while keeping OMB names as aliases", () => {
+    process.env.CREWBOT_ANTHROPIC_API_KEY = "crewbot-key";
+    process.env.OMB_ANTHROPIC_API_KEY = "legacy-key";
+    process.env.CREWBOT_ANTHROPIC_API_URL = "https://crewbot.example/v1";
+    process.env.OMB_ANTHROPIC_API_URL = "https://legacy.example/v1";
+    process.env.CREWBOT_TTS_KEY = "crewbot-tts";
+    process.env.OMB_TTS_KEY = "legacy-tts";
+    process.env.CREWBOT_SIGNIN_EMAILS = "crewbot@example.test";
+    process.env.OMB_SIGNIN_EMAILS = "legacy@example.test";
+    expect(loadConfig()).toMatchObject({
+      anthropic: { key: "crewbot-key", url: "https://crewbot.example/v1" },
+      tts: { key: "crewbot-tts" },
+      signIn: { admins: ["crewbot@example.test"] },
+    });
   });
 
   it("saves and removes the verified domain without replacing existing settings", () => {

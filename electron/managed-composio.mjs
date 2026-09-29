@@ -23,10 +23,14 @@ export function managedComposioAccess(brokerUrl, credentials) {
 
 export function managedComposioChildEnvironment(brokerUrl, credentials, environment) {
   const next = { ...environment };
+  delete next.CREWBOT_COMPOSIO_BROKER_URL;
+  delete next.CREWBOT_COMPOSIO_BROKER_TOKEN;
   delete next.OMB_COMPOSIO_BROKER_URL;
   delete next.OMB_COMPOSIO_BROKER_TOKEN;
   const access = managedComposioAccess(brokerUrl, credentials);
   if (access) {
+    next.CREWBOT_COMPOSIO_BROKER_URL = access.url;
+    next.CREWBOT_COMPOSIO_BROKER_TOKEN = access.token;
     next.OMB_COMPOSIO_BROKER_URL = access.url;
     next.OMB_COMPOSIO_BROKER_TOKEN = access.token;
   }

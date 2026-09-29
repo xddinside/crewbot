@@ -115,7 +115,7 @@ describe("login and logout against the control plane", () => {
     vi.stubEnv("OMB_CONTROL_PLANE_URL", "ftp://nope");
     const io = fakeIo([]);
     expect(await runLogin(options(dir, { email: "a@b.test" }), io.io)).toBe(1);
-    expect(io.err.join("\n")).toMatch(/OMB_CONTROL_PLANE_URL/);
+    expect(io.err.join("\n")).toMatch(/CREWBOT_CONTROL_PLANE_URL/);
   });
 });
 
@@ -218,7 +218,7 @@ describe("a fleet's credential in the environment", () => {
       expect(stub.calls).toContain("POST /v1/installations/self/endpoint");
       expect(stub.calls.some((call) => call.includes("/api/auth/"))).toBe(false);
       await expect(fleetAccess({ credential: `omb_install_${"x".repeat(22)}.${"y".repeat(43)}`, env })).rejects.toThrow(/rejected/);
-      await expect(fleetAccess({ credential, env: { ...env, OMB_CONTROL_PLANE_URL: "ftp://nope" } })).rejects.toThrow(/OMB_CONTROL_PLANE_URL/);
+      await expect(fleetAccess({ credential, env: { ...env, OMB_CONTROL_PLANE_URL: "ftp://nope" } })).rejects.toThrow(/CREWBOT_CONTROL_PLANE_URL/);
     } finally {
       await stub.close();
     }

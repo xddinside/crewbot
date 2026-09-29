@@ -221,7 +221,7 @@ describe("CLI startup lifecycle", () => {
     // A real server mints both encodings of one window; Android can only scan
     // the openmausbot:// one (android/core Connection.kt).
     const credential = `omb_pair_${"a".repeat(43)}`;
-    const inviteUrl = `openmausbot://pair?address=${encodeURIComponent(origin)}&token=${credential}&name=fixture`;
+    const inviteUrl = `crewbot://pair?address=${encodeURIComponent(origin)}&token=${credential}&name=fixture`;
     let healthRequests = 0;
     const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const address = String(url);
@@ -256,7 +256,7 @@ describe("CLI startup lifecycle", () => {
     expect(output).toContain(`web browser:   ${pairingUrl}`);
     expect(output).toMatch(/[▀▄█]/);
     expect(output).toContain(`Or open ${origin}/pair on your phone and enter the code.`);
-    expect(output).toContain("On Android, open the OpenMausBot app and scan the QR with its pairing scanner.");
+    expect(output).toContain("On Android, open the crewbot app and scan the QR with its pairing scanner.");
     // The QR rendered for an Android phone must be the app-scheme invite, not
     // the https link its scanner rejects.
     expect(output).toContain(qrToString(inviteUrl));

@@ -90,7 +90,7 @@ function piNativeLogMessage(message: Record<string, unknown>): Record<string, un
   };
 }
 
-/** Pi receives the complete OpenMausBot system block on every RPC prompt.
+/** Pi receives the complete crewbot system block on every RPC prompt.
  * Emit the dispatch receipt at that boundary rather than letting the server's
  * generic resume estimate claim that the block was omitted. */
 function appendPiPromptPlan(

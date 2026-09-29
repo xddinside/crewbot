@@ -53,7 +53,7 @@ export const HELP_UI = `renderer (needs a ui launch handle; every verb takes --u
   ui wait-settle --ui HANDLE [--timeout 30]
   ui help`;
 
-export const HELP = `control-omb — verify a running OpenMausBot instance through its shared MCP core
+export const HELP = `control-omb — verify a running crewbot instance through its shared MCP core
 
 read-only:
   doctor [--url URL]
@@ -65,7 +65,7 @@ read-only:
   wait --bot ID [--task ID] [--timeout 30] [--url URL]
   wait --channel ID [--task ID] [--timeout 30] [--url URL]
 
-mutating (an explicit --url or OPENMAUSBOT_URL/OMB_PORT is required):
+mutating (an explicit --url or CREWBOT_URL/CREWBOT_PORT is required; OPENMAUSBOT_URL/OMB_PORT remain aliases):
   new-bot --name NAME [--url URL]
   new-channel --name NAME --members ID,ID [--url URL]
   send --bot ID --text TEXT [--task ID] [--dry-run] [--url URL]
@@ -124,11 +124,13 @@ function positiveInteger(value: unknown, name: string, fallback: number, maximum
 function configuredUrl(raw: unknown, env: NodeJS.ProcessEnv, requiredForMutation: boolean): string | undefined {
   const explicit = typeof raw === "string" && raw.trim()
     ? raw.trim()
-    : env.OPENMAUSBOT_URL?.trim() || (env.OMB_PORT ? `http://127.0.0.1:${env.OMB_PORT}` : "");
+    : env.CREWBOT_URL?.trim()
+      || env.OPENMAUSBOT_URL?.trim()
+      || ((env.CREWBOT_PORT || env.OMB_PORT) ? `http://127.0.0.1:${env.CREWBOT_PORT || env.OMB_PORT}` : "");
   if (!explicit) {
     if (requiredForMutation) {
       throw new ControlOmbError(
-        "mutating commands require an explicit OpenMausBot instance",
+        "mutating commands require an explicit crewbot instance",
         "start `control-omb launch`, then pass its URL with --url",
       );
     }

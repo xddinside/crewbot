@@ -2,7 +2,7 @@
 // and Fish Audio (each with its own key), the Mac's built-in voices
 // (system-voices.ts, no key), and a local Chatterbox server
 // (chatterbox.ts, an address instead of a key). This file is only the part that reads
-// ~/.openmausbot/config.json, picks the engine, and decides whether there
+// ~/.crewbot/config.json, picks the engine, and decides whether there
 // is a voice at all.
 import type { AppConfig } from "../config.ts";
 import * as chatterbox from "./chatterbox.ts";

@@ -82,7 +82,7 @@ export function codexPredatesAstra(version: string): boolean {
 
 /** Ask the configured executable to update itself. This matters when the user
  * selected a non-PATH Codex: installing a second global copy would leave
- * OpenMausBot pointing at the old binary. */
+ * crewbot pointing at the old binary. */
 export function codexUpdateCommand(cli: string, platform: NodeJS.Platform = process.platform): string {
   if (cli === "codex") return "codex update";
   const trimmed = cli.trim();
@@ -161,7 +161,7 @@ export function managedCodexArgs(config: NonNullable<CodexConfig["managed"]>): s
 
 const QUESTION_TIMEOUT_NOTE = "No answer was given — use your best judgment.";
 const DENY_TIMEOUT_NOTE =
-  "OpenMausBot: nobody answered this permission request in time. Skip this action and finish what you can without it.";
+  "crewbot: nobody answered this permission request in time. Skip this action and finish what you can without it.";
 
 const skippedSseServers = new Set<string>();
 function noteSkippedSseServer(name: string): void {
@@ -821,7 +821,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       const settle = async (ok: boolean, stopReason: string | null) => {
         if (state.settled) return;
         state.settled = true;
-        for (const finish of Array.from(asks.values())) finish("deny", "OpenMausBot: the turn ended", "system");
+        for (const finish of Array.from(asks.values())) finish("deny", "crewbot: the turn ended", "system");
         for (const p of rpcPending.values()) p.reject(new Error("turn settled"));
         rpcPending.clear();
         const complete = () => {
@@ -1368,7 +1368,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           approvalParams = namedApprovalParams(approvalMode);
         }
         // Codex's `never` means "do not ask to escalate", not "grant every
-        // requested permission". Only the user's explicit OpenMausBot Full
+        // requested permission". Only the user's explicit crewbot Full
         // mode may synthesize approvals; Custom must preserve the sandbox
         // boundary from config.toml (for example never + read-only).
         autoAcceptPermissions = approvalMode === "full";

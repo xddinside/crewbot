@@ -14,7 +14,10 @@ describe("workspace credential migration", () => {
     } }, {});
     expect(result.credentials).toEqual({ openaiImageApiKey: "openai-only", customImageApiKey: "router-only" });
     expect(result.config.imageGen).toEqual({ provider: "custom", customUrl: "http://127.0.0.1:4000/v1", customModel: "local/image" });
-    expect(workspaceCredentialEnv(result.credentials)).toEqual({ OMB_OPENAI_IMAGE_KEY: "openai-only", OMB_CUSTOM_IMAGE_KEY: "router-only" });
+    expect(workspaceCredentialEnv(result.credentials)).toEqual({
+      OMB_OPENAI_IMAGE_KEY: "openai-only", CREWBOT_OPENAI_IMAGE_KEY: "openai-only",
+      OMB_CUSTOM_IMAGE_KEY: "router-only", CREWBOT_CUSTOM_IMAGE_KEY: "router-only",
+    });
   });
   it("moves every plaintext secret into the store and deletes the field", () => {
     const config = {
@@ -135,9 +138,19 @@ describe("workspace credential env", () => {
       XAI_API_KEY: "xai-secret",
       BOX_TOKEN: "box-secret",
       OMB_TTS_KEY: "tts-secret",
+      CREWBOT_TTS_KEY: "tts-secret",
       OMB_FISH_AUDIO_API_KEY: "fish-secret",
+      CREWBOT_FISH_AUDIO_API_KEY: "fish-secret",
       OPENCODE_API_KEY: "ocg-secret",
       OMB_OPENAI_IMAGE_KEY: "image-secret",
+      CREWBOT_OPENAI_IMAGE_KEY: "image-secret",
+    });
+  });
+
+  it("lets the encrypted store override a conflicting shell CREWBOT_ value", () => {
+    const shellEnv = { CREWBOT_TTS_KEY: "shell-value", OMB_TTS_KEY: "old-shell-value" };
+    expect({ ...shellEnv, ...workspaceCredentialEnv({ ttsKey: "encrypted-value" }) }).toEqual({
+      CREWBOT_TTS_KEY: "encrypted-value", OMB_TTS_KEY: "encrypted-value",
     });
   });
 
@@ -150,6 +163,8 @@ describe("workspace credential env", () => {
   it("covers every credential the migration table declares", () => {
     const credentials = Object.fromEntries(WORKSPACE_CREDENTIALS.map((c) => [c.name, `v-${c.name}`]));
     const env = workspaceCredentialEnv(credentials);
-    expect(Object.keys(env).sort()).toEqual(WORKSPACE_CREDENTIALS.map((c) => c.env).sort());
+    expect(Object.keys(env).sort()).toEqual(WORKSPACE_CREDENTIALS.flatMap((c) =>
+      c.env.startsWith("OMB_") ? [c.env, `CREWBOT_${c.env.slice(4)}`] : [c.env],
+    ).sort());
   });
 });

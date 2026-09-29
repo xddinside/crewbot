@@ -1,4 +1,4 @@
-// Config + data dirs. One file, ~/.openmausbot/config.json, env fallbacks:
+// Config + data dirs. One file, ~/.crewbot/config.json, env fallbacks:
 //   { "xai": {"key":"xai-…"}, "composio": {"apiKey":"ak_…"}, "box": {"token":"…"},
 //     "instances": { "<instanceId>": {"driver":"grok", …} } }
 import { readFileSync, mkdirSync, existsSync, renameSync } from "node:fs";
@@ -16,6 +16,8 @@ import { isRemoteMcpServer, parseStoredMcpServer } from "./mcp-registry.ts";
 import { parseJson, schemaIssue, type JsonObject, type JsonValue } from "./schema.ts";
 
 const optionalText = z.string().optional();
+const envValue = (crewbotName: string, legacyName: string) =>
+  process.env[crewbotName] ?? process.env[legacyName];
 const SSH_ALIAS = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 const LEGACY_BROWSER_PROFILE_ID = /^[A-Za-z0-9_-]{1,40}$/;
 const BROWSER_PROFILE_ID = /^[a-z0-9_-]{1,40}$/;
@@ -675,7 +677,7 @@ export function builtInBrowserEnabled(cfg: AppConfig): boolean {
  *
  * Deliberately NOT a Settings toggle: this is a maintainer-only escape hatch
  * for an unfinished feature, not a user preference. Someone who needs it
- * enables it by hand in `~/.openmausbot/config.json`
+ * enables it by hand in `~/.crewbot/config.json`
  * (`{"features": {"sharedComputers": true}}`) and restarts the server. */
 export function sharedComputersEnabled(cfg: AppConfig): boolean {
   return cfg.features?.sharedComputers === true;
@@ -692,7 +694,7 @@ export function claudeUserMcpEnabled(cfg: AppConfig): boolean {
 
 /** Opt-in generated titles for new bot threads: a cheap provider one-shot
  * names the row instead of the first-message snippet. Off until enabled by
- * hand in ~/.openmausbot/config.json
+ * hand in ~/.crewbot/config.json
  * (`{"features": {"llmThreadTitles": true}}`); a one-shot that fails or
  * answers anything unusable leaves the snippet untouched. */
 export function llmThreadTitlesEnabled(cfg: AppConfig): boolean {
@@ -723,8 +725,11 @@ export function providerReloadKeys(patch: object): string[] {
   return Object.keys(patch).filter((key) => !FLEET_NEUTRAL_KEYS.has(key));
 }
 
-// OMB_DATA_DIR isolates test/soak rigs from the user's real fleet.
-export const DATA_DIR = process.env.OMB_DATA_DIR ?? join(homedir(), ".openmausbot");
+// CREWBOT_DATA_DIR is the fork's public override. OMB_DATA_DIR remains a
+// one-release compatibility alias for existing local launch scripts.
+export const DATA_DIR = process.env.CREWBOT_DATA_DIR?.trim()
+  || process.env.OMB_DATA_DIR?.trim()
+  || join(homedir(), ".crewbot");
 const LEGACY_DATA_DIR = join(homedir(), ".opengrokbot");
 export const EVENTS_DIR = join(DATA_DIR, "events");
 export const NATIVE_DIR = join(DATA_DIR, "native");
@@ -790,8 +795,10 @@ export function loadConfig(): AppConfig {
   // never the workspace key, so an operator's stray variable cannot flip
   // every Claude bot onto pay-as-you-go billing.
   cfg.anthropic = { ...cfg.anthropic };
-  if (process.env.OMB_ANTHROPIC_API_KEY !== undefined) cfg.anthropic.key = process.env.OMB_ANTHROPIC_API_KEY;
-  if (process.env.OMB_ANTHROPIC_API_URL !== undefined) cfg.anthropic.url = process.env.OMB_ANTHROPIC_API_URL;
+  const anthropicKey = envValue("CREWBOT_ANTHROPIC_API_KEY", "OMB_ANTHROPIC_API_KEY");
+  const anthropicUrl = envValue("CREWBOT_ANTHROPIC_API_URL", "OMB_ANTHROPIC_API_URL");
+  if (anthropicKey !== undefined) cfg.anthropic.key = anthropicKey;
+  if (anthropicUrl !== undefined) cfg.anthropic.url = anthropicUrl;
   cfg.openaiCompat = { ...cfg.openaiCompat };
   if (process.env.OPENAI_COMPAT_API_KEY !== undefined) cfg.openaiCompat.key = process.env.OPENAI_COMPAT_API_KEY;
   if (process.env.OPENAI_COMPAT_URL !== undefined) cfg.openaiCompat.url = process.env.OPENAI_COMPAT_URL;
@@ -804,18 +811,24 @@ export function loadConfig(): AppConfig {
   cfg.opencodeGo = { ...cfg.opencodeGo };
   if (process.env.OPENCODE_API_KEY !== undefined) cfg.opencodeGo.apiKey = process.env.OPENCODE_API_KEY;
   cfg.tts = { ...cfg.tts };
-  if (process.env.OMB_TTS_KEY !== undefined) cfg.tts.key = process.env.OMB_TTS_KEY;
-  if (process.env.OMB_FISH_AUDIO_API_KEY !== undefined) cfg.tts.fishKey = process.env.OMB_FISH_AUDIO_API_KEY;
+  const ttsKey = envValue("CREWBOT_TTS_KEY", "OMB_TTS_KEY");
+  const fishKey = envValue("CREWBOT_FISH_AUDIO_API_KEY", "OMB_FISH_AUDIO_API_KEY");
+  if (ttsKey !== undefined) cfg.tts.key = ttsKey;
+  if (fishKey !== undefined) cfg.tts.fishKey = fishKey;
   cfg.imageGen = { ...cfg.imageGen };
-  if (process.env.OMB_OPENAI_IMAGE_KEY !== undefined) cfg.imageGen.key = process.env.OMB_OPENAI_IMAGE_KEY;
-  if (process.env.OMB_CUSTOM_IMAGE_KEY !== undefined) cfg.imageGen.customApiKey = process.env.OMB_CUSTOM_IMAGE_KEY;
+  const imageKey = envValue("CREWBOT_OPENAI_IMAGE_KEY", "OMB_OPENAI_IMAGE_KEY");
+  const customImageKey = envValue("CREWBOT_CUSTOM_IMAGE_KEY", "OMB_CUSTOM_IMAGE_KEY");
+  if (imageKey !== undefined) cfg.imageGen.key = imageKey;
+  if (customImageKey !== undefined) cfg.imageGen.customApiKey = customImageKey;
   // The sign-in allow-list: env is how a headless box or a container is
   // bootstrapped before anyone can reach Settings.
   const splitEmails = (value: string) => value.split(/[,\s]+/).map((entry) => entry.trim().toLowerCase()).filter(Boolean);
-  if (process.env.OMB_SIGNIN_EMAILS !== undefined || process.env.OMB_SIGNIN_MEMBER_EMAILS !== undefined) {
+  const signInAdmins = envValue("CREWBOT_SIGNIN_EMAILS", "OMB_SIGNIN_EMAILS");
+  const signInMembers = envValue("CREWBOT_SIGNIN_MEMBER_EMAILS", "OMB_SIGNIN_MEMBER_EMAILS");
+  if (signInAdmins !== undefined || signInMembers !== undefined) {
     cfg.signIn = { ...cfg.signIn };
-    if (process.env.OMB_SIGNIN_EMAILS !== undefined) cfg.signIn.admins = splitEmails(process.env.OMB_SIGNIN_EMAILS);
-    if (process.env.OMB_SIGNIN_MEMBER_EMAILS !== undefined) cfg.signIn.members = splitEmails(process.env.OMB_SIGNIN_MEMBER_EMAILS);
+    if (signInAdmins !== undefined) cfg.signIn.admins = splitEmails(signInAdmins);
+    if (signInMembers !== undefined) cfg.signIn.members = splitEmails(signInMembers);
   }
   return cfg;
 }
@@ -828,35 +841,39 @@ export function loadConfig(): AppConfig {
  * file value is authoritative again. Fields absent from the patch are
  * untouched. */
 export function syncCredentialEnv(patch: Partial<AppConfig>): void {
-  const secrets: Array<[value: string | undefined, name: string]> = [
+  const secrets: Array<[value: string | undefined, name: string, legacyName?: string]> = [
     [patch.xai?.key, "XAI_API_KEY"],
-    [patch.anthropic?.key, "OMB_ANTHROPIC_API_KEY"],
+    [patch.anthropic?.key, "CREWBOT_ANTHROPIC_API_KEY", "OMB_ANTHROPIC_API_KEY"],
     [patch.openaiCompat?.key, "OPENAI_COMPAT_API_KEY"],
     [patch.composio?.apiKey, "COMPOSIO_API_KEY"],
     [patch.box?.token, "BOX_TOKEN"],
     [patch.opencodeGo?.apiKey, "OPENCODE_API_KEY"],
-    [patch.tts?.key, "OMB_TTS_KEY"],
-    [patch.tts?.fishKey, "OMB_FISH_AUDIO_API_KEY"],
-    [patch.imageGen?.key, "OMB_OPENAI_IMAGE_KEY"],
-    [patch.imageGen?.customApiKey, "OMB_CUSTOM_IMAGE_KEY"],
+    [patch.tts?.key, "CREWBOT_TTS_KEY", "OMB_TTS_KEY"],
+    [patch.tts?.fishKey, "CREWBOT_FISH_AUDIO_API_KEY", "OMB_FISH_AUDIO_API_KEY"],
+    [patch.imageGen?.key, "CREWBOT_OPENAI_IMAGE_KEY", "OMB_OPENAI_IMAGE_KEY"],
+    [patch.imageGen?.customApiKey, "CREWBOT_CUSTOM_IMAGE_KEY", "OMB_CUSTOM_IMAGE_KEY"],
   ];
-  for (const [value, name] of secrets) {
+  for (const [value, name, legacyName] of secrets) {
     if (value === undefined) continue;
-    if (value) process.env[name] = value;
-    else delete process.env[name];
+    for (const envName of [name, ...(legacyName ? [legacyName] : [])]) {
+      if (value) process.env[envName] = value;
+      else delete process.env[envName];
+    }
   }
   // loadConfig() also prefers env for url/model/provider, so a saved value
   // must follow the same set-when-truthy / delete-when-cleared rule as keys.
-  const settings: Array<[value: string | undefined, name: string]> = [
+  const settings: Array<[value: string | undefined, name: string, legacyName?: string]> = [
     [patch.openaiCompat?.url, "OPENAI_COMPAT_URL"],
-    [patch.anthropic?.url, "OMB_ANTHROPIC_API_URL"],
+    [patch.anthropic?.url, "CREWBOT_ANTHROPIC_API_URL", "OMB_ANTHROPIC_API_URL"],
     [patch.openaiCompat?.model, "OPENAI_COMPAT_MODEL"],
     [patch.openaiCompat?.provider, "OPENAI_COMPAT_PROVIDER"],
   ];
-  for (const [value, name] of settings) {
+  for (const [value, name, legacyName] of settings) {
     if (value === undefined) continue;
-    if (value) process.env[name] = value;
-    else delete process.env[name];
+    for (const envName of [name, ...(legacyName ? [legacyName] : [])]) {
+      if (value) process.env[envName] = value;
+      else delete process.env[envName];
+    }
   }
 }
 
@@ -867,6 +884,13 @@ export function syncCredentialEnv(patch: Partial<AppConfig>): void {
  * child these are someone else's keys riding along in `...process.env`. */
 export const WORKSPACE_CREDENTIAL_ENV = [
   "XAI_API_KEY",
+  "CREWBOT_ANTHROPIC_API_KEY",
+  "CREWBOT_ANTHROPIC_API_URL",
+  "CREWBOT_TTS_KEY",
+  "CREWBOT_FISH_AUDIO_API_KEY",
+  "CREWBOT_OPENAI_IMAGE_KEY",
+  "CREWBOT_CUSTOM_IMAGE_KEY",
+  "CREWBOT_COMPOSIO_BROKER_TOKEN",
   "OMB_ANTHROPIC_API_KEY",
   "OMB_ANTHROPIC_API_URL",
   "OPENAI_COMPAT_API_KEY",
@@ -910,7 +934,7 @@ export const PROVIDER_CREDENTIAL_ENV = [
   "CURSOR_AUTH_TOKEN",
 ] as const;
 
-/** Merge a partial config into ~/.openmausbot/config.json (secrets never
+/** Merge a partial config into ~/.crewbot/config.json (secrets never
  * echoed back — callers report configured-or-not booleans only). */
 export function saveConfig(patch: Partial<AppConfig>, options: { replaceInstances?: boolean } = {}): void {
   const p = join(DATA_DIR, "config.json");

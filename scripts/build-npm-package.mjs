@@ -1,6 +1,6 @@
-// Assemble the `openmausbot` npm package: the self-contained server bundle,
+// Assemble the `crewbot` npm package: the self-contained server bundle,
 // the built UI, the bundled skills and the CLI, with a package.json of its
-// own. `npx openmausbot serve` then needs Node 24+ and nothing else.
+// own. `npx crewbot serve` then needs Node 24+ and nothing else.
 //
 //   pnpm build:server && pnpm exec vite build && node scripts/build-npm-package.mjs
 //   cd release/npm && npm pack        # or npm publish --access public
@@ -44,17 +44,17 @@ writeFileSync(
   join(out, "package.json"),
   JSON.stringify(
     {
-      name: "openmausbot",
+      name: "crewbot",
       version: app.version,
-      description: "Run the OpenMausBot server anywhere and pair your devices to it",
+      description: "Run the crewbot server anywhere and pair your devices to it",
       license: "Apache-2.0",
       type: "module",
-      bin: { openmausbot: "cli.js" },
+      bin: { crewbot: "cli.js", openmausbot: "cli.js" },
       files: ["cli.js", "dist-server", "dist", "skills", "enterprise", "LICENSE", "README.md"],
       engines: { node: ">=24" },
-      repository: { type: "git", url: "https://github.com/milind-soni/OpenMausBot.git" },
-      homepage: "https://github.com/milind-soni/OpenMausBot#readme",
-      keywords: ["openmausbot", "agents", "self-hosted", "server"],
+      repository: { type: "git", url: "https://github.com/xddinside/crewbot.git" },
+      homepage: "https://github.com/xddinside/crewbot#readme",
+      keywords: ["crewbot", "agents", "self-hosted", "server"],
     },
     null,
     2,
@@ -63,17 +63,17 @@ writeFileSync(
 
 writeFileSync(
   join(out, "README.md"),
-  `# openmausbot
+  `# crewbot
 
 Your own team of AI bots, with guided terminal setup. Requires Node 24+.
 
 \`\`\`sh
-npm install -g openmausbot
-openmausbot
+npm install -g crewbot
+crewbot
 \`\`\`
 
-Or run \`npx openmausbot\` without a global install. Use the same command next
-time; \`openmausbot start\` is an alias for the bare command.
+Or run \`npx crewbot\` without a global install. Use the same command next
+time; \`crewbot start\` is an alias for the bare command.
 
 First launch: use arrow keys and Enter (numbered choices in plain terminals) to choose
 ChatGPT/Codex, Claude Code, or an API service; sign in or paste a hidden API
@@ -91,7 +91,7 @@ Tailscale must already be installed and signed in on both devices.
 
 After the HTTPS connection is checked, scan the QR with your phone. When
 you pair an Android phone the QR is an app link, so scan it inside the
-OpenMausBot app; the web address is printed beside it if you would rather
+crewbot app; the web address is printed beside it if you would rather
 use a browser. On iPhone or iPad, scan with Camera for Safari, or use the
 app's own scanner. Choose Connect on the phone; scanning alone is not a
 completed pairing. Codes
@@ -106,13 +106,13 @@ browser opening uses only the local address; it is skipped for SSH and
 headless sessions, and can be disabled with \`--no-open\`.
 
 \`\`\`sh
-openmausbot setup          # reconfigure AI and optional phone access; not a reset
-openmausbot --no-open      # do not open a browser
-openmausbot --local        # ignore saved remote access for this launch
-openmausbot --no-pair      # suppress phone prompts and invitations
-openmausbot pair           # another phone while the HTTPS workspace is running
-openmausbot sessions       # list devices; sessions revoke ID signs one out
-openmausbot serve          # no onboarding prompts; explicit remote flags for services
+crewbot setup          # reconfigure AI and optional phone access; not a reset
+crewbot --no-open      # do not open a browser
+crewbot --local        # ignore saved remote access for this launch
+crewbot --no-pair      # suppress phone prompts and invitations
+crewbot pair           # another phone while the HTTPS workspace is running
+crewbot sessions       # list devices; sessions revoke ID signs one out
+crewbot serve          # no onboarding prompts; explicit remote flags for services
 \`\`\`
 
 Stop an existing server before reconfiguring or changing access mode.
@@ -132,15 +132,15 @@ with owner-only permissions (0600 on Unix). Keep these files private.
 Ctrl-C before saving AI setup leaves its pending OMB changes unapplied.
 During the later phone step, it keeps the AI setup already saved and exits
 without starting a server. Completed installs and sign-ins remain; run
-\`openmausbot setup\` to continue without deleting your data.
+\`crewbot setup\` to continue without deleting your data.
 
 For a service, use \`serve --tunnel\` after \`login\` for managed HTTPS,
 \`serve --tailscale\` for your tailnet, or your own reverse proxy. The
 \`login\` command signs in to an OpenMausBot account, not an AI provider;
 it does not start the tunnel itself.
 
-[Setup guide](https://github.com/milind-soni/OpenMausBot/blob/main/docs/cli-onboarding.md)
-· [Hosting guide](https://github.com/milind-soni/OpenMausBot/blob/main/docs/self-hosting.md)
+[Setup guide](https://github.com/xddinside/crewbot/blob/main/docs/cli-onboarding.md)
+· [Hosting guide](https://github.com/xddinside/crewbot/blob/main/docs/self-hosting.md)
 `,
 );
-console.log(`npm package assembled at ${out} (openmausbot@${app.version})`);
+console.log(`npm package assembled at ${out} (crewbot@${app.version})`);
