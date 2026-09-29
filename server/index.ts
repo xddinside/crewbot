@@ -1723,7 +1723,7 @@ function previewSystemPrompt(bot: BotRecord) {
   // `cfg` is the module-level config (`const cfg = loadConfig()` near the
   // top of index.ts), the same object the turn code reads.
   const persona = [
-    `You are ${bot.name}, a personal bot in crewbot.`,
+    `You are ${bot.name}, a personal bot in ${loadBrand().brand.name}.`,
     bot.title && `Role: ${bot.title}.`,
     bot.description && `About: ${bot.description}`,
   ]
@@ -6005,7 +6005,7 @@ async function startTurn(
   let dispatchContext = decideContext(plannedConfig);
 
   const persona = [
-    `You are ${bot.name}, a personal bot in crewbot.`,
+    `You are ${bot.name}, a personal bot in ${loadBrand().brand.name}.`,
     bot.title && `Role: ${bot.title}.`,
     bot.description && `About: ${bot.description}`,
   ]
