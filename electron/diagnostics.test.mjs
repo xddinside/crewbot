@@ -28,6 +28,8 @@ describe("credential env parity with server/config.ts", () => {
     expect(match).not.toBeNull();
     const names = [...match[1].matchAll(/"([A-Z0-9_]+)"/g)].map((m) => m[1]);
     expect(CREDENTIAL_ENV_NAMES).toEqual(names);
+    expect(names).toEqual(CREDENTIAL_ENV_NAMES);
+    expect(new Set(CREDENTIAL_ENV_NAMES).size).toBe(CREDENTIAL_ENV_NAMES.length);
   });
 });
 
@@ -175,6 +177,14 @@ describe("buildDiagnosticsReport", () => {
     const report = buildDiagnosticsReport({ appInfo, configSummary: {}, logTail: line });
     expect(report).not.toContain(value);
     expect(redactSecretsInLine(line)).toBe(`spawn env ${name}=«redacted ${value.length} chars» ready`);
+  });
+
+  it("masks the configured Anthropic URL even when its value has no token shape", () => {
+    const value = "https://private-relay.example.test/v1/messages";
+    const line = `CREWBOT_ANTHROPIC_API_URL=${value}`;
+    const report = buildDiagnosticsReport({ appInfo, configSummary: {}, logTail: line });
+    expect(redactSecretsInLine(line)).toBe(`CREWBOT_ANTHROPIC_API_URL=«redacted ${value.length} chars»`);
+    expect(report).not.toContain(value);
   });
 
   it("masks generic key=value secrets and content-shaped tokens in the log tail", () => {
@@ -412,9 +422,9 @@ describe("readSafeLogTail", () => {
 });
 
 describe("diagnosticsFileName", () => {
-  it("uses openmausbot-diagnostics-YYYYMMDD-HHmmss.txt", () => {
+  it("uses crewbot-diagnostics-YYYYMMDD-HHmmss.txt", () => {
     expect(diagnosticsFileName(new Date(2026, 7, 22, 16, 5, 9))).toBe(
-      "openmausbot-diagnostics-20260822-160509.txt",
+      "crewbot-diagnostics-20260822-160509.txt",
     );
   });
 });
