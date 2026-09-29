@@ -701,8 +701,17 @@ describe.skipIf(process.platform === "win32")("serve --domain", () => {
       const caddyPid = Number(readFileSync(join(home, "caddy.pid"), "utf8").trim() || "0");
       child.kill("SIGTERM");
       await exited(child);
-      await new Promise((r) => setTimeout(r, 300));
-      if (caddyPid) expect(() => process.kill(caddyPid, 0)).toThrow();
+      if (caddyPid) {
+        await expect.poll(() => {
+          try {
+            process.kill(caddyPid, 0);
+            return true;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+            throw error;
+          }
+        }, { timeout: 5_000, interval: 25 }).toBe(false);
+      }
       await removeTempDir(home);
     }
   }, 120_000);

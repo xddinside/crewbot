@@ -735,14 +735,30 @@ test("a live but unrelated Windows pid reused within the same boot is treated as
   if (process.platform !== "win32") return t.skip("Windows-only: wmic process-identity check");
   if (!wmicAvailable()) return t.skip("wmic is not available; the Windows process-identity check cannot be exercised");
   const { dataDir } = temporaryDirectory();
-  const sibling = spawn(process.execPath, ["--eval", "setInterval(()=>{}, 1_000);"], { stdio: "ignore" });
+  const sibling = spawn(process.execPath, ["--eval", "process.stdout.write('ready\\n'); setInterval(()=>{}, 1_000);"], { stdio: ["ignore", "pipe", "ignore"] });
   const siblingPid = sibling.pid;
   assert.ok(siblingPid);
   t.after(() => sibling.kill());
-  // Give the sibling enough time to start so its CreationDate is unambiguously
-  // later than the synthetic lease's createdAt, reproducing the same-boot
-  // PID-reuse case from the issue.
-  await new Promise((resolve) => setTimeout(resolve, 200));
+  // Wait for the child to report that its event loop is running, so its
+  // CreationDate is unambiguously later than the synthetic lease's createdAt.
+  await new Promise((resolve, reject) => {
+    let output = "";
+    const timeout = setTimeout(() => reject(new Error("sibling process did not become ready")), 5_000);
+    sibling.stdout.on("data", chunk => {
+      output += chunk.toString();
+      if (!output.includes("ready")) return;
+      clearTimeout(timeout);
+      resolve();
+    });
+    sibling.once("error", error => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    sibling.once("exit", code => {
+      clearTimeout(timeout);
+      reject(new Error(`sibling process exited before ready (${code})`));
+    });
+  });
 
   const leasePath = path.join(dataDir, LEASE_NAME);
   const stale = {
