@@ -1,5 +1,5 @@
 // Vitest setup — every test file gets a throwaway home directory so
-// DATA_DIR (~/.openmausbot) never touches the real one. os.homedir()
+// DATA_DIR (~/.crewbot) never touches the real one. os.homedir()
 // reads HOME (POSIX) / USERPROFILE (Windows) at call time, and this file
 // runs before any test module imports server/config.ts.
 import { mkdtempSync } from "node:fs";
@@ -12,8 +12,12 @@ import { removeTempDir } from "./cleanup.ts";
 const home = mkdtempSync(join(tmpdir(), "omb-test-home-"));
 process.env.HOME = home;
 process.env.USERPROFILE = home;
-// OMB_DATA_DIR is an intentional production override, but tests must never
-// let it escape the throwaway home they are about to delete.
+// CREWBOT_DATA_DIR and its OMB_DATA_DIR alias are intentional production
+// overrides, but tests must never let either escape the throwaway home they
+// are about to delete. Both must go: config.ts reads CREWBOT_DATA_DIR first,
+// so clearing only the legacy alias lets a developer's shell silently
+// redirect the whole suite at their real data dir.
+delete process.env.CREWBOT_DATA_DIR;
 delete process.env.OMB_DATA_DIR;
 // Do not let a developer's Hermes global config path leak into per-test homes.
 delete process.env.HERMES_HOME;
