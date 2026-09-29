@@ -62,7 +62,12 @@ export function runServiceCommand(input: ServiceInstallInput, io: ServiceIo): nu
     io.error(warning);
     return 1;
   }
-  migrateLegacyDataDir(input.dataDir);
+  try {
+    migrateLegacyDataDir(input.dataDir);
+  } catch (error) {
+    io.error(error instanceof Error ? error.message : String(error));
+    return 1;
+  }
   const spec = {
     node: input.node,
     script: input.script,

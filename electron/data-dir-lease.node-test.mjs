@@ -492,6 +492,29 @@ test("a pre-existing desktop target wins without merging either legacy source", 
   }
 });
 
+test("an explicit desktop override to ~/.crewbot still migrates legacy home data", () => {
+  for (const variable of ["CREWBOT_DATA_DIR", "OMB_DATA_DIR"]) {
+    const root = mkdtempSync(path.join(tmpdir(), "omb-electron-default-override-"));
+    roots.push(root);
+    const home = path.join(root, "home");
+    mkdirSync(path.join(home, "unused"), { recursive: true });
+    const openMaus = path.join(home, ".openmausbot");
+    const dataDir = path.join(home, "unused", "..", ".crewbot");
+    mkdirSync(openMaus);
+    writeFileSync(path.join(openMaus, "fixture.txt"), "legacy data");
+
+    const legacyDataDirs = legacyDataDirsForDefault(dataDir, home, { [variable]: dataDir });
+    assert.deepEqual(legacyDataDirs, [openMaus, path.join(home, ".opengrokbot")]);
+    const lease = acquireDataDirLease(dataDir, { legacyDataDirs });
+    try {
+      assert.equal(readFileSync(path.join(home, ".crewbot", "fixture.txt"), "utf8"), "legacy data");
+      assert.equal(existsSync(openMaus), false);
+    } finally {
+      lease.release();
+    }
+  }
+});
+
 test("explicit desktop data-dir overrides do not migrate legacy home directories", () => {
   for (const variable of ["CREWBOT_DATA_DIR", "OMB_DATA_DIR"]) {
     const root = mkdtempSync(path.join(tmpdir(), "omb-electron-custom-migration-"));

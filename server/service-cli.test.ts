@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runServiceCommand, serviceServeArgs } from "./service-cli.ts";
+import { acquireDataDirLease } from "./data-dir-lease.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
 
 describe("crewbot service", () => {
@@ -67,6 +68,35 @@ describe("crewbot service", () => {
       expect(readFileSync(join(dataDir, "fixture.txt"), "utf8")).toBe("legacy workspace");
       expect(existsSync(join(dataDir, "crewbot.service"))).toBe(true);
     } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousUserProfile;
+    }
+  });
+
+  it("reports a blocked migration and does not create an empty service data directory", () => {
+    const previousHome = process.env.HOME;
+    const previousUserProfile = process.env.USERPROFILE;
+    const legacy = join(dir, ".openmausbot");
+    const dataDir = join(dir, ".crewbot");
+    mkdirSync(legacy);
+    writeFileSync(join(legacy, "fixture.txt"), "legacy workspace");
+    process.env.HOME = dir;
+    process.env.USERPROFILE = dir;
+    const lease = acquireDataDirLease(legacy);
+    try {
+      const code = runServiceCommand({
+        action: "install", dataDir, port: 8799, script: "/usr/lib/node_modules/crewbot/cli.js", node: "/usr/bin/node",
+        platform: "linux", home: dir, user: "crewbot",
+      }, io);
+
+      expect(code).toBe(1);
+      expect(err.join("\n")).toMatch(/cannot migrate a legacy data directory while another server may be using it/i);
+      expect(existsSync(dataDir)).toBe(false);
+      expect(readFileSync(join(legacy, "fixture.txt"), "utf8")).toBe("legacy workspace");
+    } finally {
+      lease.release();
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
       if (previousUserProfile === undefined) delete process.env.USERPROFILE;

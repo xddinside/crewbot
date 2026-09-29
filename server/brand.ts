@@ -49,7 +49,7 @@ export interface BrandStatus {
   source: "default" | "file";
   /** The path consulted, so an operator knows where to put the file. */
   file: string;
-  /** Why the file was not applied, in terms of what to change. */
+  /** Why the brand was not applied exactly as written, or how it was adjusted. */
   notice?: string;
 }
 
@@ -81,14 +81,22 @@ export function loadBrand(options: { file?: string; isEntitled?: (feature: strin
   }
   // Renamed installations keep the customer-owned file as-is; normalize the
   // former product default only in the value served to the application.
-  const brand = parsed.data.name === "OpenMausBot"
+  const hasLegacyName = parsed.data.name === "OpenMausBot";
+  const brand = hasLegacyName
     ? { ...parsed.data, name: DEFAULT_BRAND.name }
     : parsed.data;
-  return { brand, source: "file", file };
+  return {
+    brand,
+    source: "file",
+    file,
+    ...(hasLegacyName ? { notice: 'stored brand name "OpenMausBot" is shown as "crewbot"; file was not changed' } : {}),
+  };
 }
 
 /** One line for the startup log. */
 export function describeBrand(status: BrandStatus): string {
-  if (status.source === "file") return `brand: ${status.brand.name} (from ${status.file})`;
+  if (status.source === "file") {
+    return `brand: ${status.brand.name} (from ${status.file}${status.notice ? `; ${status.notice}` : ""})`;
+  }
   return `brand: default${status.notice ? ` (${status.notice})` : ""}`;
 }

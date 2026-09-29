@@ -9,7 +9,7 @@
 // Each case gets its own throwaway HOME because migrateLegacyDataDir reads
 // homedir() at call time, and cases 3-5 actually rename directories — running
 // them against the suite's shared home would move state other files rely on.
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -91,13 +91,24 @@ describe("migrateLegacyDataDir visibility", () => {
   });
 
   // The normal upgrade path must not gain noise.
+  it("migrates when an explicit data-dir path resolves to the default", () => {
+    const legacy = makeLegacy(".openmausbot");
+    mkdirSync(join(home, "unused"));
+    const dest = join(home, "unused", "..", ".crewbot");
+
+    migrateLegacyDataDir(dest);
+
+    expect(errors).toEqual([]);
+    expect(readFileSync(join(home, ".crewbot", "config.json"), "utf8")).toBe("{}");
+    expect(existsSync(legacy)).toBe(false);
+  });
+
   it("stays quiet on a clean migration", () => {
-    const legacy = makeLegacy(".opengrokbot");
+    makeLegacy(".opengrokbot");
     const dest = join(home, ".crewbot");
 
     migrateLegacyDataDir(dest);
 
     expect(errors).toEqual([]);
-    expect(legacy).toBe(join(home, ".opengrokbot"));
   });
 });

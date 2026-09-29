@@ -57,6 +57,18 @@ describe("brand.json", () => {
     },
   );
 
+  it("notices when a stored OpenMausBot name is displayed as crewbot without rewriting the file", () => {
+    const contents = JSON.stringify({ name: "OpenMausBot", tagline: "Local and private" });
+    const file = brandFile(contents);
+    const status = loadBrand({ file, isEntitled: licensed });
+
+    expect(status.brand.name).toBe("crewbot");
+    expect(status.source).toBe("file");
+    expect(status.notice).toContain('stored brand name "OpenMausBot" is shown as "crewbot"');
+    expect(describeBrand(status)).toContain('stored brand name "OpenMausBot" is shown as "crewbot"');
+    expect(readFileSync(file, "utf8")).toBe(contents);
+  });
+
   it("keeps the default brand on an unlicensed server and says so", () => {
     const file = brandFile(JSON.stringify({ name: "Acme" }));
     const status = loadBrand({ file, isEntitled: unlicensed });
