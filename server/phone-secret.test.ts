@@ -25,6 +25,10 @@ const suite = new CipherSuite({
   aead: new Aes256Gcm(),
 });
 
+it("keeps the phone credential context compatible with installed companions", () => {
+  expect(PHONE_SECRET_INFO).toBe("OpenMausBot phone credential v1");
+});
+
 async function keyMaterial() {
   const pair = await webcrypto.subtle.generateKey(
     { name: "ECDH", namedCurve: "P-256" },

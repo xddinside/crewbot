@@ -8,6 +8,8 @@ import {
 } from "@hpke/core";
 
 export const PHONE_SECRET_PROTOCOL_VERSION = 1 as const;
+// This is HPKE context shared with installed OpenMausBot companions. Changing
+// the product name here would make their existing credentials undecryptable.
 export const PHONE_SECRET_INFO = "OpenMausBot phone credential v1";
 export const PHONE_SECRET_MAX_BYTES = 4_096;
 
