@@ -4,6 +4,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 
+import { migrateLegacyDataDir } from "./legacy-data-dir.ts";
 import { currentUser, launchdPlist, servicePlan, systemdUnit, unstableInstallWarning } from "./service-unit.ts";
 
 export interface ServiceInstallInput {
@@ -55,6 +56,7 @@ export function runServiceCommand(input: ServiceInstallInput, io: ServiceIo): nu
     io.error(warning);
     return 1;
   }
+  migrateLegacyDataDir(input.dataDir);
   const spec = {
     node: input.node,
     script: input.script,

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -37,6 +37,31 @@ describe("crewbot service", () => {
     expect(refused).toBe(1);
     expect(err.join("\n")).toMatch(/npm install -g crewbot/);
     expect(existsSync(join(dir, "x", "crewbot.service"))).toBe(false);
+  });
+
+  it("imports legacy data before service install creates the default data directory", () => {
+    const previousHome = process.env.HOME;
+    const previousUserProfile = process.env.USERPROFILE;
+    const legacy = join(dir, ".openmausbot");
+    const dataDir = join(dir, ".crewbot");
+    mkdirSync(legacy);
+    writeFileSync(join(legacy, "fixture.txt"), "legacy workspace");
+    process.env.HOME = dir;
+    process.env.USERPROFILE = dir;
+    try {
+      expect(runServiceCommand({
+        action: "install", dataDir, port: 8799, script: "/usr/lib/node_modules/crewbot/cli.js", node: "/usr/bin/node",
+        platform: "linux", home: dir, user: "crewbot",
+      }, io)).toBe(0);
+      expect(existsSync(legacy)).toBe(false);
+      expect(readFileSync(join(dataDir, "fixture.txt"), "utf8")).toBe("legacy workspace");
+      expect(existsSync(join(dataDir, "crewbot.service"))).toBe(true);
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousUserProfile;
+    }
   });
 
   it("writes a launchd agent on macOS and explains uninstall on both", () => {

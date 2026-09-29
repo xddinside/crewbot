@@ -11,7 +11,7 @@ import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { startControlPlaneStub } from "./testing/control-plane-stub.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
-const setup = vi.hoisted(() => ({ runSetup: vi.fn(), isSetupComplete: vi.fn(), readCliStartup: vi.fn(), saveCliStartup: vi.fn() }));
+const setup = vi.hoisted(() => ({ migrateLegacyDataDir: vi.fn(), runSetup: vi.fn(), isSetupComplete: vi.fn(), readCliStartup: vi.fn(), saveCliStartup: vi.fn() }));
 vi.mock("./cli-setup.ts", () => setup);
 
 describe("crewbot command line", () => {
@@ -214,6 +214,7 @@ describe("terminal onboarding commands", () => {
       return true;
     });
     expect(await runOnboardingCommand(options, output, serve, flow)).toBe(0);
+    expect(setup.migrateLegacyDataDir).toHaveBeenCalledWith(options.dataDir);
     expect(setup.runSetup).toHaveBeenCalledWith({ dataDir: options.dataDir, port: options.port });
     expect(setup.isSetupComplete).not.toHaveBeenCalled();
     expect(serve).not.toHaveBeenCalled();
@@ -591,6 +592,77 @@ describe("crewbot access", () => {
       expect(await runAccess({ ...base, accessAction: "remove", email: "her@example.test" }, io)).toBe(1);
       expect(JSON.parse(readFileSync(join(dataDir, "config.json"), "utf8")).signIn).toEqual({ admins: [], members: ["@agentada.test"] });
     } finally {
+      await removeTempDir(home);
+    }
+  });
+
+  it("leaves access list read-only, then imports the legacy config before the first edit", async () => {
+    const home = mkdtempSync(join(tmpdir(), "crewbot-access-legacy-"));
+    const previousHome = process.env.HOME;
+    const previousUserProfile = process.env.USERPROFILE;
+    const legacy = join(home, ".openmausbot");
+    const dataDir = join(home, ".crewbot");
+    mkdirSync(legacy);
+    writeFileSync(join(legacy, "config.json"), JSON.stringify({
+      profile: { name: "Legacy owner" },
+      signIn: { admins: ["existing@example.test"], members: [] },
+    }));
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    const base = { command: "access" as const, port: 1, dataDir, tailscale: false, tunnel: false, client: false, pair: true, json: false };
+    try {
+      expect(await runAccess({ ...base, accessAction: "list" }, { log: () => {}, error: () => {}, ask: async () => "" })).toBe(0);
+      expect(existsSync(legacy)).toBe(true);
+      expect(existsSync(dataDir)).toBe(false);
+
+      expect(await runAccess({ ...base, accessAction: "add", email: "new@example.test" }, { log: () => {}, error: () => {}, ask: async () => "" })).toBe(0);
+      expect(existsSync(legacy)).toBe(false);
+      expect(JSON.parse(readFileSync(join(dataDir, "config.json"), "utf8"))).toEqual({
+        profile: { name: "Legacy owner" },
+        signIn: { admins: ["existing@example.test", "new@example.test"], members: [] },
+      });
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousUserProfile;
+      await removeTempDir(home);
+    }
+  });
+});
+
+describe("legacy login migration", () => {
+  it("imports the legacy directory before login creates tunnel credentials", async () => {
+    const home = mkdtempSync(join(tmpdir(), "crewbot-login-legacy-"));
+    const previousHome = process.env.HOME;
+    const previousUserProfile = process.env.USERPROFILE;
+    const previousControlPlane = process.env.OMB_CONTROL_PLANE_URL;
+    const legacy = join(home, ".openmausbot");
+    const dataDir = join(home, ".crewbot");
+    mkdirSync(legacy);
+    writeFileSync(join(legacy, "fixture.txt"), "legacy account data");
+    const stub = await startControlPlaneStub();
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    process.env.OMB_CONTROL_PLANE_URL = stub.url;
+    try {
+      const options: CliOptions = {
+        command: "login", port: 1, dataDir, tailscale: false, tunnel: false, client: false, pair: true, json: false,
+        email: "login@example.test",
+      };
+      const io = { log: () => {}, error: () => {}, ask: async () => stub.otp };
+      expect(await runLogin(options, io)).toBe(0);
+      expect(existsSync(legacy)).toBe(false);
+      expect(readFileSync(join(dataDir, "fixture.txt"), "utf8")).toBe("legacy account data");
+      expect(existsSync(join(dataDir, "tunnel-account.json"))).toBe(true);
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousUserProfile;
+      if (previousControlPlane === undefined) delete process.env.OMB_CONTROL_PLANE_URL;
+      else process.env.OMB_CONTROL_PLANE_URL = previousControlPlane;
+      await stub.close();
       await removeTempDir(home);
     }
   });

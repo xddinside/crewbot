@@ -1,9 +1,12 @@
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JsonValue } from "./schema.ts";
 
+import { acquireDataDirLease } from "./data-dir-lease.ts";
 import { customMcpServers,
   DATA_DIR,
   ensureDirs,
@@ -39,6 +42,116 @@ import { customMcpServers,
   WORKSPACE_CREDENTIAL_ENV,
   type AppConfig,
 } from "./config.ts";
+
+const configModuleUrl = new URL("./config.ts", import.meta.url).href;
+const cliModuleUrl = new URL("./cli.ts", import.meta.url).href;
+const cliSetupModuleUrl = new URL("./cli-setup.ts", import.meta.url).href;
+
+function runEnsureDirs(home: string, overrides: Record<string, string> = {}) {
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home };
+  delete env.CREWBOT_DATA_DIR;
+  delete env.OMB_DATA_DIR;
+  Object.assign(env, overrides);
+  const script = `
+    const { DATA_DIR, ensureDirs } = await import(${JSON.stringify(configModuleUrl)});
+    try {
+      ensureDirs();
+      process.stdout.write(JSON.stringify({ dataDir: DATA_DIR }));
+    } catch (error) {
+      process.stdout.write(JSON.stringify({ error: String(error?.message ?? error) }));
+    }
+  `;
+  const result = JSON.parse(execFileSync(process.execPath, ["--no-warnings", "--experimental-strip-types", "--input-type=module", "--eval", script], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env,
+  }));
+  if (result.error) throw new Error(result.error);
+  return result.dataDir;
+}
+
+function runCliServiceInstallWithDataDir(home: string, dataDir: string) {
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home };
+  delete env.CREWBOT_DATA_DIR;
+  delete env.OMB_DATA_DIR;
+  const script = `
+    await import(${JSON.stringify(configModuleUrl)});
+    const { main } = await import(${JSON.stringify(cliModuleUrl)});
+    process.argv[1] = "/usr/lib/node_modules/crewbot/cli.js";
+    console.log = () => {};
+    const exitCode = await main(["service", "install", "--data-dir", ${JSON.stringify(dataDir)}]);
+    process.stdout.write(JSON.stringify({ exitCode }));
+  `;
+  return JSON.parse(execFileSync(process.execPath, ["--no-warnings", "--experimental-strip-types", "--input-type=module", "--eval", script], {
+    cwd: process.cwd(), encoding: "utf8", env,
+  }));
+}
+
+function runSaveConfigWithDefaultHome(home: string) {
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home };
+  delete env.CREWBOT_DATA_DIR;
+  delete env.OMB_DATA_DIR;
+  const script = `
+    import { readFileSync } from "node:fs";
+    import { join } from "node:path";
+    const { DATA_DIR, saveConfig } = await import(${JSON.stringify(configModuleUrl)});
+    saveConfig({ profile: { email: "saved@example.test" } });
+    process.stdout.write(JSON.stringify({ dataDir: DATA_DIR, config: JSON.parse(readFileSync(join(DATA_DIR, "config.json"), "utf8")) }));
+  `;
+  return JSON.parse(execFileSync(process.execPath, ["--no-warnings", "--experimental-strip-types", "--input-type=module", "--eval", script], {
+    cwd: process.cwd(), encoding: "utf8", env,
+  }));
+}
+
+function runSaveCliStartupWithDefaultHome(home: string) {
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home };
+  delete env.CREWBOT_DATA_DIR;
+  delete env.OMB_DATA_DIR;
+  const script = `
+    const { DATA_DIR } = await import(${JSON.stringify(configModuleUrl)});
+    const { saveCliStartup } = await import(${JSON.stringify(cliSetupModuleUrl)});
+    saveCliStartup(DATA_DIR, { access: "local" });
+    process.stdout.write(JSON.stringify({ dataDir: DATA_DIR }));
+  `;
+  return JSON.parse(execFileSync(process.execPath, ["--no-warnings", "--experimental-strip-types", "--input-type=module", "--eval", script], {
+    cwd: process.cwd(), encoding: "utf8", env,
+  }));
+}
+
+function runSetupWithDefaultHome(home: string) {
+  const env: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH,
+    ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
+    HOME: home,
+    USERPROFILE: home,
+  };
+  const script = `
+    import { existsSync, readFileSync } from "node:fs";
+    import { join } from "node:path";
+    const { runSetup } = await import(${JSON.stringify(cliSetupModuleUrl)});
+    const dataDir = join(process.env.HOME, ".crewbot");
+    const io = { log() {}, choose: async () => 0, confirm: async () => true, secret: async () => "", ask: async () => "" };
+    const models = { default: "fixture-model", options: [{ id: "fixture-model", label: "Fixture model" }] };
+    const deps = {
+      inspect: async () => ({ snapshot: { state: "available", authenticated: true }, models }),
+      runCli: async () => {}, models: async () => models.options, verify: async () => {},
+    };
+    const completed = await runSetup({ dataDir, port: 8799 }, io, deps);
+    const config = JSON.parse(readFileSync(join(dataDir, "config.json"), "utf8"));
+    process.stdout.write(JSON.stringify({
+      completed,
+      legacyExists: existsSync(join(process.env.HOME, ".openmausbot")),
+      marker: readFileSync(join(dataDir, "fixture.txt"), "utf8"),
+      profileName: config.profile?.name,
+      leaseExists: existsSync(join(dataDir, "openmausbot-server.lease")),
+    }));
+  `;
+  return JSON.parse(execFileSync(process.execPath, ["--no-warnings", "--experimental-strip-types", "--input-type=module", "--eval", script], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env,
+  }));
+}
 
 describe("configuration boundaries", () => {
   it("keeps Fish Audio and ElevenLabs voice credentials separate", () => {
@@ -1313,5 +1426,164 @@ describe("customMcpServers with url entries", () => {
       docs: { type: "sse", url: "https://docs.example/sse", headers: { Authorization: "Bearer t" } },
       notes: { command: "npx", args: [], env: {} },
     });
+  });
+});
+
+describe("legacy data directory migration", () => {
+  const homes: string[] = [];
+  const createHome = () => {
+    const home = mkdtempSync(join(tmpdir(), "crewbot-config-home-"));
+    homes.push(home);
+    return home;
+  };
+  const seedLegacy = (home: string, name: string, marker: string) => {
+    const dir = join(home, name);
+    mkdirSync(dir);
+    writeFileSync(join(dir, "fixture.txt"), marker);
+    return dir;
+  };
+  afterEach(() => {
+    for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true });
+  });
+
+  it.each([".openmausbot", ".opengrokbot"])("moves data from %s into the default directory", (legacyName) => {
+    const home = createHome();
+    const legacy = seedLegacy(home, legacyName, legacyName);
+
+    const dataDir = runEnsureDirs(home);
+
+    expect(dataDir).toBe(join(home, ".crewbot"));
+    expect(readFileSync(join(dataDir, "fixture.txt"), "utf8")).toBe(legacyName);
+    expect(existsSync(legacy)).toBe(false);
+  });
+
+  it("migrates when the CLI passes the default directory through an env override", () => {
+    const home = createHome();
+    const legacy = seedLegacy(home, ".openmausbot", "default CLI data");
+
+    const dataDir = runEnsureDirs(home, { CREWBOT_DATA_DIR: join(home, ".crewbot") });
+
+    expect(dataDir).toBe(join(home, ".crewbot"));
+    expect(readFileSync(join(dataDir, "fixture.txt"), "utf8")).toBe("default CLI data");
+    expect(existsSync(legacy)).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32")("custom --data-dir never moves either legacy home after config has loaded", () => {
+    const home = createHome();
+    const openMaus = seedLegacy(home, ".openmausbot", "OpenMaus data");
+    const openGrok = seedLegacy(home, ".opengrokbot", "OpenGrok data");
+    const custom = join(home, "custom-data");
+
+    expect(runCliServiceInstallWithDataDir(home, custom).exitCode).toBe(0);
+
+    expect(existsSync(custom)).toBe(true);
+    expect(existsSync(join(custom, "crewbot.service"))).toBe(true);
+    expect(existsSync(join(home, ".crewbot"))).toBe(false);
+    expect(readFileSync(join(openMaus, "fixture.txt"), "utf8")).toBe("OpenMaus data");
+    expect(readFileSync(join(openGrok, "fixture.txt"), "utf8")).toBe("OpenGrok data");
+  });
+
+  it("moves legacy data before saveConfig reads and writes config.json", () => {
+    const home = createHome();
+    const legacy = seedLegacy(home, ".openmausbot", "saved data");
+    writeFileSync(join(legacy, "config.json"), JSON.stringify({ profile: { name: "Legacy owner" }, futureSetting: { keep: true } }));
+
+    const result = runSaveConfigWithDefaultHome(home);
+
+    expect(result.dataDir).toBe(join(home, ".crewbot"));
+    expect(result.config).toEqual({
+      profile: { name: "Legacy owner", email: "saved@example.test" },
+      futureSetting: { keep: true },
+    });
+    expect(readFileSync(join(result.dataDir, "fixture.txt"), "utf8")).toBe("saved data");
+    expect(existsSync(legacy)).toBe(false);
+  });
+
+  it("moves legacy data before saveCliStartup acquires its lease", () => {
+    const home = createHome();
+    const legacy = seedLegacy(home, ".openmausbot", "startup data");
+    writeFileSync(join(legacy, "config.json"), JSON.stringify({ profile: { name: "Legacy owner" } }));
+
+    const result = runSaveCliStartupWithDefaultHome(home);
+
+    expect(result.dataDir).toBe(join(home, ".crewbot"));
+    expect(JSON.parse(readFileSync(join(result.dataDir, "config.json"), "utf8"))).toEqual({
+      profile: { name: "Legacy owner" }, cliStartup: { access: "local" },
+    });
+    expect(existsSync(join(result.dataDir, "openmausbot-server.lease"))).toBe(false);
+    expect(existsSync(legacy)).toBe(false);
+  });
+
+  it("prefers .openmausbot when both legacy directories exist", () => {
+    const home = createHome();
+    const preferred = seedLegacy(home, ".openmausbot", "preferred");
+    const older = seedLegacy(home, ".opengrokbot", "older");
+
+    const dataDir = runEnsureDirs(home);
+
+    expect(readFileSync(join(dataDir, "fixture.txt"), "utf8")).toBe("preferred");
+    expect(existsSync(preferred)).toBe(false);
+    expect(readFileSync(join(older, "fixture.txt"), "utf8")).toBe("older");
+  });
+
+  it("leaves a live legacy data directory in place and fails closed", () => {
+    const home = createHome();
+    const legacy = seedLegacy(home, ".openmausbot", "live OpenMaus data");
+    const liveLegacyLease = acquireDataDirLease(legacy);
+    const leasePath = join(legacy, "openmausbot-server.lease");
+    try {
+      expect(() => runEnsureDirs(home)).toThrow(
+        /cannot migrate a legacy data directory while another server may be using it/i,
+      );
+
+      expect(existsSync(join(home, ".crewbot"))).toBe(false);
+      expect(readFileSync(join(legacy, "fixture.txt"), "utf8")).toBe("live OpenMaus data");
+      expect(JSON.parse(readFileSync(leasePath, "utf8")).pid).toBe(process.pid);
+    } finally {
+      liveLegacyLease.release();
+    }
+  });
+
+  it("leaves a pre-existing ~/.crewbot and both legacy sources untouched", () => {
+    const home = createHome();
+    const target = join(home, ".crewbot");
+    mkdirSync(target);
+    writeFileSync(join(target, "winner.txt"), "current");
+    const openMaus = seedLegacy(home, ".openmausbot", "older OpenMaus data");
+    const openGrok = seedLegacy(home, ".opengrokbot", "older Grok data");
+
+    expect(runEnsureDirs(home)).toBe(target);
+
+    expect(readFileSync(join(target, "winner.txt"), "utf8")).toBe("current");
+    expect(existsSync(join(target, "fixture.txt"))).toBe(false);
+    expect(readFileSync(join(openMaus, "fixture.txt"), "utf8")).toBe("older OpenMaus data");
+    expect(readFileSync(join(openGrok, "fixture.txt"), "utf8")).toBe("older Grok data");
+  });
+
+  it("moves default legacy data before CLI setup creates its lease", () => {
+    const home = createHome();
+    const legacy = seedLegacy(home, ".openmausbot", "setup legacy data");
+    writeFileSync(join(legacy, "config.json"), JSON.stringify({ profile: { name: "Legacy profile" } }));
+
+    expect(runSetupWithDefaultHome(home)).toEqual({
+      completed: true,
+      legacyExists: false,
+      marker: "setup legacy data",
+      profileName: "Legacy profile",
+      leaseExists: false,
+    });
+  });
+
+  it.each(["CREWBOT_DATA_DIR", "OMB_DATA_DIR"])("does not move home data for a %s override", (overrideName) => {
+    const home = createHome();
+    const custom = join(home, "custom-data");
+    const openMaus = seedLegacy(home, ".openmausbot", "OpenMaus data");
+    const openGrok = seedLegacy(home, ".opengrokbot", "OpenGrok data");
+
+    expect(runEnsureDirs(home, { [overrideName]: custom })).toBe(custom);
+
+    expect(existsSync(join(custom, "fixture.txt"))).toBe(false);
+    expect(readFileSync(join(openMaus, "fixture.txt"), "utf8")).toBe("OpenMaus data");
+    expect(readFileSync(join(openGrok, "fixture.txt"), "utf8")).toBe("OpenGrok data");
   });
 });

@@ -1,19 +1,22 @@
 // Config + data dirs. One file, ~/.crewbot/config.json, env fallbacks:
 //   { "xai": {"key":"xai-…"}, "composio": {"apiKey":"ak_…"}, "box": {"token":"…"},
 //     "instances": { "<instanceId>": {"driver":"grok", …} } }
-import { readFileSync, mkdirSync, existsSync, renameSync } from "node:fs";
+import { readFileSync, mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { normalizeImageGenerationUrl, type ImageGenerationConfig } from "../shared/image-generation.ts";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { migrateLegacyDataDir } from "./legacy-data-dir.ts";
 import { EFFORT_LEVELS } from "../shared/wire.ts";
 import { isModelVariant, type InstanceConfigMap, type ModelSelection } from "./contracts.ts";
 import { PROVIDER_ICON_PRESETS, providerIconError } from "../shared/provider-icon.ts";
 import type { McpServerSpec } from "./contracts.ts";
 import { isRemoteMcpServer, parseStoredMcpServer } from "./mcp-registry.ts";
 import { parseJson, schemaIssue, type JsonObject, type JsonValue } from "./schema.ts";
+
+export { migrateLegacyDataDir };
 
 const optionalText = z.string().optional();
 const envValue = (crewbotName: string, legacyName: string) =>
@@ -727,23 +730,15 @@ export function providerReloadKeys(patch: object): string[] {
 
 // CREWBOT_DATA_DIR is the fork's public override. OMB_DATA_DIR remains a
 // one-release compatibility alias for existing local launch scripts.
-export const DATA_DIR = process.env.CREWBOT_DATA_DIR?.trim()
-  || process.env.OMB_DATA_DIR?.trim()
-  || join(homedir(), ".crewbot");
-const LEGACY_DATA_DIR = join(homedir(), ".opengrokbot");
+const DATA_DIR_OVERRIDE = process.env.CREWBOT_DATA_DIR?.trim() || process.env.OMB_DATA_DIR?.trim();
+export const DATA_DIR = DATA_DIR_OVERRIDE || join(homedir(), ".crewbot");
 export const EVENTS_DIR = join(DATA_DIR, "events");
 export const NATIVE_DIR = join(DATA_DIR, "native");
 
 export function ensureDirs() {
-  // one-time migration from the pre-rename data dir — bots, transcripts,
-  // config and keys all carry over
-  if (!existsSync(DATA_DIR) && existsSync(LEGACY_DATA_DIR)) {
-    try {
-      renameSync(LEGACY_DATA_DIR, DATA_DIR);
-    } catch {
-      /* cross-device or busy — fall through to a fresh dir */
-    }
-  }
+  // An existing ~/.crewbot wins; never merge or overwrite its data. Custom
+  // data-dir overrides stay isolated from live legacy home directories.
+  migrateLegacyDataDir(DATA_DIR);
   for (const dir of [DATA_DIR, EVENTS_DIR, NATIVE_DIR]) mkdirSync(dir, { recursive: true });
   migrateLegacyFeatureFlags();
 }
@@ -937,6 +932,9 @@ export const PROVIDER_CREDENTIAL_ENV = [
 /** Merge a partial config into ~/.crewbot/config.json (secrets never
  * echoed back — callers report configured-or-not booleans only). */
 export function saveConfig(patch: Partial<AppConfig>, options: { replaceInstances?: boolean } = {}): void {
+  // Migrate before reading: a later migration would make this first write
+  // replace the legacy config with a patch built from an empty target.
+  migrateLegacyDataDir(DATA_DIR);
   const p = join(DATA_DIR, "config.json");
   let disk: JsonObject = {};
   try {

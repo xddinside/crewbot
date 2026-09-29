@@ -39,6 +39,7 @@ import { startFleetAgent } from "./fleet-agent.ts";
 import { fleetLayout } from "./fleet.ts";
 import { explainTailscaleFailure, tailscaleServe, tailscaleServeOff, tailscaleStatus, type TailscaleStatus } from "./tailscale.ts";
 import { defaultSetupIo, SetupCancelled, type SetupIo } from "./cli-prompts.ts";
+import { migrateLegacyDataDir } from "./legacy-data-dir.ts";
 import { normalizePhoneOrigin, phonePairingInstructions, runPhoneSetup } from "./cli-phone-setup.ts";
 import type { AppConfig } from "./config.ts";
 import {
@@ -618,6 +619,9 @@ export async function runStatus(options: CliOptions, io: CliIo = defaultIo()): P
  * Written the way the server writes it (atomic, 0600), touching only the
  * one key, so nothing else in the file moves. */
 export async function runAccess(options: CliOptions, io: CliIo = defaultIo()): Promise<number> {
+  // Listing is read-only and must not trigger the one-time migration. Edits
+  // migrate before reading so they preserve the legacy config they modify.
+  if (options.accessAction !== "list") migrateLegacyDataDir(options.dataDir);
   const file = join(options.dataDir, "config.json");
   let raw: Record<string, unknown> = {};
   if (existsSync(file)) {
@@ -672,6 +676,7 @@ export async function runAccess(options: CliOptions, io: CliIo = defaultIo()): P
 }
 
 export async function runLogin(options: CliOptions, io: CliIo = defaultIo()): Promise<number> {
+  migrateLegacyDataDir(options.dataDir);
   const account = createTunnelAccount({ dataDir: options.dataDir, version: serverVersion() });
   if (fleetCredential()) io.log(`note: ${FLEET_CREDENTIAL_ENV} is set, so serve --tunnel will use that credential rather than this account`);
   if (account.credentials.status === "unavailable") {
@@ -715,6 +720,7 @@ export async function runLogin(options: CliOptions, io: CliIo = defaultIo()): Pr
 }
 
 export async function runLogout(options: CliOptions, io: CliIo = defaultIo()): Promise<number> {
+  migrateLegacyDataDir(options.dataDir);
   const account = createTunnelAccount({ dataDir: options.dataDir, version: serverVersion() });
   const before = describeTunnelAccount(account.credentials.read());
   if (!before.email) {
@@ -745,6 +751,7 @@ export async function runBrowser(options: CliOptions, io: CliIo = defaultIo()): 
     if (status.kind !== "ready" && status.installable) io.log("install it with:  crewbot browser install");
     return status.kind === "ready" ? 0 : 1;
   }
+  migrateLegacyDataDir(options.dataDir);
   let binary = resolveAgentBrowserBinary({ dataDir: options.dataDir });
   if (binary) {
     io.log(`agent-browser is already here: ${binary}`);
@@ -842,6 +849,9 @@ export async function runServe(options: CliOptions, log: (line: string) => void 
     console.error(`something already answers on http://127.0.0.1:${options.port}; use \`crewbot pair\` against it, or --port for a second server`);
     return 1;
   }
+  // Tunnel/Caddy setup can create files before the child server reaches
+  // ensureDirs(), so migrate before planning any startup resources.
+  migrateLegacyDataDir(options.dataDir);
   let publicUrl = options.publicUrl;
   let tailscale: TailscaleStatus | null = null;
   if (options.tailscale) {
@@ -1072,7 +1082,8 @@ export async function runOnboardingCommand(
     if (interactive && options.open !== false) await (flow.open ?? openDashboard)(options.port);
     return 0;
   }
-  const { runSetup, isSetupComplete, readCliStartup, saveCliStartup } = await import("./cli-setup.ts");
+  const { migrateLegacyDataDir, runSetup, isSetupComplete, readCliStartup, saveCliStartup } = await import("./cli-setup.ts");
+  migrateLegacyDataDir(options.dataDir);
   const prompts = flow.prompts ?? defaultSetupIo();
   try {
     if (options.command === "setup" || !(await isSetupComplete(options.dataDir))) {

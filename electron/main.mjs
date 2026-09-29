@@ -71,7 +71,7 @@ import environmentsModule from "./environments.cjs";
 import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
-import { acquireDataDirLease } from "./data-dir-lease.mjs";
+import { acquireDataDirLease, legacyDataDirsForDefault } from "./data-dir-lease.mjs";
 import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDesktopStore } from "./managed-desktop.mjs";
 import { createCompanyBackups } from "./company-backups.mjs";
 import { createCompanyBackupSchedule } from "./company-backup-schedule.mjs";
@@ -2678,8 +2678,10 @@ app.whenReady().then(async () => {
       // Acquire before either plaintext credential migration reads or writes
       // config.json. The parent retains ownership across utility-child port
       // fallbacks and restarts for the entire desktop process lifetime.
-      desktopDataDirLease = acquireDataDirLease(desktopDataDir(), {
-        legacyDataDir: path.join(app.getPath("home"), ".opengrokbot"),
+      const dataDir = desktopDataDir();
+      const home = app.getPath("home");
+      desktopDataDirLease = acquireDataDirLease(dataDir, {
+        legacyDataDirs: legacyDataDirsForDefault(dataDir, home),
       });
     } catch (error) {
       dialog.showErrorBox(

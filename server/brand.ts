@@ -79,7 +79,12 @@ export function loadBrand(options: { file?: string; isEntitled?: (feature: strin
   if (!isEntitled("whitelabel")) {
     return fallback(`${file} found but this server is not licensed for whitelabel; using the default brand`);
   }
-  return { brand: parsed.data, source: "file", file };
+  // Renamed installations keep the customer-owned file as-is; normalize the
+  // former product default only in the value served to the application.
+  const brand = parsed.data.name === "OpenMausBot"
+    ? { ...parsed.data, name: DEFAULT_BRAND.name }
+    : parsed.data;
+  return { brand, source: "file", file };
 }
 
 /** One line for the startup log. */

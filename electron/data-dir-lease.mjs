@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { hostname, uptime } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 // These names are shared with older binaries. Changing them defeats cross-version exclusion.
 const LEASE_NAME = "openmausbot-server.lease";
@@ -323,14 +323,29 @@ function validateDataDir(dataDir) {
   return dataDir;
 }
 
-function prepareDataDir(dataDir, legacyDataDir) {
+export function assertLegacyDataDirIsNotInUse(legacyDataDir) {
+  validateDataDir(legacyDataDir);
+  const owner = readOwner(join(legacyDataDir, LEASE_NAME));
+  if (!owner) return;
+  if (owner.host === hostname() && !ownerIsAlive(owner)) return;
+  throw leaseError("crewbot cannot migrate a legacy data directory while another server may be using it; close the other instance and try again.");
+}
+
+function prepareDataDir(dataDir, options = {}) {
   validateDataDir(dataDir);
-  if (legacyDataDir !== undefined) {
-    validateDataDir(legacyDataDir);
-    // Preserve the server's pre-rename migration order. Acquiring the new
-    // directory first would create it and make the later one-time rename a
-    // no-op, presenting an existing user with an empty workspace.
-    if (!existsSync(dataDir) && existsSync(legacyDataDir)) {
+  const legacyDataDirs = [
+    ...(options.legacyDataDirs ?? []),
+    ...(options.legacyDataDir === undefined ? [] : [options.legacyDataDir]),
+  ];
+  for (const legacyDataDir of legacyDataDirs) validateDataDir(legacyDataDir);
+  // Preserve the server's pre-rename migration order. Acquiring the new
+  // directory first would create it and make the later one-time rename a
+  // no-op, presenting an existing user with an empty workspace. The existing
+  // target always wins: never merge or overwrite its contents.
+  if (!existsSync(dataDir)) {
+    const legacyDataDir = legacyDataDirs.find((dir) => existsSync(dir));
+    if (legacyDataDir) {
+      assertLegacyDataDirIsNotInUse(legacyDataDir);
       try {
         renameSync(legacyDataDir, dataDir);
       } catch {
@@ -345,6 +360,16 @@ function prepareDataDir(dataDir, legacyDataDir) {
     throw leaseError("crewbot cannot create its data directory.", error);
   }
   return join(dataDir, LEASE_NAME);
+}
+
+/** Legacy home folders move only when the desktop is using its default
+ * ~/.crewbot directory. An explicit data-dir override belongs to its caller
+ * and must never absorb unrelated live home data. */
+export function legacyDataDirsForDefault(dataDir, home, environment = process.env) {
+  const hasOverride = [environment.CREWBOT_DATA_DIR, environment.OMB_DATA_DIR]
+    .some((value) => typeof value === "string" && value.trim().length > 0);
+  if (hasOverride || resolve(dataDir) !== resolve(join(home, ".crewbot"))) return [];
+  return [join(home, ".openmausbot"), join(home, ".opengrokbot")];
 }
 
 function assertNoLiveDelegatedChild(dataDir) {
@@ -426,7 +451,7 @@ function validateChildDelegation(dataDir, encoded) {
 }
 
 function acquireDataDirLeaseInternal(dataDir, options = {}) {
-  const leasePath = prepareDataDir(dataDir, options.legacyDataDir);
+  const leasePath = prepareDataDir(dataDir, options);
   if (options.guardDelegatedChild !== false) assertNoLiveDelegatedChild(dataDir);
   const owner = {
     version: 1,

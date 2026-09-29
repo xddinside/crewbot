@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -43,6 +43,19 @@ describe("brand.json", () => {
     expect(status.notice).toBeUndefined();
     expect(describeBrand(status)).toBe(`brand: Reliable Platform (from ${file})`);
   });
+
+  it.each([["OpenMausBot", "crewbot"], ["crewbot", "crewbot"]])(
+    "keeps the configured brand name %s compatible at read time",
+    (storedName, displayName) => {
+      const contents = JSON.stringify({ name: storedName, tagline: "Local and private", accent: "#1D4ED8" });
+      const file = brandFile(contents);
+
+      const status = loadBrand({ file, isEntitled: licensed });
+
+      expect(status.brand).toEqual({ name: displayName, tagline: "Local and private", accent: "#1D4ED8" });
+      expect(readFileSync(file, "utf8")).toBe(contents);
+    },
+  );
 
   it("keeps the default brand on an unlicensed server and says so", () => {
     const file = brandFile(JSON.stringify({ name: "Acme" }));

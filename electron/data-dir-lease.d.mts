@@ -19,8 +19,16 @@ export declare class DataDirLeaseError extends Error {
 
 export declare function acquireDataDirLease(
   dataDir: string,
-  options?: { legacyDataDir?: string },
+  options?: { legacyDataDir?: string; legacyDataDirs?: string[] },
 ): OwnedDataDirLease;
+
+export declare function assertLegacyDataDirIsNotInUse(legacyDataDir: string): void;
+
+export declare function legacyDataDirsForDefault(
+  dataDir: string,
+  home: string,
+  environment?: NodeJS.ProcessEnv | Record<string, string | undefined>,
+): string[];
 
 export declare function acquireDataDirLeaseForProcess(
   dataDir: string,
