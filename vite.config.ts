@@ -29,6 +29,10 @@ export default defineConfig({
       "scripts/**/*.test.ts",
     ],
     setupFiles: ["server/testing/setup.ts"],
+    // Refuses to start if a live data dir is reachable through
+    // CREWBOT_DATA_DIR / OMB_DATA_DIR. Runs in the main process, so it holds
+    // even for a run that never loads setupFiles. See server/testing/global-setup.ts.
+    globalSetup: ["server/testing/global-setup.ts"],
     // the suite spawns fake provider CLIs and a real harness server;
     // parallel files introduce load-sensitive flakes for no win
     fileParallelism: false,

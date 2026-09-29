@@ -3,11 +3,17 @@
 // reads HOME (POSIX) / USERPROFILE (Windows) at call time, and this file
 // runs before any test module imports server/config.ts.
 import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach } from "vitest";
 
 import { removeTempDir } from "./cleanup.ts";
+import { assertDataDirIsolated, resolveDataDir } from "./data-dir-guard.ts";
+
+// Captured before the redirect below, because after it `homedir()` can no longer
+// tell us what the invoking user's real home was. Every assertion in this file
+// needs both: the home we redirected to, and the one we must not touch.
+const realHome = homedir();
 
 const home = mkdtempSync(join(tmpdir(), "omb-test-home-"));
 process.env.HOME = home;
@@ -27,6 +33,14 @@ delete process.env.HERMES_HOME;
 // wholesale, and "it is safe because of a line in another file" is not the
 // footing that delete should stand on.
 process.env.OMB_COMPANION_DIR = join(home, ".openmausbot-companion");
+
+// The deletes above are the fix for a real incident; this is the fence around
+// it. Clearing the vars is only correct if the redirect actually took effect and
+// the data dir the suite is about to resolve lands inside the throwaway home —
+// and a test that cleans its data dir deletes whatever it points at, live data
+// included. Both are cheap to check now and impossible to check after the
+// damage, so the run refuses to start instead. Throws DataDirIsolationError.
+assertDataDirIsolated(resolveDataDir(process.env, home), home, realHome);
 
 // Product code follows navigator.language, which makes English assertions
 // depend on the developer or CI host locale. Keep the shared default stable;
