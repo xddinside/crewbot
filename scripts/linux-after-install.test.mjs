@@ -38,13 +38,15 @@ function fixture() {
   const apparmorDir = path.join(systemRoot, "apparmor.d");
   fs.mkdirSync(apparmorDir, { recursive: true });
   fs.chmodSync(apparmorDir, 0o755);
+  const legacyProfile = path.join(apparmorDir, "openmausbot-browser");
+  fs.writeFileSync(legacyProfile, "legacy profile sentinel\n");
   const parser = path.join(systemRoot, "apparmor_parser");
   fs.writeFileSync(parser, '#!/bin/sh\nprintf "profile operation: %s %s\\n" "$1" "$2"\n', { mode: 0o755 });
   const apparmorStatus = path.join(systemRoot, "apparmor_status");
   fs.writeFileSync(apparmorStatus, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   fs.writeFileSync(path.join(systemRoot, "apparmor_restrict_unprivileged_userns"), "1\n");
   fs.writeFileSync(path.join(systemRoot, "apparmor-profiles"), "crewbot-browser (unconfined)\n");
-  return { appRoot, resources, cuaRoot, chromiumSandbox, browserRoot, chromeRoot, systemRoot, apparmorDir, parser, apparmorStatus };
+  return { appRoot, resources, cuaRoot, chromiumSandbox, browserRoot, chromeRoot, systemRoot, apparmorDir, parser, apparmorStatus, legacyProfile };
 }
 
 function runHook(appRoot) {
@@ -84,6 +86,25 @@ describe("Linux DEB sandbox policy", () => {
 });
 
 describe.skipIf(process.platform !== "linux")("Linux DEB upgrade hook", () => {
+  it("leaves the OpenMausBot profile and install paths untouched", () => {
+    const { appRoot, apparmorDir, legacyProfile } = fixture();
+    const legacyOpt = path.join(appRoot, "legacy", "opt", "OpenMausBot");
+    const legacyBin = path.join(appRoot, "legacy", "usr", "bin");
+    fs.mkdirSync(legacyOpt, { recursive: true });
+    fs.mkdirSync(legacyBin, { recursive: true });
+    const legacyExecutable = path.join(legacyOpt, "openmausbot");
+    const legacyLauncher = path.join(legacyBin, "openmausbot");
+    fs.writeFileSync(legacyExecutable, "legacy executable\n", { mode: 0o755 });
+    fs.writeFileSync(legacyLauncher, "legacy launcher\n");
+
+    expect(runHook(appRoot).status).toBe(0);
+    expect(runRemoveHook(appRoot).status).toBe(0);
+    expect(fs.readFileSync(legacyProfile, "utf8")).toBe("legacy profile sentinel\n");
+    expect(fs.readFileSync(legacyExecutable, "utf8")).toBe("legacy executable\n");
+    expect(fs.readFileSync(legacyLauncher, "utf8")).toBe("legacy launcher\n");
+    expect(fs.existsSync(path.join(apparmorDir, "crewbot-browser"))).toBe(false);
+  });
+
   it("repairs legacy directory and executable modes idempotently", () => {
     const { appRoot, resources, cuaRoot, chromiumSandbox, browserRoot, chromeRoot, apparmorDir } = fixture();
 
