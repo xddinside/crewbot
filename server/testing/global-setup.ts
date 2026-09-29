@@ -9,4 +9,8 @@
 
 import { assertNoLiveDataDirOverride } from "./data-dir-guard.ts";
 
-assertNoLiveDataDirOverride(process.env);
+// Exported as a function because that is the only form vitest runs: a
+// top-level side effect in a globalSetup file is loaded and then ignored.
+export function setup(): void {
+  assertNoLiveDataDirOverride(process.env);
+}
