@@ -453,6 +453,10 @@ try {
   requireDirectoryMode(debAppRoot, 0o755);
   const debResources = path.join(debAppRoot, "resources");
   requireFile(path.join(debResources, "crewbot-browser.apparmor"));
+  const appArmorProfile = readFileSync(path.join(debResources, "crewbot-browser.apparmor"), "utf8");
+  if (!appArmorProfile.includes("/opt/crewbot/resources/browser-engine/") || appArmorProfile.includes("/opt/OpenMausBot/")) {
+    fail("DEB AppArmor profile does not match Crewbot's installed browser path");
+  }
   // Routes the in-app updater to the package-manager hand-off.
   requirePackageType(debResources, "DEB", "deb");
   requireUpdaterTarget(debResources, "DEB");

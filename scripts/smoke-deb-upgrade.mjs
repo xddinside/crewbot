@@ -25,6 +25,21 @@ try {
 } catch (error) {
   if (String(error?.message ?? error).includes("refusing to replace")) throw error;
 }
+try {
+  const status = execFileSync("dpkg-query", ["-W", "-f=${db:Status-Abbrev}", "crewbot"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  }).trim();
+  if (status.startsWith("ii")) fail("refusing to replace a pre-existing Crewbot installation");
+} catch (error) {
+  if (String(error?.message ?? error).includes("refusing to replace")) throw error;
+}
+
+for (const directory of ["/opt/OpenMausBot", "/opt/crewbot"]) {
+  if (fs.existsSync(directory) || fs.lstatSync(directory, { throwIfNoEntry: false })) {
+    fail(`refusing to modify a pre-existing package path: ${directory}`);
+  }
+}
 
 const temporary = fs.mkdtempSync(path.join(path.resolve(runnerTemp), "omb-deb-upgrade-"));
 if (path.dirname(temporary) !== path.resolve(runnerTemp)) fail("temporary fixture escaped RUNNER_TEMP");
@@ -57,10 +72,18 @@ try {
     stdio: "inherit",
   });
   execFileSync("dpkg", ["--install", legacyDeb], { stdio: "inherit" });
+  const legacyVersion = execFileSync("dpkg-query", ["-W", "-f=${Version}", "openmausbot"], { encoding: "utf8" }).trim();
+  if (legacyVersion !== "0.1.7") fail(`legacy package fixture has unexpected version ${legacyVersion}`);
   for (const directory of ["/opt/OpenMausBot", "/opt/OpenMausBot/resources"]) {
     const mode = fs.lstatSync(directory).mode & 0o777;
     if (mode !== 0o775) fail(`legacy fixture did not reproduce 0775 at ${directory}`);
   }
+  const legacyMarker = "/opt/OpenMausBot/resources/legacy-upgrade-fixture";
+  const legacySnapshot = {
+    rootMode: fs.lstatSync("/opt/OpenMausBot").mode & 0o777,
+    resourcesMode: fs.lstatSync("/opt/OpenMausBot/resources").mode & 0o777,
+    marker: fs.readFileSync(legacyMarker, "utf8"),
+  };
 
   // apt configures the real artifact and resolves its declared desktop
   // dependencies. Calling dpkg directly can leave the package unconfigured on
@@ -70,25 +93,25 @@ try {
     stdio: "inherit",
   });
   for (const directory of [
-    "/opt/OpenMausBot",
-    "/opt/OpenMausBot/resources",
-    "/opt/OpenMausBot/resources/cua-linux-x64",
+    "/opt/crewbot",
+    "/opt/crewbot/resources",
+    "/opt/crewbot/resources/cua-linux-x64",
   ]) {
     const details = fs.lstatSync(directory);
     if (!details.isDirectory() || details.isSymbolicLink()) fail(`unsafe upgraded directory: ${directory}`);
     if (details.uid !== 0 || details.gid !== 0 || (details.mode & 0o777) !== 0o755) {
-      fail(`upgraded directory is not root:root 0755: ${directory}`);
+      fail(`installed directory is not root:root 0755: ${directory}`);
     }
   }
   for (const executable of ["cua-driver", "cua-cursor-theme"]) {
-    const file = path.join("/opt/OpenMausBot/resources/cua-linux-x64", executable);
+    const file = path.join("/opt/crewbot/resources/cua-linux-x64", executable);
     const details = fs.lstatSync(file);
     if (!details.isFile() || details.isSymbolicLink()) fail(`unsafe upgraded executable: ${file}`);
     if (details.uid !== 0 || details.gid !== 0 || (details.mode & 0o777) !== 0o755) {
-      fail(`upgraded executable is not root:root 0755: ${file}`);
+      fail(`installed executable is not root:root 0755: ${file}`);
     }
   }
-  const chromiumSandbox = "/opt/OpenMausBot/chrome-sandbox";
+  const chromiumSandbox = "/opt/crewbot/chrome-sandbox";
   const sandboxDetails = fs.lstatSync(chromiumSandbox);
   if (!sandboxDetails.isFile() || sandboxDetails.isSymbolicLink()) {
     fail(`unsafe upgraded Chromium sandbox: ${chromiumSandbox}`);
@@ -98,14 +121,25 @@ try {
     sandboxDetails.gid !== 0 ||
     (sandboxDetails.mode & 0o7777) !== 0o4755
   ) {
-    fail(`upgraded Chromium sandbox is not root:root 4755: ${chromiumSandbox}`);
+    fail(`installed Chromium sandbox is not root:root 4755: ${chromiumSandbox}`);
   }
-  const installedVersion = execFileSync("dpkg-query", ["-W", "-f=${Version}", "openmausbot"], {
+  const legacyAfter = {
+    version: execFileSync("dpkg-query", ["-W", "-f=${Version}", "openmausbot"], { encoding: "utf8" }).trim(),
+    rootMode: fs.lstatSync("/opt/OpenMausBot").mode & 0o777,
+    resourcesMode: fs.lstatSync("/opt/OpenMausBot/resources").mode & 0o777,
+    marker: fs.readFileSync(legacyMarker, "utf8"),
+  };
+  if (JSON.stringify(legacyAfter) !== JSON.stringify({ version: "0.1.7", ...legacySnapshot })) {
+    fail("Crewbot changed the installed OpenMausBot package or its files");
+  }
+  const installedVersion = execFileSync("dpkg-query", ["-W", "-f=${Version}", "crewbot"], {
     encoding: "utf8",
   }).trim();
   console.log(
-    `[smoke-deb-upgrade] OK: 0.1.7 legacy modes repaired by ${installedVersion} without weakening the runtime path`,
+    `[smoke-deb-upgrade] OK: Crewbot ${installedVersion} installed with secure modes beside unchanged OpenMausBot ${legacyAfter.version}`,
   );
 } finally {
+  try { execFileSync("dpkg", ["--purge", "openmausbot"], { stdio: "ignore" }); } catch {}
+  fs.rmSync("/opt/OpenMausBot", { recursive: true, force: true });
   fs.rmSync(temporary, { recursive: true, force: true });
 }

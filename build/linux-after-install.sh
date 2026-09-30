@@ -2,7 +2,7 @@
 set -eu
 
 # dpkg preserves an existing directory's mode during an in-place upgrade.
-# crewbot 0.1.7 installed the application ancestors as 0775, which makes
+# OpenMausBot 0.1.7 installed the application ancestors as 0775, which makes
 # the bundled Cua Driver correctly reject its own executable path. A configured
 # DEB also needs Electron's Chromium sandbox to be root-owned and setuid. The
 # bot's separate Chrome uses its normal user-namespace sandbox, with an exact
