@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { homedir } from "node:os";
 import path from "node:path";
 import { readFileSync } from "node:fs";
@@ -44,13 +44,33 @@ test("development commands isolate data, profile, cache, ports and stable servic
   });
   assert.equal(result.code, 0, result.stderr);
   const value = JSON.parse(result.stdout);
-  assert.equal(value.data, path.join(homedir(), ".crewbot-development-crewbot-pr8-review-fixes"));
-  assert.match(value.profile, /crewbot-development[/\\]crewbot-pr8-review-fixes$/);
+  const worktreeCount = execFileSync("git", ["worktree", "list", "--porcelain"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  }).split(/\r?\n/).filter((line) => line.startsWith("worktree ")).length;
+  const branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  }).trim();
+  const branchName = branch.split("/").at(-1) ?? "";
+  const worktree = worktreeCount > 1 && !["", "HEAD", "main", "master"].includes(branch)
+    ? branchName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-{2,}/g, "-").replace(/^-+|-+$/g, "")
+    : "";
+  const suffix = worktree ? `-${worktree}` : "";
+  assert.equal(value.data, path.join(homedir(), `.crewbot-development${suffix}`));
+  const profileParts = value.profile.split(/[\\/]/);
+  assert.equal(profileParts.at(-1), worktree || "crewbot-development");
+  if (worktree) assert.equal(profileParts.at(-2), "crewbot-development");
   assert.equal(value.stableProfile, undefined);
-  assert.match(value.cache, /crewbot-development-crewbot-pr8-review-fixes$/);
-  assert.match(value.startUrl, /^https:\/\/crewbot-pr8-review-fixes\.crewbot\.localhost:1355$/);
-  assert.notEqual(value.port, "18799");
-  assert.notEqual(value.webhookPort, "18800");
+  assert.equal(value.cache, path.join(homedir(), ".cache", `crewbot-development${suffix}`));
+  assert.equal(value.startUrl, `https://${worktree ? `${worktree}.` : ""}crewbot.localhost:1355`);
+  if (worktree) {
+    assert.notEqual(value.port, "18799");
+    assert.notEqual(value.webhookPort, "18800");
+  } else {
+    assert.equal(value.port, "18799");
+    assert.equal(value.webhookPort, "18800");
+  }
   assert.equal(value.development, "1");
   assert.equal(value.portless, "1");
   assert.equal(value.legacyData, undefined);
