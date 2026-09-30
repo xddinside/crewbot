@@ -71,7 +71,7 @@ import environmentsModule from "./environments.cjs";
 import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
-import { acquireDataDirLease, legacyDataDirsForDefault } from "./data-dir-lease.mjs";
+import { acquireDataDirLease, legacyDataDirsForSelection } from "./data-dir-lease.mjs";
 import { resolveDesktopProfilePath } from "./profile-path.mjs";
 import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDesktopStore } from "./managed-desktop.mjs";
 import { createCompanyBackups } from "./company-backups.mjs";
@@ -2691,7 +2691,7 @@ app.whenReady().then(async () => {
       const dataDir = desktopDataDir();
       const home = app.getPath("home");
       desktopDataDirLease = acquireDataDirLease(dataDir, {
-        legacyDataDirs: legacyDataDirsForDefault(dataDir, home),
+        legacyDataDirs: legacyDataDirsForSelection(home),
       });
     } catch (error) {
       dialog.showErrorBox(

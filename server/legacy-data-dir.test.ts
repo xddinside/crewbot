@@ -51,13 +51,21 @@ describe("migrateLegacyDataDir visibility", () => {
   // nothing anywhere says the old data was never picked up.
   it("warns when the destination already exists and a legacy dir is stranded", () => {
     const legacy = makeLegacy(".openmausbot");
-    mkdirSync(join(home, ".crewbot"), { recursive: true });
+    const destination = join(home, ".crewbot");
+    mkdirSync(destination, { recursive: true });
+    writeFileSync(join(destination, "current.txt"), "current workspace");
 
-    migrateLegacyDataDir(join(home, ".crewbot"));
+    migrateLegacyDataDir(destination);
 
     expect(errors.join("\n")).toContain("was not migrated");
     expect(errors.join("\n")).toContain(legacy);
     expect(errors.join("\n")).toContain("wins without merging");
+    expect(errors.join("\n")).toContain("Settings > Backups");
+    expect(errors.join("\n")).toContain("Keep both directories intact");
+    expect(errors.join("\n")).toContain("do not delete or merge them");
+    expect(errors.join("\n")).not.toMatch(/remove the destination|merge.*by hand/i);
+    expect(existsSync(legacy)).toBe(true);
+    expect(readFileSync(join(destination, "current.txt"), "utf8")).toBe("current workspace");
   });
 
   it("stays quiet when there is no legacy data at all", () => {
@@ -71,11 +79,18 @@ describe("migrateLegacyDataDir visibility", () => {
   it("warns when a custom data dir is chosen and legacy data is left behind", () => {
     const legacy = makeLegacy(".openmausbot");
     const custom = join(home, "elsewhere");
+    mkdirSync(custom);
+    writeFileSync(join(custom, "current.txt"), "custom workspace");
 
     migrateLegacyDataDir(custom);
 
     expect(errors.join("\n")).toContain("custom data directory");
     expect(errors.join("\n")).toContain(legacy);
+    expect(errors.join("\n")).toContain("Settings > Backups");
+    expect(errors.join("\n")).toContain("do not delete or merge them");
+    expect(errors.join("\n")).not.toMatch(/remove the destination|merge.*by hand/i);
+    expect(existsSync(legacy)).toBe(true);
+    expect(readFileSync(join(custom, "current.txt"), "utf8")).toBe("custom workspace");
   });
 
   it("warns about a second legacy dir left behind after migrating the first", () => {
@@ -86,9 +101,11 @@ describe("migrateLegacyDataDir visibility", () => {
     migrateLegacyDataDir(dest);
 
     const warning = errors.join("\n");
-    expect(warning).toContain(`${stranded} was left behind`);
-    expect(warning).toContain(`${migrated} was migrated to ${dest}`);
-    expect(warning).not.toContain(`${migrated} was left behind`);
+    expect(warning).toContain(`${stranded} was not migrated into ${dest}`);
+    expect(warning).toContain(`another legacy directory was already migrated from ${migrated}`);
+    expect(warning).toContain("Settings > Backups");
+    expect(warning).not.toContain(`${migrated} was not migrated`);
+    expect(existsSync(stranded)).toBe(true);
   });
 
   // The normal upgrade path must not gain noise.
@@ -100,7 +117,7 @@ describe("migrateLegacyDataDir visibility", () => {
     migrateLegacyDataDir(dest);
 
     expect(errors).toEqual([]);
-    expect(readFileSync(join(home, ".crewbot", "config.json"), "utf8")).toBe("{}");
+    expect(readFileSync(join(home, ".crewbot", "config.json"), "utf8")).toBe("{}\n");
     expect(existsSync(legacy)).toBe(false);
   });
 

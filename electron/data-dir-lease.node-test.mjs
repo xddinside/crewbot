@@ -9,7 +9,7 @@ import test from "node:test";
 import {
   acquireDataDirLease,
   acquireDataDirLeaseForProcess,
-  legacyDataDirsForDefault,
+  legacyDataDirsForSelection,
 } from "./data-dir-lease.mjs";
 
 const MODULE_URL = new URL("./data-dir-lease.mjs", import.meta.url).href;
@@ -377,14 +377,14 @@ test("a foreign-host reaper fails closed and identifies its preserved recovery r
 test("legacy data is moved before lease creation", () => {
   const root = mkdtempSync(path.join(tmpdir(), "omb-electron-legacy-"));
   roots.push(root);
-  const legacyDataDir = path.join(root, ".openmausbot");
-  const dataDir = path.join(root, ".crewbot");
+  const home = path.join(root, "home");
+  mkdirSync(home);
+  const legacyDataDir = path.join(home, ".opengrokbot");
+  const dataDir = path.join(home, ".crewbot");
   mkdirSync(legacyDataDir);
   writeFileSync(path.join(legacyDataDir, "keep-me.txt"), "kept");
 
-  const lease = acquireDataDirLease(dataDir, {
-    legacyDataDirs: [legacyDataDir],
-  });
+  const lease = acquireDataDirLease(dataDir, { legacyDataDirs: legacyDataDirsForSelection(home) });
   try {
     assert.equal(readFileSync(path.join(dataDir, "keep-me.txt"), "utf8"), "kept");
     assert.throws(() => readFileSync(path.join(legacyDataDir, "keep-me.txt")), /ENOENT/);
@@ -406,7 +406,7 @@ test("default desktop migration prefers .openmausbot and moves it before creatin
   writeFileSync(path.join(openMaus, "fixture.txt"), "preferred");
   writeFileSync(path.join(openGrok, "fixture.txt"), "older");
 
-  const lease = acquireDataDirLease(dataDir, { legacyDataDirs: legacyDataDirsForDefault(dataDir, home, {}) });
+  const lease = acquireDataDirLease(dataDir, { legacyDataDirs: legacyDataDirsForSelection(home) });
   try {
     assert.equal(readFileSync(path.join(dataDir, "fixture.txt"), "utf8"), "preferred");
     assert.equal(existsSync(path.join(dataDir, LEASE_NAME)), true);
@@ -427,7 +427,7 @@ test("default desktop migration falls back to .opengrokbot", () => {
   mkdirSync(openGrok);
   writeFileSync(path.join(openGrok, "fixture.txt"), "fallback data");
 
-  const lease = acquireDataDirLease(dataDir, { legacyDataDirs: legacyDataDirsForDefault(dataDir, home, {}) });
+  const lease = acquireDataDirLease(dataDir, { legacyDataDirs: legacyDataDirsForSelection(home) });
   try {
     assert.equal(readFileSync(path.join(dataDir, "fixture.txt"), "utf8"), "fallback data");
     assert.equal(existsSync(path.join(dataDir, LEASE_NAME)), true);
@@ -453,7 +453,7 @@ test("desktop migration leaves a live legacy data directory in place", () => {
   const leasePath = path.join(openMaus, LEASE_NAME);
   try {
     assert.throws(
-      () => acquireDataDirLease(dataDir, { legacyDataDirs: legacyDataDirsForDefault(dataDir, home, {}) }),
+      () => acquireDataDirLease(dataDir, { legacyDataDirs: legacyDataDirsForSelection(home) }),
       /cannot migrate a legacy data directory while another server may be using it/i,
     );
 
@@ -481,7 +481,7 @@ test("a pre-existing desktop target wins without merging either legacy source", 
   writeFileSync(path.join(openGrok, "fixture.txt"), "OpenGrok");
   writeFileSync(path.join(dataDir, "winner.txt"), "current");
 
-  const lease = acquireDataDirLease(dataDir, { legacyDataDirs: legacyDataDirsForDefault(dataDir, home, {}) });
+  const lease = acquireDataDirLease(dataDir, { legacyDataDirs: legacyDataDirsForSelection(home) });
   try {
     assert.equal(readFileSync(path.join(dataDir, "winner.txt"), "utf8"), "current");
     assert.equal(existsSync(path.join(dataDir, "fixture.txt")), false);
@@ -492,54 +492,57 @@ test("a pre-existing desktop target wins without merging either legacy source", 
   }
 });
 
-test("an explicit desktop override to ~/.crewbot still migrates legacy home data", () => {
-  for (const variable of ["CREWBOT_DATA_DIR", "OMB_DATA_DIR"]) {
-    const root = mkdtempSync(path.join(tmpdir(), "omb-electron-default-override-"));
-    roots.push(root);
-    const home = path.join(root, "home");
-    mkdirSync(path.join(home, "unused"), { recursive: true });
-    const openMaus = path.join(home, ".openmausbot");
-    const dataDir = path.join(home, "unused", "..", ".crewbot");
-    mkdirSync(openMaus);
-    writeFileSync(path.join(openMaus, "fixture.txt"), "legacy data");
+test("a path that resolves to ~/.crewbot still migrates legacy home data", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "omb-electron-default-override-"));
+  roots.push(root);
+  const home = path.join(root, "home");
+  mkdirSync(path.join(home, "unused"), { recursive: true });
+  const openMaus = path.join(home, ".openmausbot");
+  const dataDir = path.join(home, "unused", "..", ".crewbot");
+  mkdirSync(openMaus);
+  writeFileSync(path.join(openMaus, "fixture.txt"), "legacy data");
 
-    const legacyDataDirs = legacyDataDirsForDefault(dataDir, home, { [variable]: dataDir });
-    assert.deepEqual(legacyDataDirs, [openMaus, path.join(home, ".opengrokbot")]);
-    const lease = acquireDataDirLease(dataDir, { legacyDataDirs });
-    try {
-      assert.equal(readFileSync(path.join(home, ".crewbot", "fixture.txt"), "utf8"), "legacy data");
-      assert.equal(existsSync(openMaus), false);
-    } finally {
-      lease.release();
-    }
+  const legacyDataDirs = legacyDataDirsForSelection(home);
+  assert.deepEqual(legacyDataDirs, [openMaus, path.join(home, ".opengrokbot")]);
+  const lease = acquireDataDirLease(dataDir, { legacyDataDirs });
+  try {
+    assert.equal(readFileSync(path.join(home, ".crewbot", "fixture.txt"), "utf8"), "legacy data");
+    assert.equal(existsSync(openMaus), false);
+  } finally {
+    lease.release();
   }
 });
 
-test("explicit desktop data-dir overrides do not migrate legacy home directories", () => {
-  for (const variable of ["CREWBOT_DATA_DIR", "OMB_DATA_DIR"]) {
-    const root = mkdtempSync(path.join(tmpdir(), "omb-electron-custom-migration-"));
-    roots.push(root);
-    const home = path.join(root, "home");
-    mkdirSync(home);
-    const openMaus = path.join(home, ".openmausbot");
-    const openGrok = path.join(home, ".opengrokbot");
-    const dataDir = path.join(root, "custom-data");
-    mkdirSync(openMaus);
-    mkdirSync(openGrok);
-    writeFileSync(path.join(openMaus, "fixture.txt"), "OpenMaus");
-    writeFileSync(path.join(openGrok, "fixture.txt"), "OpenGrok");
+test("a custom desktop data dir warns and leaves legacy home directories intact", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "omb-electron-custom-migration-"));
+  roots.push(root);
+  const home = path.join(root, "home");
+  mkdirSync(home);
+  const openMaus = path.join(home, ".openmausbot");
+  const openGrok = path.join(home, ".opengrokbot");
+  const dataDir = path.join(root, "custom-data");
+  mkdirSync(openMaus);
+  mkdirSync(openGrok);
+  writeFileSync(path.join(openMaus, "fixture.txt"), "OpenMaus");
+  writeFileSync(path.join(openGrok, "fixture.txt"), "OpenGrok");
 
-    const legacyDataDirs = legacyDataDirsForDefault(dataDir, home, { [variable]: dataDir });
-    assert.deepEqual(legacyDataDirs, []);
-    const lease = acquireDataDirLease(dataDir, { legacyDataDirs });
-    try {
-      assert.equal(existsSync(path.join(dataDir, "fixture.txt")), false);
-      assert.equal(readFileSync(path.join(openMaus, "fixture.txt"), "utf8"), "OpenMaus");
-      assert.equal(readFileSync(path.join(openGrok, "fixture.txt"), "utf8"), "OpenGrok");
-    } finally {
-      lease.release();
-    }
+  const legacyDataDirs = legacyDataDirsForSelection(home);
+  assert.deepEqual(legacyDataDirs, [openMaus, openGrok]);
+  const warnings = [];
+  const originalError = console.error;
+  console.error = (...args) => warnings.push(args.map(String).join(" "));
+  let lease;
+  try {
+    lease = acquireDataDirLease(dataDir, { legacyDataDirs });
+    assert.equal(existsSync(path.join(dataDir, "fixture.txt")), false);
+    assert.equal(readFileSync(path.join(openMaus, "fixture.txt"), "utf8"), "OpenMaus");
+    assert.equal(readFileSync(path.join(openGrok, "fixture.txt"), "utf8"), "OpenGrok");
+  } finally {
+    lease?.release();
+    console.error = originalError;
   }
+  assert.match(warnings.join("\n"), /custom data directory/i);
+  assert.match(warnings.join("\n"), /does not merge/i);
 });
 
 test("process entry API remains compatible with a standalone server", () => {

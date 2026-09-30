@@ -339,6 +339,26 @@ function migrate(sourceDir, dataDir) {
   }
 }
 
+function warnLegacyDataLeftBehind(legacyDataDirs, dataDir, defaultDataDir, movedSource) {
+  const stranded = legacyDataDirs.filter((dir) => existsSync(dir));
+  for (const dir of stranded) {
+    let reason;
+    if (movedSource) {
+      reason = `another legacy directory was already migrated from ${movedSource}; only one directory moves automatically`;
+    } else if (resolve(dataDir) !== resolve(defaultDataDir)) {
+      reason = `${dataDir} is a custom data directory, and legacy data is only migrated into the default workspace`;
+    } else {
+      reason = `${dataDir} already exists and wins without merging`;
+    }
+    console.error(
+      `legacy-data-dir: ${dir} was not migrated into ${dataDir} because ${reason}. Keep both directories intact. ` +
+      `To inspect the older data, open a disposable copy as a separate Crewbot workspace or restore its backup to a ` +
+      `separate data directory. Settings > Backups replaces its target; it does not merge. Back up any target before ` +
+      `replacement. Keep both original directories; do not delete or merge them as part of this recovery.`,
+    );
+  }
+}
+
 /** Move the default legacy workspace with a recoverable, verified path migration.
  *
  * @param dataDir - The selected Crewbot workspace root.
@@ -348,14 +368,18 @@ function migrate(sourceDir, dataDir) {
 export function migrateLegacyDataDir(dataDir, options = {}) {
   const home = options.home ?? homedir();
   const defaultDataDir = join(home, ".crewbot");
-  if (resolve(dataDir) !== resolve(defaultDataDir)) return;
-
   const legacyDataDirs = options.legacyDataDirs ?? LEGACY_DATA_DIR_NAMES.map((name) => join(home, name));
+  if (resolve(dataDir) !== resolve(defaultDataDir)) {
+    warnLegacyDataLeftBehind(legacyDataDirs, dataDir, defaultDataDir);
+    return;
+  }
+
   const sourceDir = legacyDataDirs.map((dir) => resolve(dir)).find((dir) => existsSync(dir));
   const journal = existsSync(dataDir) ? readJournal(dataDir) : sourceDir ? readJournal(sourceDir) : null;
   if (journal) validateJournalPaths(journal, dataDir, legacyDataDirs);
   if (journal && journal.phase === "complete") {
     finishCompletedMigration(dataDir, journal);
+    warnLegacyDataLeftBehind(legacyDataDirs, dataDir, defaultDataDir);
     return;
   }
   if (journal && existsSync(dataDir)) {
@@ -364,10 +388,14 @@ export function migrateLegacyDataDir(dataDir, options = {}) {
     if (!recoveredSource) throw new Error(`Crewbot rolled back an interrupted migration, but its original data directory is missing: ${journal.source}`);
     options.assertLegacyDataDirIsNotInUse?.(recoveredSource);
     migrate(recoveredSource, dataDir);
+    warnLegacyDataLeftBehind(legacyDataDirs, dataDir, defaultDataDir, recoveredSource);
     return;
   }
   if (!sourceDir) return;
-  if (existsSync(dataDir)) return;
+  if (existsSync(dataDir)) {
+    warnLegacyDataLeftBehind(legacyDataDirs, dataDir, defaultDataDir);
+    return;
+  }
 
   options.assertLegacyDataDirIsNotInUse?.(sourceDir);
   const preparedJournal = readJournal(sourceDir);
@@ -376,4 +404,5 @@ export function migrateLegacyDataDir(dataDir, options = {}) {
     rmSync(join(sourceDir, MIGRATION_DIR, JOURNAL_FILE), { force: true });
   }
   migrate(sourceDir, dataDir);
+  warnLegacyDataLeftBehind(legacyDataDirs, dataDir, defaultDataDir, sourceDir);
 }

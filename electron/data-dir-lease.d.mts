@@ -24,11 +24,7 @@ export declare function acquireDataDirLease(
 
 export declare function assertLegacyDataDirIsNotInUse(legacyDataDir: string): void;
 
-export declare function legacyDataDirsForDefault(
-  dataDir: string,
-  home: string,
-  environment?: NodeJS.ProcessEnv | Record<string, string | undefined>,
-): string[];
+export declare function legacyDataDirsForSelection(home: string): string[];
 
 export declare function acquireDataDirLeaseForProcess(
   dataDir: string,

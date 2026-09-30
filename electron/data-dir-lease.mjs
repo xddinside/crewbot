@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { hostname, uptime } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { migrateLegacyDataDir } from "./legacy-data-dir.mjs";
 
 // These names are shared with older binaries. Changing them defeats cross-version exclusion.
@@ -343,7 +343,7 @@ function prepareDataDir(dataDir, options = {}) {
   // operation rebases saved workspace paths and keeps a recovery snapshot.
   if (legacyDataDirs.length > 0) {
     migrateLegacyDataDir(dataDir, {
-      home: dirname(dataDir),
+      home: legacyDataDirs.length > 0 ? dirname(legacyDataDirs[0]) : dirname(dataDir),
       legacyDataDirs,
       assertLegacyDataDirIsNotInUse,
     });
@@ -356,13 +356,9 @@ function prepareDataDir(dataDir, options = {}) {
   return join(dataDir, LEASE_NAME);
 }
 
-/** Legacy home folders move only when the desktop is using its default
- * ~/.crewbot directory. An explicit data-dir override belongs to its caller
- * and must never absorb unrelated live home data. */
-export function legacyDataDirsForDefault(dataDir, home, environment = process.env) {
-  const hasOverride = [environment.CREWBOT_DATA_DIR, environment.OMB_DATA_DIR]
-    .some((value) => typeof value === "string" && value.trim().length > 0);
-  if (hasOverride || resolve(dataDir) !== resolve(join(home, ".crewbot"))) return [];
+/** Provide home candidates for both migration and a useful custom-directory warning.
+ * The migration helper moves them only when `dataDir` resolves to ~/.crewbot. */
+export function legacyDataDirsForSelection(home) {
   return [join(home, ".openmausbot"), join(home, ".opengrokbot")];
 }
 
