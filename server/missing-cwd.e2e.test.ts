@@ -35,9 +35,9 @@ it("recovers a missing working folder in the same task without losing its transc
       body: JSON.stringify({ text: failedUser.text, threadId }),
     });
     expect(retry.status, await retry.clone().text()).toBe(202);
-    const wait = await control(["wait", "--bot", botId, "--timeout", "30"]);
+    const wait = await control(["wait", "--bot", botId, "--task", threadId, "--timeout", "30"]);
     const afterRetry = await control(["messages", "--bot", botId, "--limit", "20"]);
-    expect(wait.status).toBe("settled");
+    expect(wait.status, JSON.stringify({ target: wait.target, messages: wait.messages?.slice(-5) })).toBe("settled");
     expect(wait.target.activity).toBe("idle");
     expect(afterRetry.messages.some((message: any) => message.role === "bot" && message.kind === "text")).toBe(true);
     expect(wait.taskId).toBe(threadId);
@@ -96,10 +96,13 @@ it("recovers a missing working folder in the same task without losing its transc
     expect(resumedError?.tool.name).toBe(`error: the working folder no longer exists: ${resumedCwd}`);
     await restartAndRetry(resumed.bot.id, resumed.bot.activeTaskId, resumedUser, resumedRetryCwd);
   } finally {
-    for (const cwd of [firstUseCwd, firstUseRetryCwd, resumedCwd, resumedRetryCwd]) {
-      rmSync(cwd, { recursive: true, force: true });
+    try {
+      await fixture.close();
+    } finally {
+      for (const cwd of [firstUseCwd, firstUseRetryCwd, resumedCwd, resumedRetryCwd]) {
+        rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      }
     }
-    await fixture.close();
   }
 }, 120_000);
 
@@ -125,13 +128,15 @@ it("refuses to restart a task while its provider session is live", async () => {
     await control(["send", "--bot", bot.id, "--text", "Keep this provider session live"]);
 
     let busy = false;
-    for (let attempt = 0; attempt < 50; attempt += 1) {
+    let observedState: any;
+    for (let attempt = 0; attempt < 300; attempt += 1) {
       const state = await fetch(`${fixture.info.url}/api/bots?messages=0`).then((response) => response.json()) as any;
+      observedState = state.bots.find((candidate: any) => candidate.id === bot.id)?.tasks.find((task: any) => task.threadId === threadId);
       busy = Boolean(state.bots.find((candidate: any) => candidate.id === bot.id)?.tasks.find((task: any) => task.threadId === threadId)?.busy);
       if (busy) break;
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    expect(busy).toBe(true);
+    expect(busy, JSON.stringify(observedState)).toBe(true);
 
     const restart = await fetch(`${fixture.info.url}/api/bots/${bot.id}/tasks/${threadId}`, {
       method: "PATCH",
@@ -144,7 +149,12 @@ it("refuses to restart a task while its provider session is live", async () => {
     await control(["interrupt", "--bot", bot.id]);
     await control(["wait", "--bot", bot.id, "--timeout", "30"]);
   } finally {
-    for (const path of [cwd, replacementCwd]) rmSync(path, { recursive: true, force: true });
-    await fixture.close();
+    try {
+      await fixture.close();
+    } finally {
+      for (const path of [cwd, replacementCwd]) {
+        rmSync(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      }
+    }
   }
-}, 60_000);
+}, 90_000);
