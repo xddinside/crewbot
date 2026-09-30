@@ -21,6 +21,7 @@ import {
 import type { Readable, Writable } from "node:stream";
 import { join } from "node:path";
 import { resolveCliSpawn, type ResolvedSpawn } from "./env-path.ts";
+import { missingCwdReason } from "./bot-cwd.ts";
 
 export function resolveCli(cli: string, args: string[] = [], env?: NodeJS.ProcessEnv): ResolvedSpawn {
   return resolveCliSpawn(cli, args, env);
@@ -115,7 +116,16 @@ export function execCli(
  * guaranteed to fail the same way. */
 type SpawnFailure = { message: string; setup: boolean };
 
-export function describeSpawnFailure(err: NodeJS.ErrnoException, cli: string): SpawnFailure {
+export function describeSpawnFailure(err: NodeJS.ErrnoException, cli: string, cwd?: string | null): SpawnFailure {
+  // A launch fails with ENOENT for two unrelated reasons: the executable is
+  // not on PATH, or the working folder it was to run in is gone. Node reports
+  // both identically, so the folder is checked first — blaming a CLI the user
+  // never removed sends them off to install the wrong thing, and `setup: true`
+  // then marks the engine dead until they do.
+  if (err.code === "ENOENT" || err.code === "ENOTDIR") {
+    const missing = missingCwdReason(cwd);
+    if (missing) return { message: missing, setup: true };
+  }
   if (err.code === "ENOENT")
     return { message: `\`${cli}\` isn't installed, or isn't on this app's PATH`, setup: true };
   if (err.code === "EACCES" || err.code === "EPERM")

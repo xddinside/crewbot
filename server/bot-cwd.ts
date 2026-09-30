@@ -24,3 +24,20 @@ export function validateBotCwd(input: unknown): CwdValidation {
   if (!stat.isDirectory()) return { ok: false, error: `that path is not a folder: ${cwd}` };
   return { ok: true, cwd };
 }
+
+/** Why a turn cannot run in `cwd`, or null when the folder is usable.
+ * validateBotCwd answers "may this folder be saved"; this answers "can a
+ * turn start here now". A folder accepted at save time can be renamed or
+ * deleted before the next turn, and the launch then fails with an ENOENT
+ * that reads exactly like a CLI missing from PATH. */
+export function missingCwdReason(cwd: string | null | undefined): string | null {
+  if (!cwd) return null;
+  let stat;
+  try {
+    stat = statSync(cwd);
+  } catch {
+    return `the working folder no longer exists: ${cwd}`;
+  }
+  if (!stat.isDirectory()) return `the working folder is not a folder: ${cwd}`;
+  return null;
+}
