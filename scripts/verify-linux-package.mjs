@@ -75,8 +75,8 @@ function requireUpdaterTarget(resources, label) {
   const updateFile = path.join(resources, "app-update.yml");
   requireFile(updateFile);
   const update = readFileSync(updateFile, "utf8");
-  if (!/^owner: milind-soni$/m.test(update) || !/^repo: OpenMausBot$/m.test(update)) {
-    fail(`${label} app-update.yml does not point at milind-soni/OpenMausBot`);
+  if (!/^owner: xddinside$/m.test(update) || !/^repo: crewbot$/m.test(update)) {
+    fail(`${label} app-update.yml does not point at xddinside/crewbot`);
   }
 }
 
@@ -398,8 +398,11 @@ function verifyCloudflaredResources(resources, label, { directoryMode = 0o755 } 
 
 const appImage = exactlyOne(".AppImage");
 const deb = exactlyOne(".deb");
+if (!path.basename(appImage).startsWith("crewbot-") || !path.basename(deb).startsWith("crewbot-")) {
+  fail("Linux artifacts must use the crewbot product name");
+}
 const unpacked = path.join(releaseDir, "linux-unpacked");
-const executable = path.join(unpacked, "openmausbot");
+const executable = path.join(unpacked, "crewbot");
 const resources = path.join(unpacked, "resources");
 
 requireExecutable(appImage);
@@ -408,6 +411,7 @@ requireDirectoryMode(unpacked, 0o755);
 for (const relative of ["app.asar", "ui/index.html", "server/index.js"]) {
   requireFile(path.join(resources, relative));
 }
+requireFile(path.join(resources, "crewbot-browser.apparmor"));
 for (const forbidden of ["speech-helper", "cua-driver", "cua-sdk"]) {
   if (statSync(path.join(resources, forbidden), { throwIfNoEntry: false })) {
     fail(`unsupported Linux resource was bundled: ${forbidden}`);
@@ -423,21 +427,32 @@ const fields = execFileSync(
   { encoding: "utf8" },
 );
 for (const expected of [
-  "Package: openmausbot",
+  "Package: crewbot",
   "Architecture: amd64",
-  "Maintainer: Milind Soni",
+  "Maintainer: crewbot maintainers",
   "Section: utils",
   "Priority: optional",
 ]) {
   if (!fields.includes(expected)) fail(`DEB metadata is missing ${JSON.stringify(expected)}`);
 }
 
-const extracted = mkdtempSync(path.join(tmpdir(), "omb-deb-verify-"));
+const extracted = mkdtempSync(path.join(tmpdir(), "crewbot-deb-verify-"));
 try {
   execFileSync("dpkg-deb", ["--extract", deb, extracted]);
-  const debAppRoot = path.join(extracted, "opt", "OpenMausBot");
+  const debAppRoot = path.join(extracted, "opt", "crewbot");
+  for (const relative of [
+    path.join("opt", "OpenMausBot"),
+    path.join("usr", "bin", "openmausbot"),
+    path.join("usr", "share", "applications", "com.openmausbot.app.desktop"),
+    path.join("etc", "apparmor.d", "openmausbot-browser"),
+  ]) {
+    if (statSync(path.join(extracted, relative), { throwIfNoEntry: false })) {
+      fail(`crewbot DEB collides with a legacy OpenMausBot install path: ${relative}`);
+    }
+  }
   requireDirectoryMode(debAppRoot, 0o755);
   const debResources = path.join(debAppRoot, "resources");
+  requireFile(path.join(debResources, "crewbot-browser.apparmor"));
   // Routes the in-app updater to the package-manager hand-off.
   requirePackageType(debResources, "DEB", "deb");
   requireUpdaterTarget(debResources, "DEB");
@@ -455,7 +470,7 @@ try {
     "usr",
     "share",
     "applications",
-    "com.openmausbot.app.desktop",
+    "dev.xddinside.crewbot.desktop",
   );
   const scalableIcon = path.join(
     extracted,
@@ -465,16 +480,16 @@ try {
     "hicolor",
     "scalable",
     "apps",
-    "openmausbot.svg",
+    "crewbot.svg",
   );
   requireFile(desktopFile);
   requireFile(scalableIcon);
   const desktop = readFileSync(desktopFile, "utf8");
   for (const expected of [
-    "Name=OpenMausBot",
-    "Exec=/opt/OpenMausBot/openmausbot %U",
-    "Icon=openmausbot",
-    "StartupWMClass=com.openmausbot.app",
+    "Name=crewbot",
+    "Exec=/opt/crewbot/crewbot %U",
+    "Icon=crewbot",
+    "StartupWMClass=dev.xddinside.crewbot",
     "Categories=Utility;",
   ]) {
     if (!desktop.includes(expected)) fail(`desktop entry is missing ${JSON.stringify(expected)}`);
@@ -484,7 +499,7 @@ try {
   rmSync(extracted, { recursive: true, force: true });
 }
 
-const appImageExtracted = mkdtempSync(path.join(tmpdir(), "omb-appimage-verify-"));
+const appImageExtracted = mkdtempSync(path.join(tmpdir(), "crewbot-appimage-verify-"));
 try {
   const offset = execFileSync(appImage, ["--appimage-offset"], {
     encoding: "utf8",
@@ -504,6 +519,7 @@ try {
     );
   }
   const appImageResources = path.join(squashRoot, "resources");
+  requireFile(path.join(appImageResources, "crewbot-browser.apparmor"));
   // No marker: the AppImage keeps the in-place restart-to-update path.
   requirePackageType(appImageResources, "AppImage", null);
   requireUpdaterTarget(appImageResources, "AppImage");
