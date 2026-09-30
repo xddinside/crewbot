@@ -47,7 +47,7 @@ import {
 } from "./browser-lifecycle-cleanup.ts";
 import * as checkpoints from "./checkpoints.ts";
 import { appendDecision, readDecisions, flushDecisionLog } from "./decision-log.ts";
-import { validateBotCwd } from "./bot-cwd.ts";
+import { missingCwdReason, validateBotCwd } from "./bot-cwd.ts";
 import {
   ATTACHMENTS_DIR,
   attachmentExists,
@@ -6111,6 +6111,10 @@ async function startTurn(
           ? store.pinTaskCwd(bot.id, threadId, privateWorkspace)
           : null;
       const cwd = pinnedCwd ?? undefined;
+      // Resource claiming resolves the path before the driver starts. Give a
+      // deleted folder the same useful error as an ENOENT from spawn.
+      const cwdProblem = missingCwdReason(cwd);
+      if (cwdProblem) throw new Error(cwdProblem);
       if (cwd && !claimTurnResource(resourceOwner, workspaceResource(cwd))) {
         throw Object.assign(new Error("another thread is working in this project folder — wait for it to finish or choose a separate folder"), { status: 409, code: "workspace_busy" });
       }

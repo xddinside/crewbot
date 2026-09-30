@@ -51,15 +51,18 @@ describe("spawn failures that name a working folder", () => {
   const enoent = Object.assign(new Error("spawn opencode ENOENT"), { code: "ENOENT" });
 
   it("blames the deleted folder instead of the CLI", () => {
-    const failure = describeSpawnFailure(enoent, "opencode", "/home/xdd/dev/work/openmausbot");
-    expect(failure.message).toBe("the working folder no longer exists: /home/xdd/dev/work/openmausbot");
+    const cwd = mkdtempSync(join(tmpdir(), "crewbot-deleted-cwd-"));
+    rmSync(cwd, { recursive: true });
+    const failure = describeSpawnFailure(enoent, "opencode", cwd);
+    expect(failure.message).toBe(`the working folder no longer exists: ${cwd}`);
     expect(failure.message).not.toContain("opencode");
-    expect(failure.setup).toBe(true);
+    expect(failure.setup).toBe(false);
   });
 
   it("still reports a missing CLI when the folder is fine", () => {
     const failure = describeSpawnFailure(enoent, "opencode", tmpdir());
     expect(failure.message).toBe("`opencode` isn't installed, or isn't on this app's PATH");
+    expect(failure.setup).toBe(true);
   });
 
   it("keeps the folder wording when no folder was pinned", () => {
