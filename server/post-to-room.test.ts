@@ -465,8 +465,11 @@ describe("post_to_room", () => {
     // and returns without kicking responder selection. Check the durable room
     // state and the public busy state immediately after that response rather
     // than waiting an arbitrary interval for a turn that must never start.
-    const bots = (await api("GET", "/api/bots?messages=0")).body.bots;
-    expect(bots.find((bot: { id: string }) => bot.id === listener.id)?.busy).toBe(false);
+    const botStatesAfterPost = field((await api("GET", "/api/bots?messages=0")).body, "bots");
+    const listenerStateAfterPost = Array.isArray(botStatesAfterPost)
+      ? botStatesAfterPost.find((bot) => str(field(bot as Record<string, unknown>, "id")) === listener.id)
+      : undefined;
+    expect(field(listenerStateAfterPost as Record<string, unknown>, "busy")).toBeFalsy();
     expect(existsSync(fakeClaudeDump), "post_to_room started a turn").toBe(false);
 
     const roomMessages = await messagesOf(room.threadId);
