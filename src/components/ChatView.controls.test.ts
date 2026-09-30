@@ -69,6 +69,28 @@ describe("thread control placement", () => {
     expect(markup).not.toContain("<button");
     expect(renderToStaticMarkup(createElement(ErrorRow, { message: "Network timeout", onRetry: () => {} }))).toContain("<button");
   });
+
+  it("replaces Retry with folder recovery for a broken working folder", () => {
+    const markup = renderToStaticMarkup(createElement(ErrorRow, {
+      message: "the working folder no longer exists: /missing/project",
+      onRetry: () => {},
+      onRestartWorkingFolder: () => {},
+    }));
+    expect(markup).toContain("Choose a valid folder to retry");
+    expect(markup).toContain("Folder path");
+    expect(markup).toContain("Use folder and retry");
+    expect(markup).not.toContain(">Retry</button>");
+  });
+
+  it("offers the native folder picker as the recovery action when available", () => {
+    const markup = renderToStaticMarkup(createElement(ErrorRow, {
+      message: "the working folder can't be accessed because permission was denied: /private/project",
+      onRetry: () => {},
+      onChooseWorkingFolder: () => {},
+    }));
+    expect(markup).toContain("Choose folder and retry");
+    expect(markup).not.toContain(">Retry</button>");
+  });
   it.each([
     "شغّل الاختبارات\nThen run typecheck\nوبعدها ارفع الفرع",
     "שלום עולם\nThen run typecheck\nתודה רבה",

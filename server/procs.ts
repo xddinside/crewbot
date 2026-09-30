@@ -112,14 +112,11 @@ export function execCli(
 type SpawnFailure = { message: string; setup: boolean };
 
 export function describeSpawnFailure(err: NodeJS.ErrnoException, cli: string, cwd?: string | null): SpawnFailure {
-  // A launch fails with ENOENT for two unrelated reasons: the executable is
-  // not on PATH, or the working folder it was to run in is gone. Node reports
-  // both identically, so the folder is checked first — blaming a CLI the user
-  // never removed sends them off to install the wrong thing.
-  if (err.code === "ENOENT" || err.code === "ENOTDIR") {
-    const missing = missingCwdReason(cwd);
-    if (missing) return { message: missing, setup: false };
-  }
+  // A failed launch can mean the executable is missing, or that the working
+  // folder is gone or inaccessible. Check the folder first so an unrelated
+  // CLI setup action cannot hide the actual problem.
+  const cwdProblem = missingCwdReason(cwd);
+  if (cwdProblem) return { message: cwdProblem, setup: false };
   if (err.code === "ENOENT")
     return { message: `\`${cli}\` isn't installed, or isn't on this app's PATH`, setup: true };
   if (err.code === "EACCES" || err.code === "EPERM")

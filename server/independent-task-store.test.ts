@@ -31,6 +31,31 @@ describe("independent bot task state", () => {
     expect(new Store(selection).taskByThread(bot.id, first.threadId)?.routineRunId).toBeUndefined();
   });
 
+  it("restarts one task in a chosen folder without deleting its transcript", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({}, { seedMessages: false });
+    const threadId = bot.threadId;
+    const other = store.createTask(bot.id, "Other task", false)!;
+    store.pinTaskCwd(bot.id, threadId, "/old/project");
+    store.markTaskDispatched(bot.id, threadId, "claude");
+    store.setResumeCursor(bot.id, "claude", "old-session", threadId);
+    store.setHandedMessages(bot.id, threadId, "claude", { session: "old-session", ids: [] });
+    store.appendMessage(threadId, { role: "user", kind: "text", text: "Keep this request" });
+    store.appendMessage(threadId, { role: "bot", kind: "text", text: "Keep this reply" });
+
+    const restarted = store.restartTaskAtCwd(bot.id, threadId, "/new/project");
+    expect(restarted).toMatchObject({ cwd: "/new/project", resumeCursors: {}, handedMessages: {} });
+    expect(restarted?.lastInstanceId).toBeUndefined();
+    expect(store.messagesFor(threadId).map((message) => message.text)).toEqual(["Keep this request", "Keep this reply"]);
+    expect(store.taskByThread(bot.id, other.threadId)?.resumeCursors).toEqual({});
+    expect(bot.resumeCursors).toEqual({});
+
+    const reloaded = new Store(selection);
+    expect(reloaded.taskByThread(bot.id, threadId)).toMatchObject({ cwd: "/new/project", resumeCursors: {}, handedMessages: {} });
+    expect(reloaded.taskByThread(bot.id, threadId)?.lastInstanceId).toBeUndefined();
+    expect(reloaded.messagesFor(threadId).map((message) => message.text)).toEqual(["Keep this request", "Keep this reply"]);
+  });
+
   it("never silently switches into an internal run when deleting a visible task", () => {
     const store = new Store(selection);
     const bot = store.createBot({}, { seedMessages: false });

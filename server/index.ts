@@ -6106,15 +6106,22 @@ async function startTurn(
       // pin the task to the default so the header chip never shows the
       // bot's folder for a task that runs elsewhere.
       if (opts?.runOn === "cloud") store.pinTaskCwd(bot.id, threadId, undefined, { none: true });
-      const pinnedCwd =
-        privateWorkspace && opts?.runOn !== "cloud"
-          ? store.pinTaskCwd(bot.id, threadId, privateWorkspace)
-          : null;
-      const cwd = pinnedCwd ?? undefined;
-      // Resource claiming resolves the path before the driver starts. Give a
-      // deleted folder the same useful error as an ENOENT from spawn.
-      const cwdProblem = missingCwdReason(cwd);
+      const taskBeforePin = privateWorkspace && opts?.runOn !== "cloud"
+        ? store.taskByThread(bot.id, threadId)
+        : undefined;
+      const proposedCwd = taskBeforePin?.cwd === undefined
+        ? Object.keys(taskBeforePin?.resumeCursors ?? {}).length === 0
+          ? bot.cwd ?? privateWorkspace ?? null
+          : null
+        : taskBeforePin.cwd;
+      // Validate a first-time pin before persisting it. Otherwise one stale
+      // bot default permanently pins this task to a folder that cannot start.
+      const cwdProblem = missingCwdReason(proposedCwd);
       if (cwdProblem) throw new Error(cwdProblem);
+      const pinnedCwd = privateWorkspace && opts?.runOn !== "cloud"
+        ? store.pinTaskCwd(bot.id, threadId, privateWorkspace)
+        : null;
+      const cwd = pinnedCwd ?? undefined;
       if (cwd && !claimTurnResource(resourceOwner, workspaceResource(cwd))) {
         throw Object.assign(new Error("another thread is working in this project folder — wait for it to finish or choose a separate folder"), { status: 409, code: "workspace_busy" });
       }
@@ -16091,8 +16098,29 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
       const current = store.projectBotForTask(m[1], m[2]);
       if (!current) return json(res, 404, { error: "no such task" });
-      const allowed = new Set(["title", "projectId", "modelSelection", "updateBotDefault", "resetApprovalToAsk", "approvalMode", "autoApprove", "requireAvailableModel", "pinnedMessageId", "acknowledgeLocalAuto", "archivedAt", "surface"]);
+      const allowed = new Set(["title", "projectId", "modelSelection", "updateBotDefault", "resetApprovalToAsk", "approvalMode", "autoApprove", "requireAvailableModel", "pinnedMessageId", "acknowledgeLocalAuto", "archivedAt", "surface", "restartAtCwd"]);
       if (Object.keys(body).some((key) => !allowed.has(key))) return json(res, 400, { error: "unsupported thread setting" });
+      if (Object.hasOwn(body, "restartAtCwd")) {
+        if (Object.keys(body).length !== 1) return json(res, 400, { error: "restartAtCwd must be the only thread setting" });
+        if (typeof body.restartAtCwd !== "string") return json(res, 400, { error: "restartAtCwd must be an absolute folder path" });
+        if (phoneSecretSubmissions.hasThread(current.threadId)) {
+          return json(res, 409, { error: "this thread is securely saving a credential — try again when it finishes" });
+        }
+        if (threadBusy(current.id, current.threadId) || queuedThreadPosition(current.id, current.threadId) !== null ||
+          roomHandoffs.activeDirect(current.threadId) || routines!.isActiveThread(current.threadId)) {
+          return json(res, 409, { error: "stop this thread and wait for queued work to finish before restarting it in another folder" });
+        }
+        const checked = validateBotCwd(body.restartAtCwd);
+        if (!checked.ok || checked.cwd === null) return json(res, 400, { error: checked.ok ? "choose a working folder" : checked.error });
+        // The explicit restart action keeps the full transcript but drops the
+        // provider-native continuation. The next turn rebuilds context from
+        // that transcript in a new session rooted at the selected folder.
+        const task = store.restartTaskAtCwd(current.id, current.threadId, checked.cwd);
+        if (!task) return json(res, 404, { error: "no such task" });
+        const fresh = botWithThread(store.bot(current.id)!);
+        broadcast({ kind: "bot", bot: fresh });
+        return json(res, 200, { task: wireTask(task), bot: fresh });
+      }
       for (const key of ["requireAvailableModel", "acknowledgeLocalAuto", "updateBotDefault", "resetApprovalToAsk"] as const) {
         if (body[key] !== undefined && typeof body[key] !== "boolean") return json(res, 400, { error: `${key} must be a boolean` });
       }

@@ -1858,6 +1858,23 @@ export class Store {
     return task.cwd;
   }
 
+  /** Start a task's provider state from a chosen folder while keeping its
+   * message tree intact. The route calls this only after the task is idle and
+   * the person explicitly confirms a new session. */
+  restartTaskAtCwd(botId: string, threadId: string, cwd: string): TaskRecord | null {
+    const bot = this.bot(botId);
+    const task = bot ? this.taskByThread(botId, threadId) : undefined;
+    if (!bot || !task) return null;
+    task.cwd = cwd;
+    task.resumeCursors = {};
+    task.lastInstanceId = undefined;
+    task.handedMessages = {};
+    if (bot.threadId === threadId) this.mirrorActiveTask(bot, task);
+    this.saveBots();
+    this.emit({ type: "bot", botId });
+    return task;
+  }
+
   /** The folder a room's member turns run in. Pins on the first turn that
    * dispatches, from the room's `cwd` at that moment. Pinned, not read
    * live, for the same reason tasks pin (see pinTaskCwd): engines key
