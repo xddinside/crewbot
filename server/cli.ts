@@ -506,7 +506,7 @@ async function mintPairing(port: number, options: { label?: string; client?: boo
   // A server too old to mint a credential simply has no invite: the web link
   // still works, so an upgrade is never required to pair a browser.
   const invite = typeof body.credential === "string" && address
-    ? `crewbot://pair?address=${encodeURIComponent(address)}&token=${encodeURIComponent(body.credential)}${typeof body.serverName === "string" ? `&name=${encodeURIComponent(body.serverName)}` : ""}`
+    ? `openmausbot://pair?address=${encodeURIComponent(address)}&token=${encodeURIComponent(body.credential)}${typeof body.serverName === "string" ? `&name=${encodeURIComponent(body.serverName)}` : ""}`
     : typeof body.inviteUrl === "string" ? body.inviteUrl : null;
   return pairingBlock({ code: body.code, url, inviteUrl: invite, expiresAt: body.expiresAt, hint: typeof body.hint === "string" ? body.hint : null, phone: options.phone });
 }
@@ -1163,6 +1163,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         label: options.label,
         script: process.argv[1] ?? "",
         node: process.execPath,
+        development: process.env.CREWBOT_DEV_LAUNCH === "1",
       }, { log: (line) => console.log(line), error: (line) => console.error(line) });
     case "fleet":
       if (options.fleetAction === "agent") {

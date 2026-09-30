@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { hostname, uptime } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { migrateLegacyDataDir } from "./legacy-data-dir.mjs";
 
 // These names are shared with older binaries. Changing them defeats cross-version exclusion.
 const LEASE_NAME = "openmausbot-server.lease";
@@ -338,21 +339,14 @@ function prepareDataDir(dataDir, options = {}) {
     ...(options.legacyDataDir === undefined ? [] : [options.legacyDataDir]),
   ];
   for (const legacyDataDir of legacyDataDirs) validateDataDir(legacyDataDir);
-  // Preserve the server's pre-rename migration order. Acquiring the new
-  // directory first would create it and make the later one-time rename a
-  // no-op, presenting an existing user with an empty workspace. The existing
-  // target always wins: never merge or overwrite its contents.
-  if (!existsSync(dataDir)) {
-    const legacyDataDir = legacyDataDirs.find((dir) => existsSync(dir));
-    if (legacyDataDir) {
-      assertLegacyDataDirIsNotInUse(legacyDataDir);
-      try {
-        renameSync(legacyDataDir, dataDir);
-      } catch {
-        // Match the established migration: cross-device/busy falls through
-        // to a fresh directory, while the untouched legacy data remains.
-      }
-    }
+  // Migrate before creating or leasing the destination. The shared staged
+  // operation rebases saved workspace paths and keeps a recovery snapshot.
+  if (legacyDataDirs.length > 0) {
+    migrateLegacyDataDir(dataDir, {
+      home: dirname(dataDir),
+      legacyDataDirs,
+      assertLegacyDataDirIsNotInUse,
+    });
   }
   try {
     mkdirSync(dataDir, { recursive: true, mode: 0o700 });

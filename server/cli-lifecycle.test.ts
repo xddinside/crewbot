@@ -221,7 +221,7 @@ describe("CLI startup lifecycle", () => {
     // A real server mints both encodings of one window; Android can only scan
     // the openmausbot:// one (android/core Connection.kt).
     const credential = `omb_pair_${"a".repeat(43)}`;
-    const inviteUrl = `crewbot://pair?address=${encodeURIComponent(origin)}&token=${credential}&name=fixture`;
+    const inviteUrl = `openmausbot://pair?address=${encodeURIComponent(origin)}&token=${credential}&name=fixture`;
     let healthRequests = 0;
     const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const address = String(url);

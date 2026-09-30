@@ -126,14 +126,29 @@ export function unstableInstallWarning(script: string): string | null {
 }
 
 /** Where the rendered file goes and how to activate it, per platform. */
-export function servicePlan(platform: NodeJS.Platform, dataDir: string, home = homedir()): { file: string; installed: string; activate: string[]; deactivate: string[] } | null {
+export function servicePlan(platform: NodeJS.Platform, dataDir: string, home = homedir()): { file: string; installed: string; activate: string[]; deactivate: string[]; prepareLegacy?: string[]; retireLegacy?: string[]; rollbackLegacy?: string[] } | null {
   if (platform === "linux") {
     const installed = `/etc/systemd/system/${SYSTEMD_UNIT_NAME}`;
+    const legacy = "/etc/systemd/system/openmausbot.service";
+    const legacyBackup = `${legacy}.crewbot-backup`;
     return {
       file: join(dataDir, SYSTEMD_UNIT_NAME),
       installed,
       activate: [`sudo install -m 644 ${join(dataDir, SYSTEMD_UNIT_NAME)} ${installed}`, "sudo systemctl daemon-reload", `sudo systemctl enable --now ${basename(SYSTEMD_UNIT_NAME, ".service")}`],
       deactivate: [`sudo systemctl disable --now ${basename(SYSTEMD_UNIT_NAME, ".service")}`, `sudo rm ${installed}`, "sudo systemctl daemon-reload"],
+      prepareLegacy: [
+        `sudo test -f ${legacy}`,
+        `sudo test ! -e ${legacyBackup}`,
+        `sudo cp --preserve=all ${legacy} ${legacyBackup}`,
+        "sudo systemctl disable --now openmausbot.service",
+      ],
+      retireLegacy: [`sudo rm ${legacy}`, "sudo systemctl daemon-reload"],
+      rollbackLegacy: [
+        "sudo systemctl disable --now crewbot.service",
+        `sudo cp --preserve=all ${legacyBackup} ${legacy}`,
+        "sudo systemctl daemon-reload",
+        "sudo systemctl enable --now openmausbot.service",
+      ],
     };
   }
   if (platform === "darwin") {

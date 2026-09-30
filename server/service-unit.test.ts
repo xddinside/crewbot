@@ -52,6 +52,15 @@ describe("service units", () => {
     const linux = servicePlan("linux", "/home/maus/.crewbot");
     expect(linux?.installed).toBe("/etc/systemd/system/crewbot.service");
     expect(linux?.activate.join("\n")).toContain("systemctl enable --now crewbot");
+    expect(linux?.prepareLegacy).toContain("sudo test -f /etc/systemd/system/openmausbot.service");
+    expect(linux?.prepareLegacy).toContain("sudo test ! -e /etc/systemd/system/openmausbot.service.crewbot-backup");
+    expect(linux?.prepareLegacy?.join("\n")).toContain("cp --preserve=all /etc/systemd/system/openmausbot.service /etc/systemd/system/openmausbot.service.crewbot-backup");
+    expect(linux?.prepareLegacy?.join("\n")).toContain("systemctl disable --now openmausbot.service");
+    expect(linux?.retireLegacy?.join("\n")).toContain("rm /etc/systemd/system/openmausbot.service");
+    expect(linux?.rollbackLegacy?.join("\n")).toContain("systemctl enable --now openmausbot.service");
+    expect(linux?.rollbackLegacy?.[0]).toBe("sudo systemctl disable --now crewbot.service");
+    expect(linux?.prepareLegacy?.join(" ")).not.toMatch(/&&|\bif\b|\|/);
+    expect(linux?.retireLegacy?.join(" ")).not.toMatch(/&&|\bif\b|\|/);
     const mac = servicePlan("darwin", "/Users/maus/.crewbot", "/Users/maus");
     expect(mac?.installed).toBe("/Users/maus/Library/LaunchAgents/dev.xddinside.crewbot.serve.plist");
     expect(mac?.activate.join("\n")).toContain("launchctl bootstrap gui/$(id -u)");

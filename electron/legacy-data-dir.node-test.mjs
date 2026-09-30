@@ -1,0 +1,191 @@
+import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+import { migrateLegacyDataDir } from "./legacy-data-dir.mjs";
+import { rebasePersistedMessage } from "./rebase-data-paths.mjs";
+
+const roots = [];
+
+function fixture() {
+  const home = mkdtempSync(path.join(tmpdir(), "crewbot-legacy-migration-"));
+  roots.push(home);
+  const source = path.join(home, ".openmausbot");
+  const destination = path.join(home, ".crewbot");
+  mkdirSync(path.join(source, "workspaces", "bot", "tasks", "thread"), { recursive: true });
+  writeFileSync(path.join(source, "workspaces", "bot", "tasks", "thread", "notes.txt"), "prior attachment");
+  return { home, source, destination };
+}
+
+function seedMessagesDb(dataDir) {
+  const db = new DatabaseSync(path.join(dataDir, "messages.db"));
+  db.exec("CREATE TABLE messages(thread_id TEXT, id TEXT, text TEXT, json TEXT, PRIMARY KEY(thread_id, id)); CREATE TABLE chat_followups(id TEXT PRIMARY KEY, payload TEXT)");
+  const attachmentPath = path.join(dataDir, "workspaces", "bot", "tasks", "thread", "notes.txt");
+  const externalPath = "/work/customer/repo";
+  const message = {
+    role: "user",
+    text: `Please inspect this file.\n\n<attached-file path="${attachmentPath}" name="notes.txt" />\n\n\`\`\`text\n<attached-file path="${attachmentPath}" name="example" />\n\`\`\`\n\n<!-- example\n<attached-file path="${attachmentPath}" name="comment" />\n-->\n\n<pasted-text index="1">\n<attached-file path="${attachmentPath}" name="paste" />\n</pasted-text>\n\n<div>\n<attached-file path="${attachmentPath}" name="html block" />\n</div>\n\nThe old root was ${dataDir}.`,
+    attachments: [{ kind: "file", path: attachmentPath, name: "notes.txt" }],
+    cwd: externalPath,
+  };
+  db.prepare("INSERT INTO messages VALUES (?, ?, ?, ?)").run("thread", "message", message.text, JSON.stringify(message));
+  db.prepare("INSERT INTO chat_followups VALUES (?, ?)").run("followup", JSON.stringify({ text: "continue", attachments: [{ path: attachmentPath }] }));
+  db.close();
+  return { attachmentPath, externalPath };
+}
+
+test.afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+test("rebases encoded attachment paths without changing examples in HTML or pasted blocks", () => {
+  const source = "/old/root";
+  const destination = "/new/root";
+  const oldPath = `${source}/workspace/has & "quote"\nline.txt`;
+  const newTag = '<attached-file path="/old/root/workspace/has &amp; &quot;quote&quot;&#10;line.txt" name="notes.txt" />';
+  const preservedTag = '<attached-file path="/old/root/workspace/example.txt" name="example" />';
+  const message = {
+    text: `${newTag}\n\n<!-- example\n${preservedTag}\n-->\n\n<pasted-text index="1">\n${preservedTag}\n</pasted-text>`,
+    attachments: [{ path: oldPath }],
+  };
+
+  rebasePersistedMessage(message, source, destination);
+
+  assert.equal(message.attachments[0].path, oldPath.replace(source, destination));
+  assert.ok(message.text.includes('<attached-file path="/new/root/workspace/has &amp; &quot;quote&quot;&#10;line.txt"'));
+  assert.equal(message.text.split(preservedTag).length - 1, 2);
+});
+
+test("migrates saved cwd and attachment paths while preserving external paths and a recovery copy", () => {
+  const { home, source, destination } = fixture();
+  const taskCwd = path.join(source, "workspaces", "bot", "tasks", "thread");
+  const externalPath = "/work/customer/repo";
+  writeFileSync(path.join(source, "bots.json"), JSON.stringify([{
+    id: "bot", threadId: "thread", cwd: taskCwd, resumeCursors: { claude: "private-session" },
+    projects: [{ path: externalPath }],
+    tasks: [
+      { threadId: "thread", cwd: taskCwd, resumeCursors: { claude: "private-session" }, handedMessages: { claude: { session: "private-session" } } },
+      { threadId: "external", cwd: externalPath, resumeCursors: { claude: "external-session" }, handedMessages: { claude: { session: "external-session" } } },
+    ],
+  }]));
+  writeFileSync(path.join(source, "groups.json"), JSON.stringify([{ cwd: taskCwd, pinnedCwd: taskCwd }]));
+  writeFileSync(path.join(source, "room-continuations.json"), JSON.stringify({ version: 1, records: [{
+    version: 1, groupId: "group", threadId: "room-thread", botId: "bot",
+    cursors: { claude: "room-private-session" }, lastInstanceId: "claude",
+    selection: { instanceId: "claude", model: "fixture" }, deliveredThroughMessageId: "old-anchor",
+    deliveredEligibleMessages: 2, generation: 4,
+  }] }));
+  writeFileSync(path.join(source, "config.json"), JSON.stringify({ dataDir: source, external: { path: "/work/customer/repo" } }));
+  const { attachmentPath } = seedMessagesDb(source);
+
+  migrateLegacyDataDir(destination, {
+    home,
+    legacyDataDirs: [source],
+    assertLegacyDataDirIsNotInUse: () => {},
+  });
+
+  const nextCwd = path.join(destination, "workspaces", "bot", "tasks", "thread");
+  assert.equal(existsSync(source), false);
+  const migratedBot = JSON.parse(readFileSync(path.join(destination, "bots.json"), "utf8"))[0];
+  assert.equal(migratedBot.cwd, nextCwd);
+  assert.equal(migratedBot.projects[0].path, externalPath);
+  assert.deepEqual(migratedBot.resumeCursors, {});
+  assert.equal(migratedBot.tasks[0].cwd, nextCwd);
+  assert.deepEqual(migratedBot.tasks[0].resumeCursors, {});
+  assert.deepEqual(migratedBot.tasks[0].handedMessages, {});
+  assert.equal(migratedBot.tasks[1].cwd, externalPath);
+  assert.deepEqual(migratedBot.tasks[1].resumeCursors, { claude: "external-session" });
+  assert.deepEqual(migratedBot.tasks[1].handedMessages, { claude: { session: "external-session" } });
+  assert.equal(JSON.parse(readFileSync(path.join(destination, "groups.json"), "utf8"))[0].pinnedCwd, nextCwd);
+  assert.deepEqual(JSON.parse(readFileSync(path.join(destination, "room-continuations.json"), "utf8")).records[0], {
+    version: 1, groupId: "group", threadId: "room-thread", botId: "bot", cursors: {},
+    lastInstanceId: "claude", selection: { instanceId: "claude", model: "fixture" },
+    deliveredEligibleMessages: 0, generation: 4,
+  });
+  assert.equal(JSON.parse(readFileSync(path.join(destination, "config.json"), "utf8")).dataDir, destination);
+  assert.equal(existsSync(path.join(destination, "workspaces", "bot", "tasks", "thread", "notes.txt")), true);
+  assert.equal(existsSync(path.join(destination, ".crewbot-migration", "recovery")), true);
+
+  const db = new DatabaseSync(path.join(destination, "messages.db"), { readOnly: true });
+  try {
+    const message = JSON.parse(db.prepare("SELECT json FROM messages WHERE id = ?").get("message").json);
+    assert.equal(message.attachments[0].path, attachmentPath.replace(source, destination));
+    assert.equal(message.cwd, externalPath);
+    assert.match(message.text, new RegExp(attachmentPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.ok(message.text.includes(`<attached-file path="${attachmentPath.replace(source, destination)}"`));
+    assert.ok(message.text.includes(`<attached-file path="${attachmentPath}" name="example`));
+    assert.ok(message.text.includes(`<attached-file path="${attachmentPath}" name="comment`));
+    assert.ok(message.text.includes(`<attached-file path="${attachmentPath}" name="paste`));
+    assert.ok(message.text.includes(`<attached-file path="${attachmentPath}" name="html block`));
+    const followup = JSON.parse(db.prepare("SELECT payload FROM chat_followups WHERE id = ?").get("followup").payload);
+    assert.equal(followup.attachments[0].path, attachmentPath.replace(source, destination));
+  } finally { db.close(); }
+});
+
+test("restores the original data root if a supported metadata file cannot be parsed", () => {
+  const { home, source, destination } = fixture();
+  writeFileSync(path.join(source, "bots.json"), "not json");
+
+  assert.throws(() => migrateLegacyDataDir(destination, {
+    home,
+    legacyDataDirs: [source],
+    assertLegacyDataDirIsNotInUse: () => {},
+  }), /original data was restored/i);
+
+  assert.equal(existsSync(source), true);
+  assert.equal(existsSync(destination), false);
+  assert.equal(readFileSync(path.join(source, "bots.json"), "utf8"), "not json");
+  assert.equal(existsSync(path.join(source, ".crewbot-migration", "recovery")), true);
+});
+
+test("rolls an interrupted move back and completes it before allowing startup", () => {
+  const { home, source, destination } = fixture();
+  const id = "12345678-1234-4234-8234-123456789abc";
+  const cwd = path.join(source, "workspaces", "bot");
+  writeFileSync(path.join(source, "bots.json"), JSON.stringify([{ id: "bot", cwd }]));
+  const recovery = path.join(source, ".crewbot-migration", "recovery", id);
+  mkdirSync(recovery, { recursive: true });
+  copyFileSync(path.join(source, "bots.json"), path.join(recovery, "bots.json"));
+  writeFileSync(path.join(source, ".crewbot-migration", "journal.json"), JSON.stringify({
+    id, source, destination, phase: "applying", files: ["bots.json"],
+  }));
+  renameSync(source, destination);
+
+  migrateLegacyDataDir(destination, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
+
+  assert.equal(existsSync(source), false);
+  assert.equal(JSON.parse(readFileSync(path.join(destination, "bots.json"), "utf8"))[0].cwd, path.join(destination, "workspaces", "bot"));
+  assert.equal(existsSync(path.join(destination, ".crewbot-migration", "journal.json")), false);
+  assert.equal(JSON.parse(readFileSync(path.join(destination, ".crewbot-migration", "recovery", id, "receipt.json"), "utf8")).phase, "rolled-back");
+});
+
+test("finishes a completed migration journal on the next launch", () => {
+  const { home, source, destination } = fixture();
+  const id = "12345678-1234-4234-8234-123456789abc";
+  mkdirSync(path.join(destination, ".crewbot-migration"), { recursive: true });
+  mkdirSync(path.join(destination, ".crewbot-migration", "recovery", id), { recursive: true });
+  writeFileSync(path.join(destination, ".crewbot-migration", "journal.json"), JSON.stringify({
+    id, source, destination, phase: "complete", files: ["bots.json"],
+  }));
+
+  migrateLegacyDataDir(destination, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
+
+  assert.equal(existsSync(path.join(destination, ".crewbot-migration", "journal.json")), false);
+  assert.equal(JSON.parse(readFileSync(path.join(destination, ".crewbot-migration", "recovery", id, "receipt.json"), "utf8")).phase, "complete");
+});
+
+test("preserves both directories when a journal tries to recover to another path", () => {
+  const { home, source, destination } = fixture();
+  const id = "12345678-1234-4234-8234-123456789abc";
+  mkdirSync(path.join(destination, ".crewbot-migration"), { recursive: true });
+  writeFileSync(path.join(destination, ".crewbot-migration", "journal.json"), JSON.stringify({
+    id, source: path.join(home, "unrelated"), destination, phase: "applying", files: [],
+  }));
+
+  assert.throws(() => migrateLegacyDataDir(destination, { home, legacyDataDirs: [source] }), /paths do not match/i);
+  assert.equal(existsSync(source), true);
+  assert.equal(existsSync(destination), true);
+});

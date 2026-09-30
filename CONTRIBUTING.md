@@ -19,15 +19,16 @@ makes a PR easy to merge. Read it once before opening anything; it's short on pu
 
 Requirements: **Node 24+**, **pnpm**, and for actually chatting with a bot, at least one agent CLI
 ([`claude`](https://claude.com/claude-code) or [`codex`](https://github.com/openai/codex)) installed
-and logged in. macOS is the primary release platform and Ubuntu 24.04 x64 is the Linux desktop beta;
+and logged in. `pnpm install` installs the project's pinned [Portless](https://github.com/vercel-labs/portless) version.
+macOS is the primary release platform and Ubuntu 24.04 x64 is the Linux desktop beta;
 the harness server itself is portable Node and the test suite runs on macOS, Linux, and Windows.
 
 ```sh
 git clone https://github.com/milind-soni/OpenMausBot && cd OpenMausBot
 pnpm install
 
-pnpm dev:server    # harness server → 127.0.0.1:8799
-pnpm dev           # app → http://127.0.0.1:5199
+pnpm dev:server    # isolated development harness → 127.0.0.1:18799 in the main checkout
+pnpm dev           # Vite through Portless → https://crewbot.localhost
 pnpm dev:desktop   # Electron shell (macOS/Ubuntu; keep server + Vite running)
 
 pnpm typecheck     # app + server
@@ -39,6 +40,25 @@ pnpm check:electron # syntax-check the plain JS Electron entrypoints
 pnpm package:mac   # DMG + ZIP; requires Swift/Xcode tools
 pnpm package:linux # Ubuntu x64 .deb + AppImage; no Swift required
 ```
+
+If this machine has no Portless proxy on its default ports, start one on an
+unprivileged port and set that port for each development command:
+
+```sh
+pnpm exec portless proxy start --port 1355 --https
+PORTLESS_PORT=1355 pnpm dev:server
+PORTLESS_PORT=1355 pnpm dev
+PORTLESS_PORT=1355 pnpm dev:desktop
+```
+
+The desktop launcher follows Portless's selected port in its start URL.
+
+Linked Git worktrees get a branch-prefixed Portless URL and separate development data, profile,
+cache, and API ports. For example, branch `feature/search` uses
+`https://search.crewbot.localhost`.
+
+Source launches keep their profile, workspace, cache, and service ownership
+under development-specific paths. They do not share packaged Crewbot state.
 
 `pnpm dev:desktop` downloads and verifies the pinned Cloudflare Tunnel connector for the current
 platform and architecture before Electron starts. Later launches re-verify and reuse the staged
@@ -222,7 +242,7 @@ with everything.
 
 ## Secrets
 
-API keys are write-only: they land in `~/.openmausbot/config.json` via `PUT /api/config` and the API
+API keys are write-only: they land in the selected data directory's `config.json` (source development uses `~/.crewbot-development`, with a branch-specific directory in linked worktrees; packaged installs use `~/.crewbot`) via `PUT /api/config`, and the API
 only ever reports `configured` booleans. Keep it that way — no logging keys, no echoing them in
 responses or events, no baking them into argv where another local process could read them.
 

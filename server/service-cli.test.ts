@@ -30,6 +30,16 @@ describe("crewbot service", () => {
     expect(unit).toContain("--domain maus.example.com");
     expect(unit).toContain("AmbientCapabilities=CAP_NET_BIND_SERVICE");
     expect(out.join("\n")).toContain("sudo systemctl enable --now crewbot");
+    expect(out.join("\n")).toContain("sudo test -f /etc/systemd/system/openmausbot.service");
+    expect(out.join("\n")).toContain("sudo cp --preserve=all /etc/systemd/system/openmausbot.service /etc/systemd/system/openmausbot.service.crewbot-backup");
+    expect(out.join("\n")).toContain("sudo systemctl disable --now openmausbot.service");
+    expect(out.join("\n")).toContain("sudo systemctl enable --now openmausbot.service");
+    expect(out.join("\n")).toContain("sudo systemctl disable --now crewbot.service");
+    const instructions = out.join("\n");
+    expect(instructions.indexOf("sudo test -f /etc/systemd/system/openmausbot.service")).toBeLessThan(instructions.indexOf("sudo cp --preserve=all /etc/systemd/system/openmausbot.service"));
+    expect(instructions.indexOf("sudo cp --preserve=all /etc/systemd/system/openmausbot.service")).toBeLessThan(instructions.indexOf("sudo systemctl disable --now openmausbot.service"));
+    expect(instructions.indexOf("sudo systemctl disable --now openmausbot.service")).toBeLessThan(instructions.indexOf("sudo systemctl enable --now crewbot"));
+    expect(instructions.indexOf("sudo systemctl enable --now crewbot")).toBeLessThan(instructions.indexOf("sudo rm /etc/systemd/system/openmausbot.service"));
     expect(out.join("\n")).toContain("no setcap is needed");
 
     out.length = 0;
@@ -72,5 +82,11 @@ describe("crewbot service", () => {
     expect(runServiceCommand({ action: "uninstall", dataDir: dir, port: 8799, script: "/x", node: "/n", platform: "linux" }, io)).toBe(0);
     expect(out.join("\n")).toContain("sudo systemctl disable --now crewbot");
     expect(runServiceCommand({ action: "install", dataDir: dir, port: 8799, script: "/x", node: "/n", platform: "win32" }, io)).toBe(1);
+  });
+
+  it("refuses service changes from an isolated development launch", () => {
+    expect(runServiceCommand({ action: "uninstall", dataDir: dir, port: 8799, script: "/x", node: "/n", platform: "linux", development: true }, io)).toBe(1);
+    expect(err.join("\n")).toMatch(/disabled for the isolated development launch/i);
+    expect(existsSync(join(dir, "crewbot.service"))).toBe(false);
   });
 });

@@ -273,10 +273,16 @@ Any desktop build can also pair as a client to another Windows, macOS, or Ubuntu
 git clone https://github.com/xddinside/crewbot && cd crewbot
 pnpm install
 
-pnpm dev:server    # harness server → 127.0.0.1:8799
-pnpm dev           # app → http://127.0.0.1:5199
+pnpm dev:server    # isolated development harness → 127.0.0.1:18799 in the main checkout
+pnpm dev           # Vite through Portless → https://crewbot.localhost
 pnpm dev:desktop   # Electron shell; keep the two commands above running
 ```
+
+Linked Git worktrees use a branch-prefixed Portless URL and separate development data, profile,
+cache, and API ports (for example, `https://search.crewbot.localhost` for branch `feature/search`).
+If the default Portless proxy ports are unavailable, start an unprivileged HTTPS proxy with
+`pnpm exec portless proxy start --port 1355 --https`, then prefix the development commands with
+`PORTLESS_PORT=1355`; the desktop uses the same port.
 
 Requirements: **macOS, Windows, or Ubuntu 24.04 x64**, **Node 24+**, **pnpm**, and at least one agent CLI — [`claude`](https://claude.com/claude-code),
 [`codex`](https://github.com/openai/codex), or [`grok`](https://x.ai/cli) — installed and logged in. They appear

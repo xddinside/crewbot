@@ -68,7 +68,7 @@ jobs:
           test -n "$leaky_ip"
           probe "$leaky_ip" 8799 || { echo "probe cannot see a 0.0.0.0 listener; the check would be vacuous"; exit 1; }
           docker rm -f leaky >/dev/null
-          ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' omb)
+          ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' crewbot)
           test -n "$ip"
           if probe "$ip" 8799 || probe "$ip" 8800; then
             echo "server answered on $ip — it must only bind 127.0.0.1"; exit 1

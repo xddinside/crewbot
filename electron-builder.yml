@@ -1,10 +1,12 @@
-appId: dev.xddinside.crewbot
+appId: com.openmausbot.app # Keep the installed-upgrade and OS credential identity.
 productName: crewbot
 artifactName: crewbot-${version}-${arch}.${ext}
 
 protocols:
   - name: crewbot package install
     schemes: [crewbot]
+  - name: OpenMausBot companion compatibility
+    schemes: [openmausbot]
 
 # In-app auto-update reads latest-mac.yml + the .zip (macOS) or latest.yml +
 # the NSIS .exe (Windows) from the PUBLIC releases in this source repo.

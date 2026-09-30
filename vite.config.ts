@@ -44,7 +44,9 @@ export default defineConfig({
     // IPv4 explicitly — a bare ::1 bind makes localhost a coin-flip for
     // clients that resolve IPv4 first
     host: "127.0.0.1",
-    port: Number(process.env.OMB_UI_PORT) || 5199,
+    // Portless sets PORT for this child and routes HTTPS traffic to it.
+    port: Number(process.env.PORT) || Number(process.env.OMB_UI_PORT) || 5199,
+    strictPort: Boolean(process.env.PORTLESS_URL),
     // packager output lands inside the repo — its HTML files must never
     // trigger dev full-page reloads
     watch: {

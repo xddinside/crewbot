@@ -72,6 +72,7 @@ import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
 import { acquireDataDirLease, legacyDataDirsForDefault } from "./data-dir-lease.mjs";
+import { resolveDesktopProfilePath } from "./profile-path.mjs";
 import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDesktopStore } from "./managed-desktop.mjs";
 import { createCompanyBackups } from "./company-backups.mjs";
 import { createCompanyBackupSchedule } from "./company-backup-schedule.mjs";
@@ -90,19 +91,20 @@ const { DESKTOP_MUTATION_HEADER, desktopServerHeaders } = require("./desktop-ser
 const { MIN_BOUNDS, normalizeUnreadCount, parseWindowState, resolveWindowState } = require("./window-state.cjs");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// This fork owns a separate Electron profile. Set it before anything reads
-// userData so credentials, logs, and window state cannot overlap crewbot.
+// Keep the old packaged profile in place during the identity transition. Its
+// encrypted credentials and saved environments remain readable without
+// copying an OS-bound credential blob. Source launches always use a separate
+// development profile.
 app.setName("crewbot");
-app.setPath(
-  "userData",
-  process.env.CREWBOT_PROFILE_DIR?.trim()
-    || process.env.OMB_PROFILE_DIR?.trim()
-    || path.join(app.getPath("appData"), "crewbot"),
-);
+const desktopProfile = resolveDesktopProfilePath({
+  appData: app.getPath("appData"),
+  isPackaged: app.isPackaged,
+});
+app.setPath("userData", desktopProfile.profilePath);
 // 127.0.0.1 explicitly — vite binds IPv4; a bare "localhost" here can
 // resolve to ::1 and paint a black window
 const DEV_URL = process.env.ELECTRON_START_URL ?? "http://127.0.0.1:5199";
-let SERVER_PORT = 8799;
+let SERVER_PORT = Number(process.env.CREWBOT_PORT || process.env.OMB_PORT || 8799);
 const APP_ICON = path.join(__dirname, "resources/app-icon.png");
 let desktopViewerWindow = null;
 let desktopViewerOwner = null;
@@ -327,6 +329,10 @@ const serverSupervisor = createServerSupervisor({
 });
 
 function desktopDataDir() {
+  if (!app.isPackaged) {
+    return process.env.CREWBOT_DEV_DATA_DIR?.trim()
+      || path.join(app.getPath("home"), ".crewbot-development");
+  }
   // OMB_DATA_DIR remains a one-release compatibility alias. Normalize empty
   // values here so the desktop lease and utility server use the same path.
   return process.env.CREWBOT_DATA_DIR?.trim()
@@ -2694,6 +2700,7 @@ app.whenReady().then(async () => {
   }
   if (app.isPackaged) {
     app.setAsDefaultProtocolClient("crewbot");
+    app.setAsDefaultProtocolClient("openmausbot");
     // Chromium adds this capability below JavaScript, so renderer requests
     // can mutate the local harness while a Full-access shell using curl
     // cannot impersonate the person operating the desktop app.
@@ -2701,6 +2708,17 @@ app.whenReady().then(async () => {
   }
   if (process.platform === "darwin") app.dock.setIcon(APP_ICON);
   secureCredentials = await loadSecureCredentials();
+  if (desktopProfile.legacy) {
+    slog(`using the existing OpenMausBot desktop profile in place at ${app.getPath("userData")}; encrypted credentials were not copied`);
+  }
+  if (app.isPackaged && desktopProfile.legacy && credentialStoreUnavailable && fs.existsSync(CREDENTIALS_FILE)) {
+    dialog.showErrorBox(
+      "crewbot could not read its saved credentials",
+      `The encrypted credential file is still preserved at ${CREDENTIALS_FILE}, but this launch could not read it. The previous profile was kept in place for the operating-system credential backend. Restore keychain access and restart crewbot; do not delete or replace either profile folder.`,
+    );
+    app.quit();
+    return;
+  }
   // The AssemblyAI key only fed the removed Teach a skill recorder, and its
   // set/clear handler went with it; drop the orphaned secret rather than
   // keep a third-party key at rest with no way to remove it.
