@@ -42,11 +42,12 @@ test.afterEach(() => {
 });
 
 test("rebases encoded attachment paths without changing examples in HTML or pasted blocks", () => {
-  const source = "/old/root";
-  const destination = "/new/root";
-  const oldPath = `${source}/workspace/has & "quote"\nline.txt`;
-  const newTag = '<attached-file path="/old/root/workspace/has &amp; &quot;quote&quot;&#10;line.txt" name="notes.txt" />';
-  const preservedTag = '<attached-file path="/old/root/workspace/example.txt" name="example" />';
+  const source = path.join(tmpdir(), "old", "root");
+  const destination = path.join(tmpdir(), "new", "root");
+  const oldPath = path.join(source, "workspace", 'has & "quote"\nline.txt');
+  const encoded = (value) => value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("\n", "&#10;");
+  const newTag = `<attached-file path="${encoded(oldPath)}" name="notes.txt" />`;
+  const preservedTag = `<attached-file path="${path.join(source, "workspace", "example.txt")}" name="example" />`;
   const message = {
     text: `${newTag}\n\n<!-- example\n${preservedTag}\n-->\n\n<pasted-text index="1">\n${preservedTag}\n</pasted-text>`,
     attachments: [{ path: oldPath }],
@@ -54,8 +55,9 @@ test("rebases encoded attachment paths without changing examples in HTML or past
 
   rebasePersistedMessage(message, source, destination);
 
-  assert.equal(message.attachments[0].path, oldPath.replace(source, destination));
-  assert.ok(message.text.includes('<attached-file path="/new/root/workspace/has &amp; &quot;quote&quot;&#10;line.txt"'));
+  const rebasedPath = path.join(destination, "workspace", 'has & "quote"\nline.txt');
+  assert.equal(message.attachments[0].path, rebasedPath);
+  assert.ok(message.text.includes(`<attached-file path="${encoded(rebasedPath)}"`));
   assert.equal(message.text.split(preservedTag).length - 1, 2);
 });
 

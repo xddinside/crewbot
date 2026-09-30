@@ -4,11 +4,12 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 test("development commands isolate data, profile, cache, ports and stable service ownership", async () => {
   const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   assert.match(packageJson.scripts.dev, /portless run --name crewbot vite/);
-  const script = new URL("./run-development.mjs", import.meta.url);
+  const script = fileURLToPath(new URL("./run-development.mjs", import.meta.url));
   const probe = `process.stdout.write(JSON.stringify({\n` +
     `data: process.env.CREWBOT_DATA_DIR,\n` +
     `profile: process.env.CREWBOT_DEV_PROFILE_DIR,\n` +
@@ -22,7 +23,7 @@ test("development commands isolate data, profile, cache, ports and stable servic
     `legacyData: process.env.OMB_DATA_DIR\n` +
     `}));`;
   const result = await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [script.pathname, process.execPath, "-e", probe], {
+    const child = spawn(process.execPath, [script, process.execPath, "-e", probe], {
       env: {
         ...process.env,
         CREWBOT_DATA_DIR: "/stable/data",

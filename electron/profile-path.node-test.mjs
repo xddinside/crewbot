@@ -1,43 +1,47 @@
 import assert from "node:assert/strict";
+import path from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 
 import { resolveDesktopProfilePath } from "./profile-path.mjs";
 
+const appData = path.join(tmpdir(), "crewbot-profile-path-test");
+
 test("source launches use a dedicated profile even when a stable profile override is inherited", () => {
   const result = resolveDesktopProfilePath({
-    appData: "/home/test/.config",
+    appData,
     isPackaged: false,
     platform: "linux",
-    env: { CREWBOT_PROFILE_DIR: "/home/test/.config/crewbot" },
+    env: { CREWBOT_PROFILE_DIR: path.join(appData, "crewbot") },
     exists: () => true,
   });
-  assert.equal(result.profilePath, "/home/test/.config/crewbot-development");
+  assert.equal(result.profilePath, path.join(appData, "crewbot-development"));
   assert.equal(result.legacy, false);
 });
 
 test("packaged upgrades keep using the existing OpenMausBot profile for OS-encrypted credentials", () => {
   const result = resolveDesktopProfilePath({
-    appData: "/home/test/.config",
+    appData,
     isPackaged: true,
     platform: "linux",
     env: {},
-    exists: (candidate) => candidate === "/home/test/.config/OpenMausBot",
+    exists: (candidate) => candidate === path.join(appData, "OpenMausBot"),
   });
-  assert.equal(result.profilePath, "/home/test/.config/OpenMausBot");
+  assert.equal(result.profilePath, path.join(appData, "OpenMausBot"));
   assert.equal(result.legacy, true);
-  assert.equal(result.newProfilePath, "/home/test/.config/crewbot");
+  assert.equal(result.newProfilePath, path.join(appData, "crewbot"));
 });
 
 test("new installs and explicit stable profile paths remain deliberate", () => {
-  const fresh = resolveDesktopProfilePath({ appData: "/appdata", isPackaged: true, env: {}, exists: () => false });
-  assert.equal(fresh.profilePath, "/appdata/crewbot");
+  const fresh = resolveDesktopProfilePath({ appData, isPackaged: true, env: {}, exists: () => false });
+  assert.equal(fresh.profilePath, path.join(appData, "crewbot"));
 
   const explicit = resolveDesktopProfilePath({
-    appData: "/appdata",
+    appData,
     isPackaged: true,
-    env: { CREWBOT_PROFILE_DIR: "/var/tmp/isolated-profile" },
+    env: { CREWBOT_PROFILE_DIR: path.join(tmpdir(), "isolated-profile") },
     exists: () => true,
   });
-  assert.equal(explicit.profilePath, "/var/tmp/isolated-profile");
+  assert.equal(explicit.profilePath, path.join(tmpdir(), "isolated-profile"));
   assert.equal(explicit.legacy, false);
 });

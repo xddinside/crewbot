@@ -18,7 +18,9 @@ test("desktop and iOS register both pairing schemes while issuers retain legacy 
   assert.match(desktopManifest, /schemes: \[openmausbot\]/);
   assert.match(desktopEntry, /setAsDefaultProtocolClient\("crewbot"\)/);
   assert.match(desktopEntry, /setAsDefaultProtocolClient\("openmausbot"\)/);
-  assert.match(iosManifest, /CFBundleURLSchemes:[\s\S]*?\n\s+- openmausbot\n\s+- crewbot/);
+  const iosUrlTypes = iosManifest.match(/CFBundleURLTypes:[\s\S]*?(?=\n\s{8}\S|$)/)?.[0] ?? "";
+  const iosRegisteredSchemes = [...iosUrlTypes.matchAll(/^\s+- (openmausbot|crewbot)$/gm)].map((match) => match[1]);
+  assert.deepEqual(new Set(iosRegisteredSchemes), new Set(["openmausbot", "crewbot"]));
   assert.match(iosParser, /\["openmausbot", "crewbot"\]/);
   assert.match(read("src/lib/companion-pairing.ts"), /new URL\("openmausbot:\/\/pair"\)/);
   assert.match(read("server/cli.ts"), /`openmausbot:\/\/pair\?/);
