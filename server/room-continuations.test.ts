@@ -38,7 +38,7 @@ const context = (ids: string[], deltaText = "delta") => ({
     sentMessages: Math.max(0, ids.length - 1),
   }),
 });
-const records = () => JSON.parse(readFileSync(join(process.env.HOME!, ".openmausbot", "room-continuations.json"), "utf8")).records;
+const records = () => JSON.parse(readFileSync(join(process.env.HOME!, ".crewbot", "room-continuations.json"), "utf8")).records;
 const initialContinuity = process.env.OMB_ROOM_SESSION_CONTINUITY;
 
 // Invalidation is intentionally feature-flagged. Keep the module-level unit
@@ -330,7 +330,7 @@ describe("room continuation planning", () => {
   });
 
   it("persists private state with restrictive permissions and deletion removes owners", () => {
-    const privateFile = join(process.env.HOME!, ".openmausbot", "room-continuations.json");
+    const privateFile = join(process.env.HOME!, ".crewbot", "room-continuations.json");
     expect(statSync(privateFile).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(privateFile, "utf8"))).toHaveProperty("version", 1);
     deleteThread(owner.groupId, owner.threadId);
