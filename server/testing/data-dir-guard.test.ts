@@ -125,6 +125,46 @@ describe("assertNoLiveDataDirOverride", () => {
       assertNoLiveDataDirOverride({ CREWBOT_DATA_DIR: "/tmp/omb-sandbox-07PWU0" }, REAL_HOME),
     ).not.toThrow();
   });
+
+  // The case that motivated the rule. Nothing under /home/xdd is read or
+  // written here: this is a path-string assertion, same as the ones above.
+  it("rejects the 2026-09-29 archive the name list never covered", () => {
+    expect(() =>
+      assertNoLiveDataDirOverride(
+        { OMB_DATA_DIR: "/home/xdd/.openmausbot-archive-2026-09-29" },
+        "/home/xdd",
+        "/tmp",
+      ),
+    ).toThrow(DataDirIsolationError);
+  });
+
+  // The name list only ever holds the names someone thought of. Location is
+  // the property the suite can actually rely on.
+  it("rejects an unnamed directory inside the real home", () => {
+    expect(() =>
+      assertNoLiveDataDirOverride(
+        { CREWBOT_DATA_DIR: "/home/someone/scratch/crewbot-data" },
+        REAL_HOME,
+        "/tmp",
+      ),
+    ).toThrow(/\/home\/someone\/scratch\/crewbot-data/);
+  });
+
+  it("rejects the real home itself", () => {
+    expect(() =>
+      assertNoLiveDataDirOverride({ CREWBOT_DATA_DIR: REAL_HOME }, REAL_HOME, "/tmp"),
+    ).toThrow(DataDirIsolationError);
+  });
+
+  it("allows an override under the temp root, where throwaway homes are made", () => {
+    expect(() =>
+      assertNoLiveDataDirOverride(
+        { CREWBOT_DATA_DIR: "/tmp/omb-test-home-abc123/.crewbot" },
+        REAL_HOME,
+        "/tmp",
+      ),
+    ).not.toThrow();
+  });
 });
 
 describe("liveDataDirs", () => {

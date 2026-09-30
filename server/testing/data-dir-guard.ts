@@ -14,7 +14,7 @@
 // They are pure — no imports from server/config.ts, which resolves DATA_DIR at
 // import time and would bind this module to the wrong home.
 
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 /** Data dir override names, in the precedence order server/config.ts reads them. */
@@ -104,10 +104,26 @@ export function assertDataDirIsolated(
  *
  * Catches a stray shell export even if the per-worker guard never runs, which is
  * the case when vitest is invoked through an entry point that skips setupFiles.
+ *
+ * The name list alone is not a fence. On 2026-09-30 an override aimed at
+ * `/home/<user>/.openmausbot-archive-2026-09-29` walked past it: the archive is
+ * a real, live, 7.7G directory under the home and it matches neither name. Any
+ * future rename, backup copy, or second install would do the same. So the rule
+ * is about the location, not the label: an override that resolves inside the
+ * real home and outside the temp root throwaway homes are made under is refused,
+ * whatever it is called. A sandbox under `/tmp` stays allowed — the suite cannot
+ * tell `/tmp/omb-sandbox` from a live dir by name either, so it only trusts
+ * paths it can place.
+ *
+ * @param env      the environment the suite was invoked with
+ * @param realHome the invoking user's real home, captured before any redirect
+ * @param tempRoot the temp directory setup.ts makes its throwaway home under;
+ *                 passed explicitly so this stays testable without touching fs
  */
 export function assertNoLiveDataDirOverride(
   env: Record<string, string | undefined>,
   realHome: string = homedir(),
+  tempRoot: string = tmpdir(),
 ): void {
   const live = liveDataDirs(realHome);
   for (const name of DATA_DIR_ENV_VARS) {
@@ -118,6 +134,15 @@ export function assertNoLiveDataDirOverride(
       throw new DataDirIsolationError(
         `${name}=${target} points at a live data directory.\n` +
           `Unset it before running tests, or point it at a throwaway directory.`,
+      );
+    }
+    if (isInside(realHome, target) && !isInside(tempRoot, target)) {
+      throw new DataDirIsolationError(
+        `${name}=${target} resolves inside the real home ${resolve(realHome)} but\n` +
+          `outside the temp root ${resolve(tempRoot)} throwaway homes are made under.\n` +
+          `The suite refuses every override under the real home, named or not: a test\n` +
+          `run that cleans its data dir deletes this one with it. Move it under the\n` +
+          `temp directory, or unset ${name} for this shell.`,
       );
     }
   }
