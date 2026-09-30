@@ -224,12 +224,34 @@ describe("ClaudeDriver.decodeConfig", () => {
       expect(new Set(candidates).size).toBe(candidates.length);
     } else {
       // macOS has a small Unix-socket path limit, so a deep HOME needs a
-      // short fallback under the OS temp root.
+      // short fallback under the system temp root, outside an isolated TMPDIR.
       expect(candidates).toHaveLength(2);
-      expect(candidates[1]).toMatch(/omb-perm-[0-9a-f]{16}\.sock$/);
+      expect(candidates[1]).toMatch(/^\/tmp\/omb-perm-[0-9a-f]{16}\/broker\.sock$/);
       expect(candidates[1]).not.toBe(candidates[0]);
     }
   });
+
+  it.skipIf(process.platform === "win32")(
+    "uses a private short fallback when the isolated TMPDIR path is too long for a socket",
+    async () => {
+      const isolatedTemp = mkdtempSync(join(tmpdir(), "omb-deep-temp-"));
+      const fallbackDirectory = join("/tmp", `omb-perm-test-${process.pid}-${Date.now()}`);
+      const fallback = join(fallbackDirectory, "broker.sock");
+      const broker = await createPermissionBroker({
+        socketPaths: [join(isolatedTemp, `${"x".repeat(120)}.sock`), fallback],
+        onAsk: () => {},
+        onResolve: () => {},
+      });
+      try {
+        expect(broker.socketPath).toBe(fallback);
+        expect(existsSync(fallback)).toBe(true);
+      } finally {
+        broker.close();
+        expect(existsSync(fallbackDirectory)).toBe(false);
+        rmSync(isolatedTemp, { recursive: true, force: true });
+      }
+    },
+  );
 
   // Windows can't listen on filesystem socket paths at all (EACCES), so the
   // unbindable-first-candidate unit runs on POSIX; the fake-CLI e2e below

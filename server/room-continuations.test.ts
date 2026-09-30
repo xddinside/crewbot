@@ -331,7 +331,7 @@ describe("room continuation planning", () => {
 
   it("persists private state with restrictive permissions and deletion removes owners", () => {
     const privateFile = join(process.env.HOME!, ".crewbot", "room-continuations.json");
-    expect(statSync(privateFile).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(privateFile).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(privateFile, "utf8"))).toHaveProperty("version", 1);
     deleteThread(owner.groupId, owner.threadId);
     deleteBot("bot-c");

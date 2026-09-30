@@ -9,7 +9,7 @@
 //   - the bot's cloud computer (box.ascii.dev) via server/computer-proxy.ts
 //     — screenshot/exec/open_url, the CUA-on-the-box bridge
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join, dirname, isAbsolute, normalize } from "node:path";
@@ -560,13 +560,46 @@ export function brokerSocketCandidates(threadId: string, botId?: string): string
       .update(`${DATA_DIR}\0${process.pid}\0${botId ?? ""}\0${threadId}`)
       .digest("hex")
       .slice(0, 16);
-    return [base, join(tmpdir(), `omb-perm-${scope}.sock`)];
+    // Verification fixtures intentionally point TMPDIR inside their isolated
+    // data directory. That path can exceed macOS's sun_path limit too, so use
+    // the short system temp root and a private per-broker child directory.
+    return [base, join("/tmp", `omb-perm-${scope}`, "broker.sock")];
   }
   return [
     base,
     `${base}-${randomBytes(3).toString("hex")}`,
     `${base}-${randomBytes(3).toString("hex")}`,
   ];
+}
+
+function preparePrivateSocketDirectory(directory: string): boolean {
+  let created = false;
+  try {
+    mkdirSync(directory, { mode: 0o700 });
+    created = true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  }
+  try {
+    const directoryStat = lstatSync(directory);
+    const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
+    if (
+      !directoryStat.isDirectory() ||
+      directoryStat.isSymbolicLink() ||
+      (uid !== undefined && directoryStat.uid !== uid) ||
+      (directoryStat.mode & 0o077) !== 0
+    ) {
+      throw new Error("permission broker fallback directory must be private and owned by the current user");
+    }
+  } catch (error) {
+    if (created) {
+      try {
+        rmdirSync(directory);
+      } catch {}
+    }
+    throw error;
+  }
+  return created;
 }
 
 export async function createPermissionBroker(opts: {
@@ -680,8 +713,13 @@ export async function createPermissionBroker(opts: {
   // deny nobody could explain. Keep the turn fail-closed on total failure,
   // but leave an actionable diagnostic either way.
   let server: ReturnType<typeof createNetServer> | null = null;
+  let fallbackDirectoryToRemove: string | undefined;
   for (const [index, candidate] of opts.socketPaths.entries()) {
     const attempt = createNetServer(connectionHandler);
+    if (index > 0 && process.platform !== "win32") {
+      const directory = dirname(candidate);
+      if (preparePrivateSocketDirectory(directory)) fallbackDirectoryToRemove = directory;
+    }
     try {
       unlinkSync(candidate);
     } catch {}
@@ -710,7 +748,7 @@ export async function createPermissionBroker(opts: {
     }
     if (outcome === "listening") {
       if (index > 0) {
-        console.error(`permission broker: ${opts.socketPaths[0]} is still held — bound fallback ${candidate}`);
+        console.error(`permission broker: first candidate unavailable — bound fallback ${candidate}`);
       }
       boundPath = candidate;
       server = attempt;
@@ -722,6 +760,12 @@ export async function createPermissionBroker(opts: {
     try {
       attempt.close();
     } catch {}
+    if (fallbackDirectoryToRemove) {
+      try {
+        rmdirSync(fallbackDirectoryToRemove);
+      } catch {}
+      fallbackDirectoryToRemove = undefined;
+    }
     if (index === opts.socketPaths.length - 1) {
       console.error(`permission broker unavailable on ${candidate}: ${outcome.message}`);
       break;
@@ -757,6 +801,12 @@ export async function createPermissionBroker(opts: {
       try {
         unlinkSync(boundPath);
       } catch {}
+      if (fallbackDirectoryToRemove) {
+        try {
+          rmdirSync(fallbackDirectoryToRemove);
+        } catch {}
+        fallbackDirectoryToRemove = undefined;
+      }
     },
     /** Where the broker actually listens — argv for the proxy child must
      * use this, not the deterministic base, when a fallback was bound. */
