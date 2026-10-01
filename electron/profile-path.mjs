@@ -1,23 +1,29 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-/** Resolve the Electron profile without sharing stable state with source runs.
- * Packaged upgrades continue using the old profile directory in place so the
- * operating-system encrypted credential document keeps its original identity.
+/** Resolve the Electron profile and the early application name it belongs to.
+ * Packaged upgrades keep their old profile and safeStorage name in place so
+ * operating-system encrypted credentials remain addressable. Source runs use
+ * a separate profile and safeStorage name.
  *
  * @param options - Paths and runtime identity used to select the profile.
- * @returns The selected directory and whether it belongs to an existing install.
+ * @returns The selected directory, safeStorage identity, and whether it is legacy.
  */
 export function resolveDesktopProfilePath({ appData, isPackaged, platform = process.platform, env = process.env, exists = existsSync }) {
   const dataPath = (value) => path.resolve(value);
   if (!isPackaged) {
     const profilePath = env.CREWBOT_DEV_PROFILE_DIR?.trim() || path.join(appData, "crewbot-development");
-    return { profilePath: dataPath(profilePath), legacy: false, newProfilePath: dataPath(path.join(appData, "crewbot")) };
+    return {
+      profilePath: dataPath(profilePath),
+      legacy: false,
+      identityName: "crewbot-development",
+      newProfilePath: dataPath(path.join(appData, "crewbot")),
+    };
   }
 
   const explicit = env.CREWBOT_PROFILE_DIR?.trim() || env.OMB_PROFILE_DIR?.trim();
   const newProfilePath = dataPath(explicit || path.join(appData, "crewbot"));
-  if (explicit) return { profilePath: newProfilePath, legacy: false, newProfilePath };
+  if (explicit) return { profilePath: newProfilePath, legacy: false, identityName: "crewbot", newProfilePath };
 
   // On Linux packaged builds historically used the productName case while
   // source builds used the lower-case npm name. Keep the packaged directory
@@ -28,6 +34,10 @@ export function resolveDesktopProfilePath({ appData, isPackaged, platform = proc
   return {
     profilePath: legacy ?? newProfilePath,
     legacy: legacy !== undefined,
+    // Electron 43 captures this name before the app emits `ready`: it uses
+    // it as the macOS Keychain service/account and the Linux OSCrypt app name.
+    // Keep the original packaged identity only while using an old profile.
+    identityName: legacy ? "OpenMausBot" : "crewbot",
     newProfilePath,
   };
 }

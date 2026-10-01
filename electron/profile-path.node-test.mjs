@@ -17,6 +17,7 @@ test("source launches use a dedicated profile even when a stable profile overrid
   });
   assert.equal(result.profilePath, path.join(appData, "crewbot-development"));
   assert.equal(result.legacy, false);
+  assert.equal(result.identityName, "crewbot-development");
 });
 
 test("packaged upgrades keep using the existing OpenMausBot profile for OS-encrypted credentials", () => {
@@ -29,12 +30,27 @@ test("packaged upgrades keep using the existing OpenMausBot profile for OS-encry
   });
   assert.equal(result.profilePath, path.join(appData, "OpenMausBot"));
   assert.equal(result.legacy, true);
+  assert.equal(result.identityName, "OpenMausBot");
   assert.equal(result.newProfilePath, path.join(appData, "crewbot"));
+});
+
+test("macOS packaged upgrades keep the original Keychain service identity", () => {
+  const result = resolveDesktopProfilePath({
+    appData,
+    isPackaged: true,
+    platform: "darwin",
+    env: {},
+    exists: (candidate) => candidate === path.join(appData, "OpenMausBot"),
+  });
+  assert.equal(result.profilePath, path.join(appData, "OpenMausBot"));
+  assert.equal(result.identityName, "OpenMausBot");
+  assert.equal(result.legacy, true);
 });
 
 test("new installs and explicit stable profile paths remain deliberate", () => {
   const fresh = resolveDesktopProfilePath({ appData, isPackaged: true, env: {}, exists: () => false });
   assert.equal(fresh.profilePath, path.join(appData, "crewbot"));
+  assert.equal(fresh.identityName, "crewbot");
 
   const explicit = resolveDesktopProfilePath({
     appData,
@@ -44,4 +60,5 @@ test("new installs and explicit stable profile paths remain deliberate", () => {
   });
   assert.equal(explicit.profilePath, path.join(tmpdir(), "isolated-profile"));
   assert.equal(explicit.legacy, false);
+  assert.equal(explicit.identityName, "crewbot");
 });

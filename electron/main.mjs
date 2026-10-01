@@ -93,13 +93,14 @@ const { MIN_BOUNDS, normalizeUnreadCount, parseWindowState, resolveWindowState }
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Keep the old packaged profile in place during the identity transition. Its
 // encrypted credentials and saved environments remain readable without
-// copying an OS-bound credential blob. Source launches always use a separate
-// development profile.
-app.setName("crewbot");
+// copying an OS-bound credential blob. Electron captures app.getName() for
+// safeStorage during startup, before `ready`; choose that identity before
+// that capture, including a separate identity for source launches.
 const desktopProfile = resolveDesktopProfilePath({
   appData: app.getPath("appData"),
   isPackaged: app.isPackaged,
 });
+app.setName(desktopProfile.identityName);
 app.setPath("userData", desktopProfile.profilePath);
 // 127.0.0.1 explicitly — vite binds IPv4; a bare "localhost" here can
 // resolve to ::1 and paint a black window
@@ -2676,6 +2677,9 @@ setCuaStateListener((connection) => {
 });
 
 app.whenReady().then(async () => {
+  // The native safeStorage identity has now been captured. Restore the
+  // product name for app menus and other runtime branding.
+  app.setName("crewbot");
   session.defaultSession.on("will-download", (_event, item) => {
     item.setSavePath(collisionFreeDownloadPath(app.getPath("downloads"), item.getFilename()));
   });
