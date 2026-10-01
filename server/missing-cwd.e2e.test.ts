@@ -124,7 +124,9 @@ it("recovers a missing working folder in the same task without losing its transc
     });
     expect(staleRecovery.status).toBe(409);
     const afterStaleRecovery = storedTask(firstUse.bot.id, firstUse.bot.activeTaskId);
+    const transcriptAfterStaleRecovery = await control(["messages", "--bot", firstUse.bot.id, "--limit", "20"]);
     expect(await taskCwd(firstUse.bot.id, firstUse.bot.activeTaskId)).toBe(firstUseRetryCwd);
+    expect(transcriptAfterStaleRecovery.messages).toEqual(activeMessages.messages);
     expect(afterStaleRecovery.resumeCursors).toEqual(newerProviderState.resumeCursors);
     expect(afterStaleRecovery.lastInstanceId).toBe(newerProviderState.lastInstanceId);
     expect(afterStaleRecovery.handedMessages).toEqual(newerProviderState.handedMessages);
