@@ -90,7 +90,12 @@ function serviceDataDir(unit: string, home: string): string {
   for (const line of unit.split(/\r?\n/)) {
     if (line.startsWith("EnvironmentFile=")) throw new Error("Crewbot cannot safely infer the old service data path from EnvironmentFile; preserve both data directories and restore the service manually.");
     if (!line.startsWith("Environment=")) continue;
-    for (const assignment of systemdWords(line.slice("Environment=".length))) {
+    const assignments = systemdWords(line.slice("Environment=".length));
+    if (assignments.length === 0 || (assignments.length === 1 && assignments[0] === "")) {
+      environmentValues.clear();
+      continue;
+    }
+    for (const assignment of assignments) {
       const separator = assignment.indexOf("=");
       if (separator < 0) throw new Error(`Crewbot found an unsupported Environment assignment in the old service: ${assignment}; no service was changed.`);
       const name = assignment.slice(0, separator);

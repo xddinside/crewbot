@@ -313,6 +313,45 @@ describe("service rollback", () => {
     expect(err.join("\n")).toMatch(/unfinished systemd quote or escape/);
   });
 
+  it("applies empty Environment resets and assignments written after the reset", () => {
+    const home = mkdtempSync(join(tmpdir(), "crewbot-service-environment-reset-"));
+    roots.push(home);
+    const dataDir = join(home, "new-data");
+    const defaultDataDir = join(home, ".openmausbot");
+    const previousDataDir = join(home, "previous custom data");
+    const postResetDataDir = join(home, "post reset custom data");
+    const units = join(home, "systemd");
+    const legacyUnit = join(units, "openmausbot.service");
+    const legacyBackup = `${legacyUnit}.crewbot-backup`;
+    mkdirSync(dataDir);
+    mkdirSync(defaultDataDir);
+    mkdirSync(previousDataDir);
+    mkdirSync(postResetDataDir);
+    mkdirSync(units);
+
+    const runUnit = (unit: string): { code: number; out: string[]; err: string[] } => {
+      writeFileSync(legacyBackup, unit);
+      writeFileSync(legacyUnit, unit);
+      const out: string[] = [];
+      const err: string[] = [];
+      const plan = servicePlan("linux", dataDir, home)!;
+      const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: () => {} }, {
+        log: (line) => out.push(line), error: (line) => err.push(line),
+      });
+      return { code, out, err };
+    };
+
+    const resetToDefault = runUnit(`Environment="OMB_DATA_DIR=${previousDataDir}"\nEnvironment=\n`);
+    expect(resetToDefault.code).toBe(0);
+    expect(resetToDefault.out.join("\n")).toContain(defaultDataDir);
+    expect(resetToDefault.err).toEqual([]);
+
+    const assignmentAfterReset = runUnit(`Environment="OMB_DATA_DIR=${previousDataDir}"\nEnvironment=\nEnvironment="OMB_DATA_DIR=${postResetDataDir}"\n`);
+    expect(assignmentAfterReset.code).toBe(0);
+    expect(assignmentAfterReset.out.join("\n")).toContain(postResetDataDir);
+    expect(assignmentAfterReset.err).toEqual([]);
+  });
+
   it("refuses an ambiguous unquoted data path with spaces before changing services", () => {
     const home = mkdtempSync(join(tmpdir(), "crewbot-service-ambiguous-environment-"));
     roots.push(home);
