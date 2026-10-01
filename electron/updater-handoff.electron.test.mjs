@@ -114,7 +114,8 @@ function runFixture(privateRoot) {
 }
 
 it("isolates the Electron fixture from inherited desktop sessions", () => {
-  const env = fixtureEnvironment("/owned-fixture", {
+  const privateRoot = "/owned-fixture";
+  const env = fixtureEnvironment(privateRoot, {
     PATH: "/usr/bin",
     ELECTRON_RUN_AS_NODE: "1",
     DISPLAY: ":0",
@@ -142,13 +143,13 @@ it("isolates the Electron fixture from inherited desktop sessions", () => {
     "ELECTRON_OZONE_PLATFORM_HINT",
   ]) expect(env[name], `${name} should not reach the fixture`).toBeUndefined();
   expect(env).toMatchObject({
-    HOME: "/owned-fixture/home",
-    TMPDIR: "/owned-fixture/tmp",
-    XDG_CONFIG_HOME: "/owned-fixture/config",
-    XDG_CACHE_HOME: "/owned-fixture/cache",
-    XDG_DATA_HOME: "/owned-fixture/data",
-    XDG_STATE_HOME: "/owned-fixture/state",
-    XDG_RUNTIME_DIR: "/owned-fixture/runtime",
+    HOME: join(privateRoot, "home"),
+    TMPDIR: join(privateRoot, "tmp"),
+    XDG_CONFIG_HOME: join(privateRoot, "config"),
+    XDG_CACHE_HOME: join(privateRoot, "cache"),
+    XDG_DATA_HOME: join(privateRoot, "data"),
+    XDG_STATE_HOME: join(privateRoot, "state"),
+    XDG_RUNTIME_DIR: join(privateRoot, "runtime"),
   });
 });
 
