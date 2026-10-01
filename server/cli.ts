@@ -78,8 +78,8 @@ export interface CliOptions {
   /** `access list|add|remove` */
   accessAction?: "list" | "add" | "remove";
   chatOnly?: boolean;
-  /** `service install|uninstall` */
-  serviceAction?: "install" | "uninstall";
+  /** `service install|uninstall|rollback` */
+  serviceAction?: "install" | "uninstall" | "rollback";
   email?: string;
   /** `browser install [--with-deps]` */
   browserAction?: "install" | "status";
@@ -169,7 +169,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
         options.accessAction = arg;
         if (arg !== "list") options.email = value();
       } else if (options.command === "access" && arg === "--chat-only") options.chatOnly = true;
-      else if (options.command === "service" && !options.serviceAction && (arg === "install" || arg === "uninstall")) options.serviceAction = arg;
+      else if (options.command === "service" && !options.serviceAction && (arg === "install" || arg === "uninstall" || arg === "rollback")) options.serviceAction = arg;
       else if (options.command === "browser" && (arg === "install" || arg === "status")) options.browserAction = arg;
       else if (options.command === "browser" && arg === "--with-deps") options.withDeps = true;
       else if (options.command === "fleet" && !options.fleetAction && ["init", "create", "list", "users", "suspend", "resume", "delete", "upgrade", "agent"].includes(arg)) options.fleetAction = arg as FleetInput["action"] | "agent";
@@ -199,7 +199,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   if (options.publicUrl && !/^https?:\/\//.test(options.publicUrl)) return { error: "--public-url must start with http:// or https://" };
   if (options.tailscale && options.tunnel) return { error: "choose one of --tailscale (your tailnet) and --tunnel (a public address)" };
   if (options.command === "access" && !options.accessAction) return { error: "access needs one of: list, add EMAIL [--chat-only], remove EMAIL" };
-  if (options.command === "service" && !options.serviceAction) return { error: "service needs one of: install [the same options as serve], uninstall" };
+  if (options.command === "service" && !options.serviceAction) return { error: "service needs one of: install [the same options as serve], uninstall, rollback [--data-dir DIR]" };
   if (options.domain && (options.tailscale || options.tunnel || options.publicUrl)) return { error: "--domain already gives the server its address; drop --tailscale, --tunnel and --public-url" };
   if (options.local && (options.tailscale || options.tunnel || options.publicUrl)) return { error: "--local cannot be combined with a remote-access option" };
   if (options.command === "browser" && !options.browserAction) return { error: "browser needs an action: install or status" };
@@ -226,7 +226,7 @@ export const USAGE = `crewbot — your team of AI bots, ready in a few steps
   crewbot login [--email you@example.com]
   crewbot logout
   crewbot access list | add EMAIL [--chat-only] | remove EMAIL
-  crewbot service install [--domain HOST | --tunnel | --tailscale] [--port N] [--data-dir DIR] | uninstall
+  crewbot service install [--domain HOST | --tunnel | --tailscale] [--port N] [--data-dir DIR] | uninstall | rollback [--data-dir DIR]
   crewbot browser install [--with-deps] | status
   crewbot fleet init --domain HOST [--operator USER] | create NAME --admin EMAIL [--member EMAIL] [--brand FILE]
                     [--anthropic-key-file FILE] [--cap USD] [--license-key KEY] [--memory 1G]
@@ -249,7 +249,9 @@ access  who may sign in with an emailed code at /pair: an address or
 service keep the server running across reboots: writes a systemd unit
         (Linux) or a launchd agent (macOS) for the same serve options and
         prints the commands that install it. Install the package
-        permanently first (npm install -g crewbot).
+        permanently first (npm install -g crewbot). \`rollback\` stops Crewbot,
+        restores a validated legacy data copy and unit, then checks the old
+        service is active before declaring recovery complete.
 browser install: the bots' browser engine (agent-browser, pinned) into the
         data dir, and Chrome for Testing into the user's browser cache.
         --with-deps also installs

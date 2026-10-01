@@ -5,10 +5,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 
 import { migrateLegacyDataDir } from "./legacy-data-dir.ts";
+import { runServiceRollback } from "./service-recovery.ts";
 import { currentUser, launchdPlist, servicePlan, systemdUnit, unstableInstallWarning } from "./service-unit.ts";
 
 export interface ServiceInstallInput {
-  action: "install" | "uninstall";
+  action: "install" | "uninstall" | "rollback";
   dataDir: string;
   port: number;
   domain?: string;
@@ -28,6 +29,10 @@ export interface ServiceInstallInput {
 export interface ServiceIo {
   log(line: string): void;
   error(line: string): void;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 /** The `serve` arguments the service repeats, from the options given to `service install`. */
@@ -52,6 +57,7 @@ export function runServiceCommand(input: ServiceInstallInput, io: ServiceIo): nu
     io.error("services are written for Linux (systemd) and macOS (launchd); on Windows, use Task Scheduler to run `crewbot serve` at startup");
     return 1;
   }
+  if (input.action === "rollback") return runServiceRollback({ dataDir: input.dataDir, platform, home }, io);
   if (input.action === "uninstall") {
     io.log(`to stop and remove the service:`);
     for (const line of plan.deactivate) io.log(`  ${line}`);
@@ -94,8 +100,9 @@ export function runServiceCommand(input: ServiceInstallInput, io: ServiceIo): nu
     io.log("");
     io.log("After Crewbot is running, remove the disabled legacy unit file (skip if it was absent above):");
     for (const line of plan.retireLegacy) io.log(`  ${line}`);
-    io.log("If Crewbot does not start and the preserved backup exists, restore the old service with:");
-    for (const line of plan.rollbackLegacy ?? []) io.log(`  ${line}`);
+    io.log("If Crewbot does not start, restore the saved data and old service in order with:");
+    const rollbackCommand = [input.node, ...(input.script.endsWith(".ts") ? ["--experimental-strip-types"] : []), input.script, "service", "rollback", "--data-dir", input.dataDir];
+    io.log(`  ${rollbackCommand.map(shellQuote).join(" ")}`);
   }
   io.log("");
   if (input.domain && platform === "linux") io.log("the unit grants Caddy the capability for ports 80 and 443, so no setcap is needed under the service");

@@ -34,8 +34,7 @@ describe("crewbot service", () => {
     expect(out.join("\n")).toContain("sudo test -f /etc/systemd/system/openmausbot.service");
     expect(out.join("\n")).toContain("sudo cp --preserve=all /etc/systemd/system/openmausbot.service /etc/systemd/system/openmausbot.service.crewbot-backup");
     expect(out.join("\n")).toContain("sudo systemctl disable --now openmausbot.service");
-    expect(out.join("\n")).toContain("sudo systemctl enable --now openmausbot.service");
-    expect(out.join("\n")).toContain("sudo systemctl disable --now crewbot.service");
+    expect(out.join("\n")).toContain("'/usr/bin/node' '/usr/lib/node_modules/crewbot/cli.js' 'service' 'rollback' '--data-dir'");
     const instructions = out.join("\n");
     expect(instructions.indexOf("sudo test -f /etc/systemd/system/openmausbot.service")).toBeLessThan(instructions.indexOf("sudo cp --preserve=all /etc/systemd/system/openmausbot.service"));
     expect(instructions.indexOf("sudo cp --preserve=all /etc/systemd/system/openmausbot.service")).toBeLessThan(instructions.indexOf("sudo systemctl disable --now openmausbot.service"));

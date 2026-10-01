@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { migrateLegacyDataDir } from "./legacy-data-dir.mjs";
+import { inspectLegacyDataDirServiceRecovery, migrateLegacyDataDir, recoverLegacyDataDirForService } from "./legacy-data-dir.mjs";
 import { rebasePersistedMessage } from "./rebase-data-paths.mjs";
 
 const roots = [];
@@ -190,4 +190,51 @@ test("preserves both directories when a journal tries to recover to another path
   assert.throws(() => migrateLegacyDataDir(destination, { home, legacyDataDirs: [source] }), /paths do not match/i);
   assert.equal(existsSync(source), true);
   assert.equal(existsSync(destination), true);
+});
+
+test("restores the legacy service data root while preserving the migrated workspace", () => {
+  const { home, source, destination } = fixture();
+  const cwd = path.join(source, "workspaces", "bot");
+  writeFileSync(path.join(source, "bots.json"), JSON.stringify([{ id: "bot", cwd }]));
+  migrateLegacyDataDir(destination, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
+  const earlier = "22345678-1234-4234-8234-123456789abc";
+  mkdirSync(path.join(destination, ".crewbot-migration", "recovery", earlier), { recursive: true });
+  writeFileSync(path.join(destination, ".crewbot-migration", "recovery", earlier, "receipt.json"), JSON.stringify({
+    id: earlier, phase: "rolled-back", source, destination, recoveredAt: new Date().toISOString(),
+  }));
+  writeFileSync(path.join(destination, "service-created.txt"), "new service state");
+
+  const recovery = inspectLegacyDataDirServiceRecovery(destination);
+  assert.equal(recovery?.source, source);
+  assert.deepEqual(recoverLegacyDataDirForService(destination), { source, destination, id: recovery.id });
+
+  assert.equal(JSON.parse(readFileSync(path.join(source, "bots.json"), "utf8"))[0].cwd, cwd);
+  assert.equal(readFileSync(path.join(source, "service-created.txt"), "utf8"), "new service state");
+  assert.equal(readFileSync(path.join(destination, "service-created.txt"), "utf8"), "new service state");
+  assert.equal(JSON.parse(readFileSync(path.join(destination, "bots.json"), "utf8"))[0].cwd, path.join(destination, "workspaces", "bot"));
+});
+
+test("refuses a conflicting legacy path before changing either data root", () => {
+  const { home, source, destination } = fixture();
+  writeFileSync(path.join(source, "bots.json"), JSON.stringify([{ id: "bot", cwd: source }]));
+  migrateLegacyDataDir(destination, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
+  mkdirSync(source);
+  writeFileSync(path.join(source, "keep.txt"), "unrelated legacy state");
+
+  assert.throws(() => recoverLegacyDataDirForService(destination), /will not replace the existing legacy data directory/i);
+  assert.equal(readFileSync(path.join(source, "keep.txt"), "utf8"), "unrelated legacy state");
+  assert.equal(JSON.parse(readFileSync(path.join(destination, "bots.json"), "utf8"))[0].cwd, destination);
+});
+
+test("custom workspaces do not claim default legacy service recovery", () => {
+  const { home, source } = fixture();
+  const custom = path.join(home, "custom-workspace");
+  mkdirSync(custom);
+  writeFileSync(path.join(source, "state.txt"), "legacy");
+
+  migrateLegacyDataDir(custom, { home, legacyDataDirs: [source] });
+
+  assert.equal(inspectLegacyDataDirServiceRecovery(custom), null);
+  assert.equal(readFileSync(path.join(source, "state.txt"), "utf8"), "legacy");
+  assert.equal(existsSync(path.join(custom, "state.txt")), false);
 });

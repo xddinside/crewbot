@@ -57,8 +57,8 @@ describe("service units", () => {
     expect(linux?.prepareLegacy?.join("\n")).toContain("cp --preserve=all /etc/systemd/system/openmausbot.service /etc/systemd/system/openmausbot.service.crewbot-backup");
     expect(linux?.prepareLegacy?.join("\n")).toContain("systemctl disable --now openmausbot.service");
     expect(linux?.retireLegacy?.join("\n")).toContain("rm /etc/systemd/system/openmausbot.service");
-    expect(linux?.rollbackLegacy?.join("\n")).toContain("systemctl enable --now openmausbot.service");
-    expect(linux?.rollbackLegacy?.[0]).toBe("sudo systemctl disable --now crewbot.service");
+    expect(linux?.legacyUnit).toBe("/etc/systemd/system/openmausbot.service");
+    expect(linux?.legacyBackup).toBe("/etc/systemd/system/openmausbot.service.crewbot-backup");
     expect(linux?.prepareLegacy?.join(" ")).not.toMatch(/&&|\bif\b|\|/);
     expect(linux?.retireLegacy?.join(" ")).not.toMatch(/&&|\bif\b|\|/);
     const mac = servicePlan("darwin", "/Users/maus/.crewbot", "/Users/maus");

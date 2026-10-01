@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
-  chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync,
-  renameSync, rmSync, writeFileSync,
+  chmodSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync,
+  renameSync, rmSync, rmdirSync, writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { rebasePersistedFields, rebasePersistedMessage } from "./rebase-data-paths.mjs";
@@ -51,6 +51,103 @@ function readJournal(dataDir) {
 
 function backupPath(dataDir, id, file) {
   return join(dataDir, MIGRATION_DIR, "recovery", id, file);
+}
+
+const RECOVERY_ID = /^[0-9a-f-]{36}$/;
+
+function serviceRecoveryReceipt(dataDir, entry) {
+  if (!entry.isDirectory() || !RECOVERY_ID.test(entry.name)) {
+    throw new Error(`Crewbot found an unsupported service migration recovery entry in ${join(dataDir, MIGRATION_DIR, "recovery")}; both data directories were preserved.`);
+  }
+  const recoveryDir = join(dataDir, MIGRATION_DIR, "recovery", entry.name);
+  const receiptPath = join(recoveryDir, "receipt.json");
+  const receiptStat = lstatSync(receiptPath);
+  if (!receiptStat.isFile() || receiptStat.isSymbolicLink()) {
+    throw new Error(`Crewbot found an unsupported service migration receipt at ${receiptPath}; both data directories were preserved.`);
+  }
+  let receipt;
+  try { receipt = JSON.parse(readFileSync(receiptPath, "utf8")); }
+  catch (cause) { throw new Error(`Crewbot found a damaged service migration receipt at ${receiptPath}; both data directories were preserved.`, { cause }); }
+  if (!record(receipt) || receipt.id !== entry.name || !["complete", "rolled-back"].includes(receipt.phase) ||
+      typeof receipt.source !== "string" || typeof receipt.destination !== "string") {
+    throw new Error(`Crewbot found an invalid service migration receipt at ${receiptPath}; both data directories were preserved.`);
+  }
+  if (receipt.phase === "rolled-back") return null;
+  if (!Array.isArray(receipt.metadataFiles) || !receipt.metadataFiles.every((file) => typeof file === "string" &&
+      !file.includes("/") && !file.includes("\\") && (MIGRATABLE_FILES.has(file) || /^messages-[^/]+\.json$/.test(file))) ||
+      typeof receipt.completedAt !== "string" || !Number.isFinite(Date.parse(receipt.completedAt))) {
+    throw new Error(`Crewbot found an invalid service migration receipt at ${receiptPath}; both data directories were preserved.`);
+  }
+
+  if (resolve(receipt.destination) !== resolve(dataDir) || resolve(dirname(receipt.source)) !== resolve(dirname(dataDir)) ||
+      ![".openmausbot", ".opengrokbot"].includes(basename(receipt.source))) {
+    throw new Error(`Crewbot found a service migration receipt with unsupported data paths at ${receiptPath}; both data directories were preserved.`);
+  }
+  for (const file of receipt.metadataFiles) {
+    const snapshot = backupPath(dataDir, receipt.id, file);
+    const stat = lstatSync(snapshot);
+    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`Crewbot found an unsupported recovery snapshot at ${snapshot}; both data directories were preserved.`);
+  }
+  return { ...receipt, recoveryDir };
+}
+
+/** Validate and select the completed default-root migration used by service rollback. */
+export function inspectLegacyDataDirServiceRecovery(dataDir) {
+  const resolvedDataDir = resolve(dataDir);
+  if (!existsSync(resolvedDataDir)) return null;
+  const dataStat = lstatSync(resolvedDataDir);
+  if (!dataStat.isDirectory() || dataStat.isSymbolicLink()) throw new Error(`Crewbot cannot recover a service workspace that is not a real directory: ${resolvedDataDir}`);
+  const migrationDir = join(resolvedDataDir, MIGRATION_DIR);
+  if (!existsSync(migrationDir)) return null;
+  const migrationStat = lstatSync(migrationDir);
+  if (!migrationStat.isDirectory() || migrationStat.isSymbolicLink()) throw new Error(`Crewbot found an unsupported migration recovery path at ${migrationDir}; both data directories were preserved.`);
+  if (existsSync(join(migrationDir, JOURNAL_FILE))) throw new Error(`Crewbot found an unfinished data migration in ${migrationDir}; both data directories were preserved. Resolve that migration before restoring the legacy service.`);
+  const recoveryDir = join(migrationDir, "recovery");
+  if (!existsSync(recoveryDir)) return null;
+  const recoveryStat = lstatSync(recoveryDir);
+  if (!recoveryStat.isDirectory() || recoveryStat.isSymbolicLink()) throw new Error(`Crewbot found an unsupported recovery directory at ${recoveryDir}; both data directories were preserved.`);
+  const migrations = readdirSync(recoveryDir, { withFileTypes: true })
+    .map((entry) => serviceRecoveryReceipt(resolvedDataDir, entry))
+    .filter(Boolean)
+    .sort((a, b) => Date.parse(b.completedAt ?? "") - Date.parse(a.completedAt ?? ""));
+  if (migrations.length === 0) return null;
+  const selected = migrations[0];
+  if (migrations.some((item) => resolve(item.source) !== resolve(selected.source))) {
+    throw new Error(`Crewbot found conflicting legacy data roots in ${recoveryDir}; both data directories were preserved.`);
+  }
+  if (existsSync(selected.source)) throw new Error(`Crewbot will not replace the existing legacy data directory ${selected.source}; both data directories were preserved.`);
+  const staging = join(dirname(selected.source), `.${basename(selected.source)}.crewbot-recovery-${selected.id}`);
+  if (existsSync(staging)) throw new Error(`Crewbot will not replace the existing recovery directory ${staging}; both data directories were preserved.`);
+  return { dataDir: resolvedDataDir, source: selected.source, id: selected.id, recoveryDir: selected.recoveryDir, metadataFiles: selected.metadataFiles, staging };
+}
+
+/** Build an old-path copy from the current workspace and the pre-migration metadata snapshot.
+ * The migrated workspace remains in place. An existing source/staging path is never replaced.
+ */
+export function recoverLegacyDataDirForService(dataDir) {
+  const recovery = inspectLegacyDataDirServiceRecovery(dataDir);
+  if (!recovery) return null;
+  try {
+    cpSync(recovery.dataDir, recovery.staging, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true, verbatimSymlinks: true });
+    const snapshotFiles = new Set(recovery.metadataFiles);
+    for (const file of recovery.metadataFiles) {
+      copyFileSync(backupPath(recovery.dataDir, recovery.id, file), join(recovery.staging, file));
+      chmodSync(join(recovery.staging, file), 0o600);
+    }
+    for (const file of ["messages.db-wal", "messages.db-shm"]) {
+      if (!snapshotFiles.has(file)) rmSync(join(recovery.staging, file), { force: true });
+    }
+  } catch (error) {
+    throw new Error(`Crewbot could not prepare the legacy data recovery copy at ${recovery.staging}. The migrated workspace remains at ${recovery.dataDir}; preserve both paths while resolving the copy failure.`, { cause: error });
+  }
+  mkdirSync(recovery.source, { mode: 0o700 });
+  try {
+    renameSync(recovery.staging, recovery.source);
+  } catch (error) {
+    try { rmdirSync(recovery.source); } catch { /* Keep anything that appeared at the reserved original path. */ }
+    throw new Error(`Crewbot prepared the legacy data recovery copy at ${recovery.staging}, but could not publish it to ${recovery.source}. The migrated workspace remains at ${recovery.dataDir}.`, { cause: error });
+  }
+  return { source: recovery.source, destination: recovery.dataDir, id: recovery.id };
 }
 
 function restoreFromBackup(dataDir, journal) {
