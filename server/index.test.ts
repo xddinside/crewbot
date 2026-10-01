@@ -7261,9 +7261,31 @@ describe("harness HTTP API", () => {
 
     try {
       await waitForIsolatedServer(isolatedChild, isolatedPort, () => isolatedStderr);
-      await expect.poll(() => JSON.parse(
-        readFileSync(join(isolatedData, "browser-cleanups.json"), "utf8"),
-      ), { timeout: 5_000 }).toEqual([]);
+      try {
+        await expect.poll(() => JSON.parse(
+          readFileSync(join(isolatedData, "browser-cleanups.json"), "utf8"),
+        ), { timeout: 5_000 }).toEqual([]);
+      } catch (error) {
+        const relevantStderr = isolatedStderr
+          .split(/\r?\n/)
+          .filter((line) => /\b(browser cleanup|browser-cleanups\.json|journal|rename|EPERM|EACCES)\b/i.test(line))
+          .filter((line) => !/\b(provider|auth(?:entication|orization)?|api[_ -]?key|token|password|secret|bearer)\b/i.test(line))
+          .map((line) => line
+            .replace(/\b((?:api[_ -]?)?key|token|password|secret|authorization)\b["']?\s*[:=]\s*["']?[^"'\s,;]+["']?/gi, "$1=<redacted>")
+            .slice(0, 240))
+          .slice(-8);
+        const childStatus = JSON.stringify({
+          pid: isolatedChild.pid ?? null,
+          exitCode: isolatedChild.exitCode,
+          signalCode: isolatedChild.signalCode,
+          killed: isolatedChild.killed,
+        });
+        if (error instanceof Error) {
+          error.message += `\nIsolated child status: ${childStatus}`
+            + `\nRelevant isolated child stderr (up to 8 lines):\n${relevantStderr.join("\n") || "(none)"}`;
+        }
+        throw error;
+      }
 
       const beforeReuse = await isolatedApi("GET", "/api/bots?messages=0");
       expect(beforeReuse.body.bots.find((bot: { id: string }) => bot.id === "crash-bot"))
