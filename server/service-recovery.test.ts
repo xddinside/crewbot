@@ -8,11 +8,31 @@ import { removeTempDir } from "./testing/cleanup.ts";
 import { runServiceRollback } from "./service-recovery.ts";
 import { servicePlan } from "./service-unit.ts";
 
+function escapeSystemdBackslashes(value: string): string {
+  return value.replaceAll("\\", "\\\\");
+}
+
+function quoteSystemd(value: string): string {
+  return `"${escapeSystemdBackslashes(value)}"`;
+}
+
+function systemdEnvironment(name: string, value: string): string {
+  return `Environment=${escapeSystemdBackslashes(`${name}=${value}`)}\n`;
+}
+
+function quotedSystemdEnvironment(name: string, value: string): string {
+  return `Environment=${quoteSystemd(`${name}=${value}`)}\n`;
+}
+
 describe("service rollback", () => {
   const roots: string[] = [];
+  // Successful publication renames a staged directory over the reserved
+  // legacy root. This rollback path is Linux systemd-only; Windows rejects
+  // that rename, while the lower-level publication proof runs on Linux.
+  const supportsServiceDirectoryPublish = process.platform === "linux";
   afterEach(() => { for (const root of roots.splice(0)) removeTempDir(root); });
 
-  it("stops Crewbot, restores legacy state and unit, then starts the legacy service", () => {
+  it.skipIf(!supportsServiceDirectoryPublish)("stops Crewbot, restores legacy state and unit, then starts the legacy service", () => {
     const home = mkdtempSync(join(tmpdir(), "crewbot-service-rollback-"));
     roots.push(home);
     const source = join(home, ".openmausbot");
@@ -20,7 +40,7 @@ describe("service rollback", () => {
     const units = join(home, "systemd");
     const legacyUnit = join(units, "openmausbot.service");
     const legacyBackup = `${legacyUnit}.crewbot-backup`;
-    const savedUnit = `[Service]\nEnvironment=OMB_DATA_DIR=${source}\nExecStart=/usr/bin/node old.js serve --data-dir ${source}\n`;
+    const savedUnit = `[Service]\n${systemdEnvironment("OMB_DATA_DIR", source)}ExecStart=/usr/bin/node old.js serve --data-dir ${escapeSystemdBackslashes(source)}\n`;
     mkdirSync(source);
     mkdirSync(units);
     writeFileSync(join(source, "bots.json"), JSON.stringify([{ cwd: join(source, "workspace") }]));
@@ -76,7 +96,7 @@ describe("service rollback", () => {
     mkdirSync(source);
     mkdirSync(units);
     writeFileSync(join(source, "bots.json"), "[]");
-    writeFileSync(legacyBackup, `Environment=OMB_DATA_DIR=${source}\n`);
+    writeFileSync(legacyBackup, systemdEnvironment("OMB_DATA_DIR", source));
     migrateLegacyDataDir(dataDir, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
     mkdirSync(source);
     writeFileSync(join(source, "keep.txt"), "conflicting data");
@@ -106,7 +126,7 @@ describe("service rollback", () => {
     mkdirSync(source);
     mkdirSync(units);
     writeFileSync(join(source, "bots.json"), "[]");
-    writeFileSync(legacyBackup, `Environment=OMB_DATA_DIR=${source}\n`);
+    writeFileSync(legacyBackup, systemdEnvironment("OMB_DATA_DIR", source));
     migrateLegacyDataDir(dataDir, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
     writeFileSync(sentinel, "external sentinel");
     writeFileSync(join(dataDir, "bots.json"), "[]");
@@ -138,7 +158,7 @@ describe("service rollback", () => {
     mkdirSync(source);
     mkdirSync(units);
     writeFileSync(join(source, "bots.json"), "[]");
-    writeFileSync(legacyBackup, `Environment=OMB_DATA_DIR=${source}\n`);
+    writeFileSync(legacyBackup, systemdEnvironment("OMB_DATA_DIR", source));
     migrateLegacyDataDir(dataDir, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
     rmSync(join(dataDir, "bots.json"));
     symlinkSync(missingTarget, join(dataDir, "bots.json"));
@@ -168,8 +188,8 @@ describe("service rollback", () => {
     mkdirSync(dataDir);
     mkdirSync(source);
     mkdirSync(units);
-    writeFileSync(legacyUnit, `Environment=OMB_DATA_DIR=${source}\n`);
-    writeFileSync(legacyBackup, `Environment=OMB_DATA_DIR=${join(home, "other-data")}\n`);
+    writeFileSync(legacyUnit, systemdEnvironment("OMB_DATA_DIR", source));
+    writeFileSync(legacyBackup, systemdEnvironment("OMB_DATA_DIR", join(home, "other-data")));
 
     const calls: string[] = [];
     const err: string[] = [];
@@ -192,8 +212,8 @@ describe("service rollback", () => {
     const legacyUnit = join(units, "openmausbot.service");
     const legacyBackup = `${legacyUnit}.crewbot-backup`;
     const unusedLegacyDataDir = join(home, "unused openmausbot data");
-    const escapedLegacyDataDir = legacyDataDir.replaceAll(" ", "\\s");
-    const unit = `Environment="OMB_DATA_DIR=${unusedLegacyDataDir}"\nEnvironment="CREWBOT_DATA_DIR=${unusedLegacyDataDir}"\nEnvironment=CREWBOT_DATA_DIR=${escapedLegacyDataDir}\n`;
+    const escapedLegacyDataDir = escapeSystemdBackslashes(legacyDataDir).replaceAll(" ", "\\s");
+    const unit = `${quotedSystemdEnvironment("OMB_DATA_DIR", unusedLegacyDataDir)}${quotedSystemdEnvironment("CREWBOT_DATA_DIR", unusedLegacyDataDir)}Environment=CREWBOT_DATA_DIR=${escapedLegacyDataDir}\n`;
     mkdirSync(dataDir);
     mkdirSync(legacyDataDir);
     mkdirSync(units);
@@ -221,7 +241,7 @@ describe("service rollback", () => {
     expect(err).toEqual([]);
   });
 
-  it("can retry after data recovery when a later systemd step fails", () => {
+  it.skipIf(!supportsServiceDirectoryPublish)("can retry after data recovery when a later systemd step fails", () => {
     const home = mkdtempSync(join(tmpdir(), "crewbot-service-retry-"));
     roots.push(home);
     const source = join(home, ".openmausbot");
@@ -232,7 +252,7 @@ describe("service rollback", () => {
     mkdirSync(source);
     mkdirSync(units);
     writeFileSync(join(source, "bots.json"), JSON.stringify([{ cwd: join(source, "workspace") }]));
-    writeFileSync(legacyBackup, `Environment=OMB_DATA_DIR=${source}\n`);
+    writeFileSync(legacyBackup, systemdEnvironment("OMB_DATA_DIR", source));
     migrateLegacyDataDir(dataDir, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
     const plan = servicePlan("linux", dataDir, home)!;
     const messages = { log: (_line: string) => {}, error: (_line: string) => {} };
@@ -341,12 +361,12 @@ describe("service rollback", () => {
       return { code, out, err };
     };
 
-    const resetToDefault = runUnit(`Environment="OMB_DATA_DIR=${previousDataDir}"\nEnvironment=\n`);
+    const resetToDefault = runUnit(`${quotedSystemdEnvironment("OMB_DATA_DIR", previousDataDir)}Environment=\n`);
     expect(resetToDefault.code).toBe(0);
     expect(resetToDefault.out.join("\n")).toContain(defaultDataDir);
     expect(resetToDefault.err).toEqual([]);
 
-    const assignmentAfterReset = runUnit(`Environment="OMB_DATA_DIR=${previousDataDir}"\nEnvironment=\nEnvironment="OMB_DATA_DIR=${postResetDataDir}"\n`);
+    const assignmentAfterReset = runUnit(`${quotedSystemdEnvironment("OMB_DATA_DIR", previousDataDir)}Environment=\n${quotedSystemdEnvironment("OMB_DATA_DIR", postResetDataDir)}`);
     expect(assignmentAfterReset.code).toBe(0);
     expect(assignmentAfterReset.out.join("\n")).toContain(postResetDataDir);
     expect(assignmentAfterReset.err).toEqual([]);
@@ -363,7 +383,7 @@ describe("service rollback", () => {
     mkdirSync(dataDir);
     mkdirSync(customDataDir);
     mkdirSync(units);
-    writeFileSync(legacyBackup, `  Environment = "OMB_DATA_DIR=${customDataDir}"  \n`);
+    writeFileSync(legacyBackup, `  Environment = ${quoteSystemd(`OMB_DATA_DIR=${customDataDir}`)}  \n`);
 
     const logs: string[] = [];
     const errors: string[] = [];
@@ -390,7 +410,7 @@ describe("service rollback", () => {
     mkdirSync(dataDir);
     mkdirSync(defaultDataDir);
     mkdirSync(units);
-    writeFileSync(legacyBackup, `  EnvironmentFile = ${join(home, "old.env")}\n`);
+    writeFileSync(legacyBackup, `  EnvironmentFile = ${quoteSystemd(join(home, "old.env"))}\n`);
 
     const calls: string[] = [];
     const errors: string[] = [];
@@ -415,7 +435,7 @@ describe("service rollback", () => {
     mkdirSync(dataDir);
     mkdirSync(customDataDir);
     mkdirSync(units);
-    writeFileSync(legacyBackup, `  ExecStart = /usr/bin/node old.js serve --data-dir "${customDataDir}"\n`);
+    writeFileSync(legacyBackup, `  ExecStart = /usr/bin/node old.js serve --data-dir ${quoteSystemd(customDataDir)}\n`);
 
     const logs: string[] = [];
     const errors: string[] = [];
@@ -443,7 +463,7 @@ describe("service rollback", () => {
     mkdirSync(defaultLegacyDataDir);
     mkdirSync(units);
     writeFileSync(join(defaultLegacyDataDir, "old.txt"), "keep old data");
-    writeFileSync(legacyBackup, `Environment=CREWBOT_DATA_DIR=${join(home, "custom data")}\n`);
+    writeFileSync(legacyBackup, `Environment=CREWBOT_DATA_DIR=${escapeSystemdBackslashes(join(home, "custom data"))}\n`);
 
     const calls: string[] = [];
     const err: string[] = [];
