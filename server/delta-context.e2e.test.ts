@@ -561,9 +561,12 @@ it("gives a replacement session an earlier round's result that its rebuild could
   await expect.poll(() => f.turns().length, { timeout: 10_000 }).toBe(3);
   expect(count(f.prompt(f.turns()[2]), "ROUND_ONE_RESULT_TOKEN")).toBe(1);
   await expect.poll(() => f.launches(f.lead.id).length, { timeout: 15_000 }).toBe(2);
+  await expect.poll(async () => (await f.messages()).some(
+    (m: any) => m.text === "Round two sent" && m.turnTerminal === true,
+  ), { timeout: 10_000 }).toBe(true);
   for (let i = 0; i < chat; i++) {
     // Teammate work stays outstanding, so wait for this turn's own reply.
-    expect((await f.send(`chat ${i}`)).steered).toBeUndefined();
+    expect((await f.send(`chat ${i}`)).steered, `chat send ${i}`).toBeUndefined();
     await expect.poll(() => f.turns().length, { timeout: 20_000 }).toBe(4 + i);
     await expect.poll(async () => (await f.messages()).some(
       (m: any) => m.text === `chat reply ${i}` && m.turnTerminal === true,
