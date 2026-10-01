@@ -2115,6 +2115,24 @@ describe("live config frames", () => {
       billing: { currency: "USD" },
     });
   });
+
+  it("keeps configured provider-key flags when a sanitized config frame follows a successful save", () => {
+    const frame: ConfigStatusFrame = {
+      ...baseFrame,
+      anthropic: { configured: false },
+      openaiCompat: { configured: true, url: "https://openrouter.ai/api/v1" },
+    };
+    const saveAcknowledgement = {
+      ...configStatusFromFrame(baseFrame),
+      anthropic: { configured: false },
+      openaiCompat: { configured: true, url: "https://openrouter.ai/api/v1" },
+    };
+    const afterSave = reducer(initialState, { type: "configStatus", config: saveAcknowledgement });
+    const afterFrame = reducer(afterSave, { type: "configStatus", config: configStatusFromFrame(frame) });
+
+    expect(afterFrame.config?.anthropic).toEqual({ configured: false });
+    expect(afterFrame.config?.openaiCompat).toEqual({ configured: true, url: "https://openrouter.ai/api/v1" });
+  });
 });
 
 
