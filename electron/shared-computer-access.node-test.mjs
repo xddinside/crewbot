@@ -143,13 +143,25 @@ test("a broad selected parent cannot expose the desktop's own credentials or gra
 
 test("explicit terminal grant executes a harmless command and cancellation stops its process", async t => {
   const { dir } = await fixture(t);
-  const result = payload(await sharedCommand("echo fixture-terminal", dir, new AbortController().signal));
-  assert.equal(result.exitCode, 0); assert.match(result.output, /fixture-terminal/);
-  const stop = new AbortController();
-  const command = process.platform === "win32" ? "Start-Sleep -Seconds 20" : "sleep 20";
-  const pending = sharedCommand(command, dir, stop.signal);
-  setTimeout(() => stop.abort(), 80);
-  await assert.rejects(pending, /revoked|turn ended/);
+  const phase = async (name, run) => {
+    const started = Date.now();
+    try { return await run(); }
+    catch (error) {
+      t.diagnostic(`[F04] phase=${name} failed after ${Date.now() - started}ms (${error?.name ?? "unknown error"})`);
+      throw error;
+    }
+  };
+  await phase("harmless-command", async () => {
+    const result = payload(await sharedCommand("echo fixture-terminal", dir, new AbortController().signal));
+    assert.equal(result.exitCode, 0); assert.match(result.output, /fixture-terminal/);
+  });
+  await phase("cancellation-command", async () => {
+    const stop = new AbortController();
+    const command = process.platform === "win32" ? "Start-Sleep -Seconds 20" : "sleep 20";
+    const pending = sharedCommand(command, dir, stop.signal);
+    setTimeout(() => stop.abort(), 80);
+    await assert.rejects(pending, /revoked|turn ended/);
+  });
 });
 
 test("Windows terminal preserves command syntax, pipeline output and exit status", { skip: process.platform !== "win32" }, async t => {
