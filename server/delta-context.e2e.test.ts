@@ -565,7 +565,9 @@ it("gives a replacement session an earlier round's result that its rebuild could
     // Teammate work stays outstanding, so wait for this turn's own reply.
     expect((await f.send(`chat ${i}`)).steered).toBeUndefined();
     await expect.poll(() => f.turns().length, { timeout: 20_000 }).toBe(4 + i);
-    await expect.poll(async () => (await f.messages()).some((m: any) => m.text === `chat reply ${i}`), { timeout: 10_000 }).toBe(true);
+    await expect.poll(async () => (await f.messages()).some(
+      (m: any) => m.text === `chat reply ${i}` && m.turnTerminal === true,
+    ), { timeout: 10_000 }).toBe(true);
   }
   const history = async () => (await f.api(`/api/threads/${f.thread}/messages?limit=200`)).messages.map((m: any) => m.id);
   // round one's result: the first result on the branch
