@@ -1,11 +1,11 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.ts";
 
 it("recovers a missing working folder in the same task without losing its transcript", async () => {
-  const fixture = await launchVerificationServer();
+  let fixture = await launchVerificationServer();
   const firstUseCwd = mkdtempSync(join(tmpdir(), "crewbot-first-use-cwd-"));
   const firstUseRetryCwd = mkdtempSync(join(tmpdir(), "crewbot-first-use-retry-"));
   const resumedCwd = mkdtempSync(join(tmpdir(), "crewbot-resumed-cwd-"));
@@ -14,6 +14,10 @@ it("recovers a missing working folder in the same task without losing its transc
   const taskCwd = async (botId: string, threadId: string) => {
     const state = await fetch(`${fixture.info.url}/api/bots?messages=0`).then((response) => response.json()) as any;
     return state.bots.find((bot: any) => bot.id === botId)?.tasks.find((task: any) => task.threadId === threadId)?.cwd;
+  };
+  const storedTask = (botId: string, threadId: string) => {
+    const state = JSON.parse(readFileSync(join(fixture.info.dataDir, "bots.json"), "utf8")) as any[];
+    return state.find((bot: any) => bot.id === botId)?.tasks.find((task: any) => task.threadId === threadId);
   };
 
   const restartAndRetry = async (botId: string, threadId: string, failedUser: any, cwd: string) => {
@@ -26,6 +30,9 @@ it("recovers a missing working folder in the same task without losing its transc
     const body = await restart.json() as any;
     expect(body.task.cwd).toBe(cwd);
     expect(body.bot.threadId).toBe(threadId);
+    expect(storedTask(botId, threadId).resumeCursors).toEqual({});
+    expect(storedTask(botId, threadId).lastInstanceId).toBeUndefined();
+    expect(storedTask(botId, threadId).handedMessages).toEqual({});
 
     const beforeRetry = await control(["messages", "--bot", botId, "--limit", "20"]);
     expect(beforeRetry.messages.some((message: any) => message.id === failedUser.id)).toBe(true);
@@ -84,17 +91,36 @@ it("recovers a missing working folder in the same task without losing its transc
     await control(["send", "--bot", resumed.bot.id, "--text", "Create a provider session"]);
     expect((await control(["wait", "--bot", resumed.bot.id, "--timeout", "30"])).status).toBe("settled");
 
-    rmSync(resumedCwd, { recursive: true });
+    const resumedThreadId = resumed.bot.activeTaskId;
+    const priorProviderState = storedTask(resumed.bot.id, resumedThreadId);
+    expect(Object.keys(priorProviderState.resumeCursors).length).toBeGreaterThan(0);
+    expect(priorProviderState.lastInstanceId).toBeDefined();
+    const beforeDelete = await control(["messages", "--bot", resumed.bot.id, "--limit", "20"]);
+    const priorUser = beforeDelete.messages.find((message: any) => message.role === "user");
+    expect(priorUser?.text).toBe("Create a provider session");
+    // Stop the owned fixture to release its provider child's cwd handle, then
+    // restart on the same data. The persisted task is still a previously
+    // running task, while removing its folder is now valid on Windows too.
+    const dataDir = fixture.info.dataDir;
+    await fixture.stop();
+    rmSync(resumedCwd, { recursive: true, maxRetries: 10, retryDelay: 100 });
+    fixture = await launchVerificationServer(
+      process.env, undefined, undefined, undefined, undefined, undefined, undefined, undefined, { dataDir },
+    );
+
     await control(["send", "--bot", resumed.bot.id, "--text", "Reply after the folder is gone"]);
     const resumedWait = await control(["wait", "--bot", resumed.bot.id, "--timeout", "30"]);
     const resumedMessages = await control(["messages", "--bot", resumed.bot.id, "--limit", "20"]);
     const resumedUser = [...resumedMessages.messages].reverse().find((message: any) => message.role === "user");
     const resumedError = resumedMessages.messages.find((message: any) => message.role === "bot" && message.kind === "activity" && message.tool?.ok === false);
     expect(resumedWait.status).toBe("failed");
+    expect(resumedWait.target.activity).toBe("idle");
+    expect(resumedMessages.messages.some((message: any) => message.id === priorUser.id)).toBe(true);
     expect(resumedUser).toBeDefined();
-    expect(await taskCwd(resumed.bot.id, resumed.bot.activeTaskId)).toBe(resumedCwd);
     expect(resumedError?.tool.name).toBe(`error: the working folder no longer exists: ${resumedCwd}`);
-    await restartAndRetry(resumed.bot.id, resumed.bot.activeTaskId, resumedUser, resumedRetryCwd);
+    expect(await taskCwd(resumed.bot.id, resumedThreadId)).toBe(resumedCwd);
+    expect(storedTask(resumed.bot.id, resumedThreadId).resumeCursors).toEqual(priorProviderState.resumeCursors);
+    await restartAndRetry(resumed.bot.id, resumedThreadId, resumedUser, resumedRetryCwd);
   } finally {
     try {
       await fixture.close();
