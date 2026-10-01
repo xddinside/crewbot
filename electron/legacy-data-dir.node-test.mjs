@@ -241,6 +241,26 @@ test("refuses symlinked migrated metadata without writing through to its externa
   assert.equal(readFileSync(path.join(destination, "bots.json"), "utf8"), "preserve this external file");
 });
 
+test("does not trust an existing symlink as a previously restored legacy root", () => {
+  const { home, source, destination } = fixture();
+  writeFileSync(path.join(source, "bots.json"), "[]");
+  migrateLegacyDataDir(destination, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
+  const recovery = inspectLegacyDataDirServiceRecovery(destination);
+  const external = path.join(home, "external-root");
+  mkdirSync(path.join(external, ".crewbot-migration", "recovery", recovery.id), { recursive: true });
+  writeFileSync(path.join(external, "external.txt"), "keep external root");
+  writeFileSync(path.join(external, ".crewbot-migration", "recovery", recovery.id, "service-rollback.json"), JSON.stringify({
+    id: recovery.id, phase: "restored", source, destination,
+  }));
+  symlinkSync(external, source);
+
+  assert.throws(() => recoverLegacyDataDirForService(destination), /unsupported existing legacy data path/i);
+  assert.equal(readFileSync(path.join(external, "external.txt"), "utf8"), "keep external root");
+  assert.equal(readFileSync(path.join(external, ".crewbot-migration", "recovery", recovery.id, "service-rollback.json"), "utf8"), JSON.stringify({
+    id: recovery.id, phase: "restored", source, destination,
+  }));
+});
+
 test("custom workspaces do not claim default legacy service recovery", () => {
   const { home, source } = fixture();
   const custom = path.join(home, "custom-workspace");

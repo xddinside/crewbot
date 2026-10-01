@@ -131,8 +131,16 @@ export function inspectLegacyDataDirServiceRecovery(dataDir) {
   if (migrations.some((item) => resolve(item.source) !== resolve(selected.source))) {
     throw new Error(`Crewbot found conflicting legacy data roots in ${recoveryDir}; both data directories were preserved.`);
   }
-  const alreadyRecovered = existsSync(selected.source) && serviceRollbackMarker(selected.source, resolvedDataDir, selected.id);
-  if (existsSync(selected.source) && !alreadyRecovered) throw new Error(`Crewbot will not replace the existing legacy data directory ${selected.source}; both data directories were preserved.`);
+  let sourceExists = false;
+  try {
+    const sourceStat = lstatSync(selected.source);
+    sourceExists = true;
+    if (!sourceStat.isDirectory() || sourceStat.isSymbolicLink()) throw new Error(`Crewbot will not use an unsupported existing legacy data path: ${selected.source}; both data directories were preserved.`);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  const alreadyRecovered = sourceExists && serviceRollbackMarker(selected.source, resolvedDataDir, selected.id);
+  if (sourceExists && !alreadyRecovered) throw new Error(`Crewbot will not replace the existing legacy data directory ${selected.source}; both data directories were preserved.`);
   if (alreadyRecovered) return { dataDir: resolvedDataDir, source: selected.source, id: selected.id, recoveryDir: selected.recoveryDir, metadataFiles: selected.metadataFiles, alreadyRecovered: true };
 
   for (const file of selected.metadataFiles) {
