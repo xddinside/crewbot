@@ -1,5 +1,5 @@
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { join, parse, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { DATA_DIR } from "../config.ts";
@@ -14,21 +14,26 @@ import {
 // The real home is never written to by anything here; these are path-string
 // assertions about a hypothetical one, which is the point — the guard has to
 // reject a live dir before the suite ever creates or removes anything.
-const REAL_HOME = "/home/someone";
-const THROWAWAY = "/tmp/omb-test-home-abc123";
+const ROOT = parse(process.cwd()).root;
+const REAL_HOME = join(ROOT, "home", "someone");
+const THROWAWAY = join(tmpdir(), "omb-test-home-abc123");
+const pathPattern = (path: string) =>
+  new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 
 describe("resolveDataDir", () => {
   it("prefers CREWBOT_DATA_DIR over the OMB_DATA_DIR alias", () => {
     expect(
       resolveDataDir(
-        { CREWBOT_DATA_DIR: "/tmp/crew", OMB_DATA_DIR: "/tmp/omb" },
+        { CREWBOT_DATA_DIR: join(tmpdir(), "crew"), OMB_DATA_DIR: join(tmpdir(), "omb") },
         THROWAWAY,
       ),
-    ).toBe("/tmp/crew");
+    ).toBe(join(tmpdir(), "crew"));
   });
 
   it("falls back to the OMB_DATA_DIR alias", () => {
-    expect(resolveDataDir({ OMB_DATA_DIR: "/tmp/omb" }, THROWAWAY)).toBe("/tmp/omb");
+    expect(
+      resolveDataDir({ OMB_DATA_DIR: join(tmpdir(), "omb") }, THROWAWAY),
+    ).toBe(join(tmpdir(), "omb"));
   });
 
   it("defaults to ~/.crewbot under the given home", () => {
@@ -52,20 +57,20 @@ describe("resolveDataDir", () => {
 describe("assertDataDirIsolated", () => {
   it("rejects the live ~/.crewbot that the 2026-09-29 incident destroyed", () => {
     expect(() =>
-      assertDataDirIsolated("/home/someone/.crewbot", THROWAWAY, REAL_HOME),
+      assertDataDirIsolated(join(REAL_HOME, ".crewbot"), THROWAWAY, REAL_HOME),
     ).toThrow(DataDirIsolationError);
   });
 
   it("rejects a live ~/.openmausbot", () => {
     expect(() =>
-      assertDataDirIsolated("/home/someone/.openmausbot", THROWAWAY, REAL_HOME),
+      assertDataDirIsolated(join(REAL_HOME, ".openmausbot"), THROWAWAY, REAL_HOME),
     ).toThrow(DataDirIsolationError);
   });
 
   it("rejects a live dir reached by a traversal rather than a literal path", () => {
     expect(() =>
       assertDataDirIsolated(
-        resolve(join(THROWAWAY, "..", "..", "home", "someone", ".crewbot")),
+        resolve(join(REAL_HOME, "nested", "..", ".crewbot")),
         THROWAWAY,
         REAL_HOME,
       ),
@@ -73,7 +78,7 @@ describe("assertDataDirIsolated", () => {
   });
 
   it("rejects a dir outside the throwaway home, so a failed redirect is loud", () => {
-    expect(() => assertDataDirIsolated("/tmp/elsewhere", THROWAWAY, REAL_HOME)).toThrow(
+    expect(() => assertDataDirIsolated(join(tmpdir(), "elsewhere"), THROWAWAY, REAL_HOME)).toThrow(
       DataDirIsolationError,
     );
   });
@@ -96,21 +101,21 @@ describe("assertDataDirIsolated", () => {
 
   it("names the offending dir in the message", () => {
     expect(() =>
-      assertDataDirIsolated("/home/someone/.crewbot", THROWAWAY, REAL_HOME),
-    ).toThrow(/\/home\/someone\/\.crewbot/);
+      assertDataDirIsolated(join(REAL_HOME, ".crewbot"), THROWAWAY, REAL_HOME),
+    ).toThrow(pathPattern(join(REAL_HOME, ".crewbot")));
   });
 });
 
 describe("assertNoLiveDataDirOverride", () => {
   it("rejects the exact env that caused the wipe", () => {
     expect(() =>
-      assertNoLiveDataDirOverride({ CREWBOT_DATA_DIR: "/home/someone/.crewbot" }, REAL_HOME),
+      assertNoLiveDataDirOverride({ CREWBOT_DATA_DIR: join(REAL_HOME, ".crewbot") }, REAL_HOME),
     ).toThrow(DataDirIsolationError);
   });
 
   it("rejects the legacy alias too", () => {
     expect(() =>
-      assertNoLiveDataDirOverride({ OMB_DATA_DIR: "/home/someone/.crewbot" }, REAL_HOME),
+      assertNoLiveDataDirOverride({ OMB_DATA_DIR: join(REAL_HOME, ".crewbot") }, REAL_HOME),
     ).toThrow(DataDirIsolationError);
   });
 
@@ -122,18 +127,21 @@ describe("assertNoLiveDataDirOverride", () => {
   // A developer running a sandbox on purpose must not be blocked by the fence.
   it("allows a deliberate sandbox override outside the real home", () => {
     expect(() =>
-      assertNoLiveDataDirOverride({ CREWBOT_DATA_DIR: "/tmp/omb-sandbox-07PWU0" }, REAL_HOME),
+      assertNoLiveDataDirOverride(
+        { CREWBOT_DATA_DIR: join(tmpdir(), "omb-sandbox-07PWU0") },
+        REAL_HOME,
+      ),
     ).not.toThrow();
   });
 
-  // The case that motivated the rule. Nothing under /home/xdd is read or
-  // written here: this is a path-string assertion, same as the ones above.
+  // The case that motivated the rule. Nothing under the synthetic home is
+  // read or written here: these are path-string assertions.
   it("rejects the 2026-09-29 archive the name list never covered", () => {
     expect(() =>
       assertNoLiveDataDirOverride(
-        { OMB_DATA_DIR: "/home/xdd/.openmausbot-archive-2026-09-29" },
-        "/home/xdd",
-        "/tmp",
+        { OMB_DATA_DIR: join(REAL_HOME, ".openmausbot-archive-2026-09-29") },
+        REAL_HOME,
+        tmpdir(),
       ),
     ).toThrow(DataDirIsolationError);
   });
@@ -143,25 +151,25 @@ describe("assertNoLiveDataDirOverride", () => {
   it("rejects an unnamed directory inside the real home", () => {
     expect(() =>
       assertNoLiveDataDirOverride(
-        { CREWBOT_DATA_DIR: "/home/someone/scratch/crewbot-data" },
+        { CREWBOT_DATA_DIR: join(REAL_HOME, "scratch", "crewbot-data") },
         REAL_HOME,
-        "/tmp",
+        tmpdir(),
       ),
-    ).toThrow(/\/home\/someone\/scratch\/crewbot-data/);
+    ).toThrow(pathPattern(join(REAL_HOME, "scratch", "crewbot-data")));
   });
 
   it("rejects the real home itself", () => {
     expect(() =>
-      assertNoLiveDataDirOverride({ CREWBOT_DATA_DIR: REAL_HOME }, REAL_HOME, "/tmp"),
+      assertNoLiveDataDirOverride({ CREWBOT_DATA_DIR: REAL_HOME }, REAL_HOME, tmpdir()),
     ).toThrow(DataDirIsolationError);
   });
 
   it("allows an override under the temp root, where throwaway homes are made", () => {
     expect(() =>
       assertNoLiveDataDirOverride(
-        { CREWBOT_DATA_DIR: "/tmp/omb-test-home-abc123/.crewbot" },
+        { CREWBOT_DATA_DIR: join(THROWAWAY, ".crewbot") },
         REAL_HOME,
-        "/tmp",
+        tmpdir(),
       ),
     ).not.toThrow();
   });
