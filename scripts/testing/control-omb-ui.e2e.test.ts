@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 
 import { resolveAgentBrowserBinary } from "../../server/browser-engine.ts";
 import { removeTempDir, waitForExit } from "../../server/testing/cleanup.ts";
@@ -118,10 +118,15 @@ const refsNamed = (snapshot: Record<string, any>, name: string, role?: string) =
 describe("control-omb ui drives the real renderer", () => {
   let launched: Launched | undefined;
 
-  afterAll(async () => {
-    if (launched && launched.child.exitCode === null && launched.child.signalCode === null) {
-      await waitForExit(launched.child, { signal: "SIGINT", graceMs: 30_000 });
+  afterEach(async () => {
+    const child = launched?.child;
+    launched = undefined;
+    if (child && child.exitCode === null && child.signalCode === null) {
+      await waitForExit(child, { signal: "SIGINT", graceMs: 30_000 });
     }
+  });
+
+  afterAll(async () => {
     if (ownsEvidenceDir) await removeTempDir(evidenceDir);
   });
 
@@ -200,7 +205,32 @@ describe("control-omb ui drives the real renderer", () => {
     await evaluate("window.rejectKeySave = false");
     await save();
     await expect.poll(() => evaluate(`${input}.value`), { timeout: SAVE_TIMEOUT_MS }).toBe("");
-    await expect.poll(() => evaluate(`${testButton}.disabled`)).toBe(false);
+    try {
+      await expect.poll(() => evaluate(`${testButton}.disabled`)).toBe(false);
+    } catch (error) {
+      let state: Record<string, unknown>;
+      try {
+        state = await evaluate(`(() => {
+          const field = ${input};
+          const row = field?.parentElement;
+          const buttonNames = [...(row?.querySelectorAll('button') ?? [])]
+            .map((button) => button.textContent?.trim() ?? '')
+            .filter(Boolean);
+          const globalTestButtonCount = [...document.querySelectorAll('button')]
+            .filter((button) => button.textContent?.trim() === 'Test').length;
+          return {
+            inputExists: Boolean(field),
+            rowParentExists: Boolean(row),
+            rowButtonNames: buttonNames,
+            globalTestButtonCount,
+          };
+        })()`);
+      } catch {
+        state = { diagnosticSnapshotAvailable: false };
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`saved-key Test button poll failed: ${message}; row diagnostic: ${JSON.stringify(state)}`, { cause: error });
+    }
     await click("Test");
     await expect.poll(() => evaluate("window.keyTests")).toEqual([
       { provider: "openaiCompat" }, { provider: "openaiCompat", key: "fixture-draft-key" }, { provider: "openaiCompat" },
