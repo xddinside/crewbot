@@ -16098,11 +16098,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
       const current = store.projectBotForTask(m[1], m[2]);
       if (!current) return json(res, 404, { error: "no such task" });
-      const allowed = new Set(["title", "projectId", "modelSelection", "updateBotDefault", "resetApprovalToAsk", "approvalMode", "autoApprove", "requireAvailableModel", "pinnedMessageId", "acknowledgeLocalAuto", "archivedAt", "surface", "restartAtCwd"]);
+      const allowed = new Set(["title", "projectId", "modelSelection", "updateBotDefault", "resetApprovalToAsk", "approvalMode", "autoApprove", "requireAvailableModel", "pinnedMessageId", "acknowledgeLocalAuto", "archivedAt", "surface", "restartAtCwd", "expectedErrorMessageId", "expectedUserMessageId"]);
       if (Object.keys(body).some((key) => !allowed.has(key))) return json(res, 400, { error: "unsupported thread setting" });
+      if (!Object.hasOwn(body, "restartAtCwd") &&
+        (Object.hasOwn(body, "expectedErrorMessageId") || Object.hasOwn(body, "expectedUserMessageId"))) {
+        return json(res, 400, { error: "expected recovery message IDs require restartAtCwd" });
+      }
       if (Object.hasOwn(body, "restartAtCwd")) {
-        if (Object.keys(body).length !== 1) return json(res, 400, { error: "restartAtCwd must be the only thread setting" });
+        if (Object.keys(body).length !== 3) return json(res, 400, { error: "restartAtCwd requires both expected recovery message IDs" });
         if (typeof body.restartAtCwd !== "string") return json(res, 400, { error: "restartAtCwd must be an absolute folder path" });
+        if (typeof body.expectedErrorMessageId !== "string" || !body.expectedErrorMessageId.trim() ||
+          typeof body.expectedUserMessageId !== "string" || !body.expectedUserMessageId.trim()) {
+          return json(res, 400, { error: "restartAtCwd requires both expected recovery message IDs" });
+        }
         if (phoneSecretSubmissions.hasThread(current.threadId)) {
           return json(res, 409, { error: "this thread is securely saving a credential — try again when it finishes" });
         }
@@ -16112,6 +16120,23 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         const checked = validateBotCwd(body.restartAtCwd);
         if (!checked.ok || checked.cwd === null) return json(res, 400, { error: checked.ok ? "choose a working folder" : checked.error });
+        // The renderer may have waited for a native picker before this PATCH
+        // reached us. Recheck against the active branch after reading the body
+        // and immediately before mutation so a stale repair cannot clear the
+        // continuation belonging to a newer accepted turn.
+        const activePath = store.activePath(current.threadId);
+        const terminal = activePath.at(-1);
+        const latestHumanMessage = activePath.findLast((message) => {
+          if (message.role !== "user" || message.kind !== "text" || message.queued || message.peerAsk) return false;
+          const text = message.text ?? "";
+          return !/^\[(?:Message from|Delegated by|Thread opened by) @[^,\]]+, another bot in this (?:OpenMausBot|crewbot) workspace[^\]]*\]/.test(text);
+        });
+        if (!terminal || terminal.id !== body.expectedErrorMessageId || terminal.role !== "bot" || terminal.kind !== "activity" ||
+          !terminal.tool?.name.startsWith("error:") ||
+          !terminal.tool.name.slice(6).trim().startsWith("the working folder ") ||
+          latestHumanMessage?.id !== body.expectedUserMessageId) {
+          return json(res, 409, { error: "the working-folder failure is no longer current; refresh the conversation before retrying" });
+        }
         // The explicit restart action keeps the full transcript but drops the
         // provider-native continuation. The next turn rebuilds context from
         // that transcript in a new session rooted at the selected folder.

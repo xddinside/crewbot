@@ -20,11 +20,15 @@ it("recovers a missing working folder in the same task without losing its transc
     return state.find((bot: any) => bot.id === botId)?.tasks.find((task: any) => task.threadId === threadId);
   };
 
-  const restartAndRetry = async (botId: string, threadId: string, failedUser: any, cwd: string) => {
+  const restartAndRetry = async (botId: string, threadId: string, failedUser: any, failedError: any, cwd: string) => {
     const restart = await fetch(`${fixture.info.url}/api/bots/${botId}/tasks/${threadId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ restartAtCwd: cwd }),
+      body: JSON.stringify({
+        restartAtCwd: cwd,
+        expectedErrorMessageId: failedError.id,
+        expectedUserMessageId: failedUser.id,
+      }),
     });
     expect(restart.status, await restart.clone().text()).toBe(200);
     const body = await restart.json() as any;
@@ -72,14 +76,58 @@ it("recovers a missing working folder in the same task without losing its transc
     expect(firstUseError.tool.setup).not.toBe(true);
     expect(firstUseWait.target.activity).toBe("idle");
 
+    const unboundRestart = await fetch(`${fixture.info.url}/api/bots/${firstUse.bot.id}/tasks/${firstUse.bot.activeTaskId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ restartAtCwd: firstUseRetryCwd }),
+    });
+    expect(unboundRestart.status).toBe(400);
+    expect(await taskCwd(firstUse.bot.id, firstUse.bot.activeTaskId)).toBeUndefined();
+
     const invalidRestart = await fetch(`${fixture.info.url}/api/bots/${firstUse.bot.id}/tasks/${firstUse.bot.activeTaskId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ restartAtCwd: join(firstUseCwd, "missing-child") }),
+      body: JSON.stringify({
+        restartAtCwd: join(firstUseCwd, "missing-child"),
+        expectedErrorMessageId: firstUseError.id,
+        expectedUserMessageId: firstUseUser.id,
+      }),
     });
     expect(invalidRestart.status).toBe(400);
     expect(await taskCwd(firstUse.bot.id, firstUse.bot.activeTaskId)).toBeUndefined();
-    await restartAndRetry(firstUse.bot.id, firstUse.bot.activeTaskId, firstUseUser, firstUseRetryCwd);
+
+    // A profile folder change is a separate supported path. It leaves the
+    // failed row on the active branch while allowing a later turn to settle,
+    // which reproduces a picker result arriving after accepted newer work.
+    const profileFolder = await fetch(`${fixture.info.url}/api/bots/${firstUse.bot.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cwd: firstUseRetryCwd }),
+    });
+    expect(profileFolder.ok, await profileFolder.text()).toBe(true);
+    await control(["send", "--bot", firstUse.bot.id, "--text", "Complete newer work before old recovery arrives"]);
+    const newerWait = await control(["wait", "--bot", firstUse.bot.id, "--timeout", "30"]);
+    expect(newerWait.status).toBe("settled");
+    expect(newerWait.target.activity).toBe("idle");
+    const activeMessages = await control(["messages", "--bot", firstUse.bot.id, "--limit", "20"]);
+    expect(activeMessages.messages.some((message: any) => message.id === firstUseError.id)).toBe(true);
+    const newerProviderState = storedTask(firstUse.bot.id, firstUse.bot.activeTaskId);
+    expect(Object.keys(newerProviderState.resumeCursors).length).toBeGreaterThan(0);
+    const staleRecovery = await fetch(`${fixture.info.url}/api/bots/${firstUse.bot.id}/tasks/${firstUse.bot.activeTaskId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        restartAtCwd: resumedRetryCwd,
+        expectedErrorMessageId: firstUseError.id,
+        expectedUserMessageId: firstUseUser.id,
+      }),
+    });
+    expect(staleRecovery.status).toBe(409);
+    const afterStaleRecovery = storedTask(firstUse.bot.id, firstUse.bot.activeTaskId);
+    expect(await taskCwd(firstUse.bot.id, firstUse.bot.activeTaskId)).toBe(firstUseRetryCwd);
+    expect(afterStaleRecovery.resumeCursors).toEqual(newerProviderState.resumeCursors);
+    expect(afterStaleRecovery.lastInstanceId).toBe(newerProviderState.lastInstanceId);
+    expect(afterStaleRecovery.handedMessages).toEqual(newerProviderState.handedMessages);
 
     const resumed = await control(["new-bot", "--name", "Resumed session folder fixture"]);
     const resumedPatch = await fetch(`${fixture.info.url}/api/bots/${resumed.bot.id}`, {
@@ -120,7 +168,7 @@ it("recovers a missing working folder in the same task without losing its transc
     expect(resumedError?.tool.name).toBe(`error: the working folder no longer exists: ${resumedCwd}`);
     expect(await taskCwd(resumed.bot.id, resumedThreadId)).toBe(resumedCwd);
     expect(storedTask(resumed.bot.id, resumedThreadId).resumeCursors).toEqual(priorProviderState.resumeCursors);
-    await restartAndRetry(resumed.bot.id, resumedThreadId, resumedUser, resumedRetryCwd);
+    await restartAndRetry(resumed.bot.id, resumedThreadId, resumedUser, resumedError, resumedRetryCwd);
   } finally {
     try {
       await fixture.close();
@@ -167,9 +215,15 @@ it("refuses to restart a task while its provider session is live", async () => {
     const restart = await fetch(`${fixture.info.url}/api/bots/${bot.id}/tasks/${threadId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ restartAtCwd: replacementCwd }),
+      body: JSON.stringify({
+        restartAtCwd: replacementCwd,
+        expectedErrorMessageId: "prior-folder-error",
+        expectedUserMessageId: "prior-user-turn",
+      }),
     });
-    expect(restart.status).toBe(409);
+    expect(restart.status, await restart.clone().text()).toBe(409);
+    const restartBody = await restart.json() as { error: string };
+    expect(restartBody.error).toContain("stop this thread");
     expect(await taskCwd(bot.id, threadId)).toBe(cwd);
 
     await control(["interrupt", "--bot", bot.id]);

@@ -1171,7 +1171,11 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
       if (!cwd || !isCurrentWorkingFolderFailure(target)) return;
       await api(`/api/bots/${bot.id}/tasks/${bot.threadId}`, {
         method: "PATCH",
-        body: JSON.stringify({ restartAtCwd: cwd }),
+        body: JSON.stringify({
+          restartAtCwd: cwd,
+          expectedErrorMessageId: target.errorMessageId,
+          expectedUserMessageId: target.userMessageId,
+        }),
       });
       // The picker or PATCH may outlive the failed turn. Only fork the exact
       // user request that produced this still-current folder failure.
