@@ -1477,7 +1477,10 @@ describe("legacy data directory migration", () => {
     expect(runCliServiceInstallWithDataDir(home, custom).exitCode).toBe(0);
 
     expect(existsSync(custom)).toBe(true);
-    expect(existsSync(join(custom, "crewbot.service"))).toBe(true);
+    const serviceFile = process.platform === "darwin"
+      ? "dev.xddinside.crewbot.serve.plist"
+      : "crewbot.service";
+    expect(existsSync(join(custom, serviceFile))).toBe(true);
     expect(existsSync(join(home, ".crewbot"))).toBe(false);
     expect(readFileSync(join(openMaus, "fixture.txt"), "utf8")).toBe("OpenMaus data");
     expect(readFileSync(join(openGrok, "fixture.txt"), "utf8")).toBe("OpenGrok data");
