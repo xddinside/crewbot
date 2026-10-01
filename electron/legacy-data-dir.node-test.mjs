@@ -192,7 +192,12 @@ test("preserves both directories when a journal tries to recover to another path
   assert.equal(existsSync(destination), true);
 });
 
-test("restores the legacy service data root while preserving the migrated workspace", () => {
+test("restores the legacy service data root while preserving the migrated workspace", {
+  // Service rollback is supported only for Linux systemd cutovers. Directory
+  // rename-over-empty-directory semantics differ on Windows, where this
+  // filesystem-only Linux contract cannot be exercised meaningfully.
+  skip: process.platform !== "linux" ? "service rollback is Linux systemd-only" : false,
+}, () => {
   const { home, source, destination } = fixture();
   const cwd = path.join(source, "workspaces", "bot");
   writeFileSync(path.join(source, "bots.json"), JSON.stringify([{ id: "bot", cwd }]));
