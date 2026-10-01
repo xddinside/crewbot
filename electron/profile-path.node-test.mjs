@@ -20,7 +20,7 @@ test("source launches use a dedicated profile even when a stable profile overrid
   assert.equal(result.identityName, "crewbot-development");
 });
 
-test("packaged upgrades keep using the existing OpenMausBot profile for OS-encrypted credentials", () => {
+test("packaged upgrades keep the OpenMausBot profile and original package-name identity", () => {
   const result = resolveDesktopProfilePath({
     appData,
     isPackaged: true,
@@ -30,11 +30,11 @@ test("packaged upgrades keep using the existing OpenMausBot profile for OS-encry
   });
   assert.equal(result.profilePath, path.join(appData, "OpenMausBot"));
   assert.equal(result.legacy, true);
-  assert.equal(result.identityName, "OpenMausBot");
+  assert.equal(result.identityName, "openmausbot");
   assert.equal(result.newProfilePath, path.join(appData, "crewbot"));
 });
 
-test("macOS packaged upgrades keep the original Keychain service identity", () => {
+test("macOS packaged upgrades keep the original package-name Keychain identity", () => {
   const result = resolveDesktopProfilePath({
     appData,
     isPackaged: true,
@@ -43,7 +43,7 @@ test("macOS packaged upgrades keep the original Keychain service identity", () =
     exists: (candidate) => candidate === path.join(appData, "OpenMausBot"),
   });
   assert.equal(result.profilePath, path.join(appData, "OpenMausBot"));
-  assert.equal(result.identityName, "OpenMausBot");
+  assert.equal(result.identityName, "openmausbot");
   assert.equal(result.legacy, true);
 });
 

@@ -36,8 +36,9 @@ export function resolveDesktopProfilePath({ appData, isPackaged, platform = proc
     legacy: legacy !== undefined,
     // Electron 43 captures this name before the app emits `ready`: it uses
     // it as the macOS Keychain service/account and the Linux OSCrypt app name.
-    // Keep the original packaged identity only while using an old profile.
-    identityName: legacy ? "OpenMausBot" : "crewbot",
+    // The original package.json name (not builder's display productName) was
+    // `openmausbot`; keep that native identity while using an old profile.
+    identityName: legacy ? "openmausbot" : "crewbot",
     newProfilePath,
   };
 }
