@@ -257,7 +257,28 @@ it("offers the results again when the person stops the return turn before the pr
   f.open(f.gate("return"));
 
   await f.send("What did Engineering find?");
-  await f.wait();
+  const waitResult = await f.cli("wait", "--bot", f.chief.id, "--task", f.thread, "--timeout", "40");
+  const recentMessages = (await f.messages()).slice(-5).map((message: any) => ({
+    role: message.role,
+    kind: message.kind,
+    text: String(message.text ?? "").slice(0, 240),
+    turnTerminal: message.turnTerminal,
+    tool: message.tool ? { name: message.tool.name, ok: message.tool.ok } : undefined,
+  }));
+  const recentProviderTurns = f.turns().slice(-5).map((turn: any) => ({
+    turnIndex: turn.turnIndex,
+    resumed: turn.resumed,
+    nativeSessionId: turn.nativeSessionId,
+    promptTail: f.prompt(turn).slice(-240),
+  }));
+  const task = f.task();
+  const failureDetails = {
+    wait: waitResult,
+    task: { busy: task.busy, activity: task.activity, turnStartedAt: task.turnStartedAt },
+    recentMessages,
+    recentProviderTurns,
+  };
+  expect(waitResult.status, `Return-turn retry diagnostics: ${JSON.stringify(failureDetails)}`).toBe("settled");
   expect(count(f.prompt(f.turns().at(-1)), "STOPPED_RETURN_RESULT")).toBe(1);
 }), 60_000);
 
