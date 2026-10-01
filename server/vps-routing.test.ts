@@ -576,9 +576,12 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
         // both turns finish; the wait settles as free-and-continuing or as
         // stopped, depending on which turn ended first — never as an error
         writeFileSync(gateFile, "open");
-        await until(async () => (await botById(bot.id))?.busy === false, "both turns settling");
+        await until(async () => !(await taskBusy(refill.threadId)) && !(await taskBusy(check.threadId)), "both VPS tasks settling");
+        await until(async () => {
+          const names = await activities(refill.threadId);
+          return names.some((name) => name === "Computer free — continuing" || name === "Stopped waiting for the computer");
+        }, "the computer wait settling");
         const settled = await activities(refill.threadId);
-        expect(settled.some((name) => name === "Computer free — continuing" || name === "Stopped waiting for the computer")).toBe(true);
         expect(settled.join("|")).not.toMatch(/still busy|error/i);
         // the last thread out clears the claim: the alias can move again
         expect((await api("PUT", "/api/config", { vps: { sshAlias: "production-vps" } })).status).toBe(200);
