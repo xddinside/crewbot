@@ -67,14 +67,25 @@ function systemdWords(value: string): string[] {
   return words;
 }
 
+function unitAssignment(line: string): { name: string; value: string } | null {
+  const normalized = line.trim();
+  const separator = normalized.indexOf("=");
+  if (separator < 0) return null;
+  const name = normalized.slice(0, separator).trim();
+  if (!/^[A-Za-z][A-Za-z0-9]*$/.test(name)) return null;
+  return { name, value: normalized.slice(separator + 1).trim() };
+}
+
 function serviceDataDir(unit: string, home: string): string {
   const checkedPath = (path: string): string => {
     if (!isAbsolute(path)) throw new Error(`Crewbot cannot safely roll back an old service with a non-absolute data path: ${path}`);
     return resolve(path);
   };
   const execPaths: string[] = [];
-  for (const line of unit.split(/\r?\n/).filter((value) => value.startsWith("ExecStart="))) {
-    const tokens = systemdWords(line.slice("ExecStart=".length));
+  for (const line of unit.split(/\r?\n/)) {
+    const assignment = unitAssignment(line);
+    if (assignment?.name !== "ExecStart") continue;
+    const tokens = systemdWords(assignment.value);
     for (let index = 0; index < tokens.length; index += 1) {
       if (tokens[index].startsWith("--data-dir=")) throw new Error("Crewbot cannot safely parse an old service using --data-dir=VALUE; restore that service manually before starting it.");
       if (tokens[index] !== "--data-dir") continue;
@@ -88,9 +99,10 @@ function serviceDataDir(unit: string, home: string): string {
 
   const environmentValues = new Map<string, string>();
   for (const line of unit.split(/\r?\n/)) {
-    if (line.startsWith("EnvironmentFile=")) throw new Error("Crewbot cannot safely infer the old service data path from EnvironmentFile; preserve both data directories and restore the service manually.");
-    if (!line.startsWith("Environment=")) continue;
-    const assignments = systemdWords(line.slice("Environment=".length));
+    const assignmentLine = unitAssignment(line);
+    if (assignmentLine?.name === "EnvironmentFile") throw new Error("Crewbot cannot safely infer the old service data path from EnvironmentFile; preserve both data directories and restore the service manually.");
+    if (assignmentLine?.name !== "Environment") continue;
+    const assignments = systemdWords(assignmentLine.value);
     if (assignments.length === 0 || (assignments.length === 1 && assignments[0] === "")) {
       environmentValues.clear();
       continue;

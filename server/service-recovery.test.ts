@@ -352,6 +352,85 @@ describe("service rollback", () => {
     expect(assignmentAfterReset.err).toEqual([]);
   });
 
+  it("parses indented directives with spacing around equals and preserves quoted custom roots", () => {
+    const home = mkdtempSync(join(tmpdir(), "crewbot-service-directive-whitespace-"));
+    roots.push(home);
+    const dataDir = join(home, "new-data");
+    const customDataDir = join(home, "custom data");
+    const units = join(home, "systemd");
+    const legacyUnit = join(units, "openmausbot.service");
+    const legacyBackup = `${legacyUnit}.crewbot-backup`;
+    mkdirSync(dataDir);
+    mkdirSync(customDataDir);
+    mkdirSync(units);
+    writeFileSync(legacyBackup, `  Environment = "OMB_DATA_DIR=${customDataDir}"  \n`);
+
+    const logs: string[] = [];
+    const errors: string[] = [];
+    const plan = servicePlan("linux", dataDir, home)!;
+    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => {
+      if (args[0] === "cp") copyFileSync(legacyBackup, legacyUnit);
+    } }, {
+      log: (line) => logs.push(line), error: (line) => errors.push(line),
+    });
+
+    expect(code, errors.join("\n")).toBe(0);
+    expect(logs.join("\n")).toContain(customDataDir);
+    expect(errors).toEqual([]);
+  });
+
+  it("refuses a spaced EnvironmentFile directive before changing services", () => {
+    const home = mkdtempSync(join(tmpdir(), "crewbot-service-environment-file-spacing-"));
+    roots.push(home);
+    const dataDir = join(home, "new-data");
+    const defaultDataDir = join(home, ".openmausbot");
+    const units = join(home, "systemd");
+    const legacyUnit = join(units, "openmausbot.service");
+    const legacyBackup = `${legacyUnit}.crewbot-backup`;
+    mkdirSync(dataDir);
+    mkdirSync(defaultDataDir);
+    mkdirSync(units);
+    writeFileSync(legacyBackup, `  EnvironmentFile = ${join(home, "old.env")}\n`);
+
+    const calls: string[] = [];
+    const errors: string[] = [];
+    const plan = servicePlan("linux", dataDir, home)!;
+    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
+      log: () => {}, error: (line) => errors.push(line),
+    });
+
+    expect(code).toBe(1);
+    expect(calls).toEqual([]);
+    expect(errors.join("\n")).toMatch(/EnvironmentFile/);
+  });
+
+  it("recognizes a spaced ExecStart directive and quoted data-dir argument", () => {
+    const home = mkdtempSync(join(tmpdir(), "crewbot-service-execstart-spacing-"));
+    roots.push(home);
+    const dataDir = join(home, "new-data");
+    const customDataDir = join(home, "custom data");
+    const units = join(home, "systemd");
+    const legacyUnit = join(units, "openmausbot.service");
+    const legacyBackup = `${legacyUnit}.crewbot-backup`;
+    mkdirSync(dataDir);
+    mkdirSync(customDataDir);
+    mkdirSync(units);
+    writeFileSync(legacyBackup, `  ExecStart = /usr/bin/node old.js serve --data-dir "${customDataDir}"\n`);
+
+    const logs: string[] = [];
+    const errors: string[] = [];
+    const plan = servicePlan("linux", dataDir, home)!;
+    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => {
+      if (args[0] === "cp") copyFileSync(legacyBackup, legacyUnit);
+    } }, {
+      log: (line) => logs.push(line), error: (line) => errors.push(line),
+    });
+
+    expect(code, errors.join("\n")).toBe(0);
+    expect(logs.join("\n")).toContain(customDataDir);
+    expect(errors).toEqual([]);
+  });
+
   it("refuses an ambiguous unquoted data path with spaces before changing services", () => {
     const home = mkdtempSync(join(tmpdir(), "crewbot-service-ambiguous-environment-"));
     roots.push(home);
