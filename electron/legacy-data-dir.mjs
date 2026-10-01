@@ -91,6 +91,22 @@ function serviceRecoveryReceipt(dataDir, entry) {
   return { ...receipt, recoveryDir };
 }
 
+function serviceRollbackMarker(source, destination, id) {
+  const markerPath = join(source, MIGRATION_DIR, "recovery", id, "service-rollback.json");
+  if (!existsSync(markerPath)) return false;
+  const stat = lstatSync(markerPath);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`Crewbot found an unsupported service rollback marker at ${markerPath}; both data directories were preserved.`);
+  let marker;
+  try { marker = JSON.parse(readFileSync(markerPath, "utf8")); }
+  catch (cause) { throw new Error(`Crewbot found a damaged service rollback marker at ${markerPath}; both data directories were preserved.`, { cause }); }
+  if (!record(marker) || marker.id !== id || marker.phase !== "restored" ||
+      typeof marker.source !== "string" || typeof marker.destination !== "string" ||
+      resolve(marker.source) !== resolve(source) || resolve(marker.destination) !== resolve(destination)) {
+    throw new Error(`Crewbot found an invalid service rollback marker at ${markerPath}; both data directories were preserved.`);
+  }
+  return true;
+}
+
 /** Validate and select the completed default-root migration used by service rollback. */
 export function inspectLegacyDataDirServiceRecovery(dataDir) {
   const resolvedDataDir = resolve(dataDir);
@@ -115,7 +131,17 @@ export function inspectLegacyDataDirServiceRecovery(dataDir) {
   if (migrations.some((item) => resolve(item.source) !== resolve(selected.source))) {
     throw new Error(`Crewbot found conflicting legacy data roots in ${recoveryDir}; both data directories were preserved.`);
   }
-  if (existsSync(selected.source)) throw new Error(`Crewbot will not replace the existing legacy data directory ${selected.source}; both data directories were preserved.`);
+  const alreadyRecovered = existsSync(selected.source) && serviceRollbackMarker(selected.source, resolvedDataDir, selected.id);
+  if (existsSync(selected.source) && !alreadyRecovered) throw new Error(`Crewbot will not replace the existing legacy data directory ${selected.source}; both data directories were preserved.`);
+  if (alreadyRecovered) return { dataDir: resolvedDataDir, source: selected.source, id: selected.id, recoveryDir: selected.recoveryDir, metadataFiles: selected.metadataFiles, alreadyRecovered: true };
+
+  for (const file of selected.metadataFiles) {
+    const current = join(resolvedDataDir, file);
+    if (!existsSync(current)) continue;
+    const stat = lstatSync(current);
+    if (stat.isSymbolicLink()) throw new Error(`Crewbot will not recover through a symbolic link in migrated metadata at ${current}; both data directories were preserved.`);
+    if (!stat.isFile()) throw new Error(`Crewbot found an unsupported migrated metadata entry at ${current}; both data directories were preserved.`);
+  }
   const staging = join(dirname(selected.source), `.${basename(selected.source)}.crewbot-recovery-${selected.id}`);
   if (existsSync(staging)) throw new Error(`Crewbot will not replace the existing recovery directory ${staging}; both data directories were preserved.`);
   return { dataDir: resolvedDataDir, source: selected.source, id: selected.id, recoveryDir: selected.recoveryDir, metadataFiles: selected.metadataFiles, staging };
@@ -127,16 +153,30 @@ export function inspectLegacyDataDirServiceRecovery(dataDir) {
 export function recoverLegacyDataDirForService(dataDir) {
   const recovery = inspectLegacyDataDirServiceRecovery(dataDir);
   if (!recovery) return null;
+  if (recovery.alreadyRecovered) return { source: recovery.source, destination: recovery.dataDir, id: recovery.id };
   try {
     cpSync(recovery.dataDir, recovery.staging, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true, verbatimSymlinks: true });
     const snapshotFiles = new Set(recovery.metadataFiles);
     for (const file of recovery.metadataFiles) {
-      copyFileSync(backupPath(recovery.dataDir, recovery.id, file), join(recovery.staging, file));
-      chmodSync(join(recovery.staging, file), 0o600);
+      const target = join(recovery.staging, file);
+      if (existsSync(target)) {
+        const targetStat = lstatSync(target);
+        if (targetStat.isSymbolicLink()) rmSync(target);
+        else if (!targetStat.isFile()) throw new Error(`Crewbot found an unsupported staged metadata entry at ${target}.`);
+      }
+      copyFileSync(backupPath(recovery.dataDir, recovery.id, file), target);
+      chmodSync(target, 0o600);
     }
     for (const file of ["messages.db-wal", "messages.db-shm"]) {
       if (!snapshotFiles.has(file)) rmSync(join(recovery.staging, file), { force: true });
     }
+    atomicJson(join(recovery.staging, MIGRATION_DIR, "recovery", recovery.id, "service-rollback.json"), {
+      id: recovery.id,
+      phase: "restored",
+      source: recovery.source,
+      destination: recovery.dataDir,
+      restoredAt: new Date().toISOString(),
+    });
   } catch (error) {
     throw new Error(`Crewbot could not prepare the legacy data recovery copy at ${recovery.staging}. The migrated workspace remains at ${recovery.dataDir}; preserve both paths while resolving the copy failure.`, { cause: error });
   }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -224,6 +224,21 @@ test("refuses a conflicting legacy path before changing either data root", () =>
   assert.throws(() => recoverLegacyDataDirForService(destination), /will not replace the existing legacy data directory/i);
   assert.equal(readFileSync(path.join(source, "keep.txt"), "utf8"), "unrelated legacy state");
   assert.equal(JSON.parse(readFileSync(path.join(destination, "bots.json"), "utf8"))[0].cwd, destination);
+});
+
+test("refuses symlinked migrated metadata without writing through to its external target", () => {
+  const { home, source, destination } = fixture();
+  writeFileSync(path.join(source, "bots.json"), JSON.stringify([{ id: "bot", cwd: source }]));
+  migrateLegacyDataDir(destination, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
+  const sentinel = path.join(home, "external-sentinel.json");
+  writeFileSync(sentinel, "preserve this external file");
+  rmSync(path.join(destination, "bots.json"));
+  symlinkSync(sentinel, path.join(destination, "bots.json"));
+
+  assert.throws(() => recoverLegacyDataDirForService(destination), /symbolic link in migrated metadata/i);
+  assert.equal(readFileSync(sentinel, "utf8"), "preserve this external file");
+  assert.equal(existsSync(source), false);
+  assert.equal(readFileSync(path.join(destination, "bots.json"), "utf8"), "preserve this external file");
 });
 
 test("custom workspaces do not claim default legacy service recovery", () => {

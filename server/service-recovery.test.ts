@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -94,6 +94,38 @@ describe("service rollback", () => {
     expect(err.join("\n")).toMatch(/will not replace the existing legacy data directory/i);
   });
 
+  it("refuses a symlinked metadata entry before stopping Crewbot or changing its external target", () => {
+    const home = mkdtempSync(join(tmpdir(), "crewbot-service-symlink-"));
+    roots.push(home);
+    const source = join(home, ".openmausbot");
+    const dataDir = join(home, ".crewbot");
+    const sentinel = join(home, "external-sentinel.json");
+    const units = join(home, "systemd");
+    const legacyUnit = join(units, "openmausbot.service");
+    const legacyBackup = `${legacyUnit}.crewbot-backup`;
+    mkdirSync(source);
+    mkdirSync(units);
+    writeFileSync(join(source, "bots.json"), "[]");
+    writeFileSync(legacyBackup, `Environment=OMB_DATA_DIR=${source}\n`);
+    migrateLegacyDataDir(dataDir, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
+    writeFileSync(sentinel, "external sentinel");
+    writeFileSync(join(dataDir, "bots.json"), "[]");
+    rmSync(join(dataDir, "bots.json"));
+    symlinkSync(sentinel, join(dataDir, "bots.json"));
+
+    const calls: string[] = [];
+    const err: string[] = [];
+    const plan = servicePlan("linux", dataDir, home)!;
+    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
+      log: () => {}, error: (line) => err.push(line),
+    });
+
+    expect(code).toBe(1);
+    expect(calls).toEqual([]);
+    expect(readFileSync(sentinel, "utf8")).toBe("external sentinel");
+    expect(err.join("\n")).toMatch(/symbolic link in migrated metadata/i);
+  });
+
   it("does not replace an existing legacy unit with a different backup", () => {
     const home = mkdtempSync(join(tmpdir(), "crewbot-service-unit-conflict-"));
     roots.push(home);
@@ -154,6 +186,48 @@ describe("service rollback", () => {
     expect(readFileSync(join(legacyDataDir, "old.txt"), "utf8")).toBe("legacy workspace");
     expect(readFileSync(join(dataDir, "new.txt"), "utf8")).toBe("new workspace");
     expect(err).toEqual([]);
+  });
+
+  it("can retry after data recovery when a later systemd step fails", () => {
+    const home = mkdtempSync(join(tmpdir(), "crewbot-service-retry-"));
+    roots.push(home);
+    const source = join(home, ".openmausbot");
+    const dataDir = join(home, ".crewbot");
+    const units = join(home, "systemd");
+    const legacyUnit = join(units, "openmausbot.service");
+    const legacyBackup = `${legacyUnit}.crewbot-backup`;
+    mkdirSync(source);
+    mkdirSync(units);
+    writeFileSync(join(source, "bots.json"), JSON.stringify([{ cwd: join(source, "workspace") }]));
+    writeFileSync(legacyBackup, `Environment=OMB_DATA_DIR=${source}\n`);
+    migrateLegacyDataDir(dataDir, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
+    const plan = servicePlan("linux", dataDir, home)!;
+    const messages = { log: (_line: string) => {}, error: (_line: string) => {} };
+    const first = runServiceRollback({
+      dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup },
+      runCommand: (_command, args) => {
+        if (args.includes("daemon-reload")) throw new Error("synthetic daemon-reload failure");
+        if (args[0] === "cp") copyFileSync(legacyBackup, legacyUnit);
+      },
+    }, messages);
+    expect(first).toBe(1);
+    expect(existsSync(source)).toBe(true);
+    expect(existsSync(join(source, ".crewbot-migration", "recovery"))).toBe(true);
+
+    const calls: string[] = [];
+    const second = runServiceRollback({
+      dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup },
+      runCommand: (_command, args) => calls.push(args.join(" ")),
+    }, messages);
+    expect(second).toBe(0);
+    expect(calls).toEqual([
+      "systemctl disable --now crewbot.service",
+      "systemctl daemon-reload",
+      "systemctl enable --now openmausbot.service",
+      "systemctl is-active --quiet openmausbot.service",
+    ]);
+    expect(JSON.parse(readFileSync(join(source, "bots.json"), "utf8"))[0].cwd).toBe(join(source, "workspace"));
+    expect(JSON.parse(readFileSync(join(dataDir, "bots.json"), "utf8"))[0].cwd).toBe(join(dataDir, "workspace"));
   });
 
   it("refuses an unsupported relative data path before changing services", () => {
