@@ -43,6 +43,7 @@ struct UpdatesSheet: View {
             }
             .padding(.bottom, 24)
         }
+        .accessibilityIdentifier("updates-list")
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(.thinMaterial)
