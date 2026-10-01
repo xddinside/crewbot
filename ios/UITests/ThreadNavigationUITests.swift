@@ -139,7 +139,10 @@ final class ThreadNavigationUITests: XCTestCase {
         let gmail = app.buttons["update-preview-gmail"]
         let iCloud = app.buttons["update-preview-icloud"]
         let weekend = app.buttons["update-preview-weekend"]
-        XCTAssertTrue(app.staticTexts["3 active"].waitForExistence(timeout: 5))
+        let activeCount = app.descendants(matching: .any)
+            .matching(identifier: "updates-active-count").firstMatch
+        XCTAssertTrue(activeCount.waitForExistence(timeout: 5))
+        XCTAssertEqual(activeCount.label, "3 active")
         XCTAssertTrue(gmail.waitForExistence(timeout: 5))
         XCTAssertTrue(gmail.isHittable)
         XCTAssertTrue(gmail.label.contains("Triage Gmail"))

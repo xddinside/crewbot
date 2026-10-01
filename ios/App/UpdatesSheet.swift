@@ -23,6 +23,7 @@ struct UpdatesSheet: View {
                     Text(updates.isEmpty ? "All quiet" : "\(updates.count) active")
                         .font(.system(size: 13))
                         .foregroundStyle(Color.secondary)
+                        .accessibilityIdentifier("updates-active-count")
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 22)
