@@ -80,5 +80,13 @@
       ]
     }
   ],
-  "groups": []
+  "groups": [],
+  "botQueuedMessages": {
+    "preview-weekend": [
+      {
+        "queueId": "preview-weekend-queue",
+        "text": "Review the weekend options"
+      }
+    ]
+  }
 }
