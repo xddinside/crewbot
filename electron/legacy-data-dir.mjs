@@ -53,6 +53,14 @@ function backupPath(dataDir, id, file) {
   return join(dataDir, MIGRATION_DIR, "recovery", id, file);
 }
 
+function lstatIfPresent(path) {
+  try { return lstatSync(path); }
+  catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
 const RECOVERY_ID = /^[0-9a-f-]{36}$/;
 
 function serviceRecoveryReceipt(dataDir, entry) {
@@ -145,13 +153,13 @@ export function inspectLegacyDataDirServiceRecovery(dataDir) {
 
   for (const file of selected.metadataFiles) {
     const current = join(resolvedDataDir, file);
-    if (!existsSync(current)) continue;
-    const stat = lstatSync(current);
+    const stat = lstatIfPresent(current);
+    if (!stat) continue;
     if (stat.isSymbolicLink()) throw new Error(`Crewbot will not recover through a symbolic link in migrated metadata at ${current}; both data directories were preserved.`);
     if (!stat.isFile()) throw new Error(`Crewbot found an unsupported migrated metadata entry at ${current}; both data directories were preserved.`);
   }
   const staging = join(dirname(selected.source), `.${basename(selected.source)}.crewbot-recovery-${selected.id}`);
-  if (existsSync(staging)) throw new Error(`Crewbot will not replace the existing recovery directory ${staging}; both data directories were preserved.`);
+  if (lstatIfPresent(staging)) throw new Error(`Crewbot will not replace the existing recovery directory ${staging}; both data directories were preserved.`);
   return { dataDir: resolvedDataDir, source: selected.source, id: selected.id, recoveryDir: selected.recoveryDir, metadataFiles: selected.metadataFiles, staging };
 }
 
@@ -167,8 +175,8 @@ export function recoverLegacyDataDirForService(dataDir) {
     const snapshotFiles = new Set(recovery.metadataFiles);
     for (const file of recovery.metadataFiles) {
       const target = join(recovery.staging, file);
-      if (existsSync(target)) {
-        const targetStat = lstatSync(target);
+      const targetStat = lstatIfPresent(target);
+      if (targetStat) {
         if (targetStat.isSymbolicLink()) rmSync(target);
         else if (!targetStat.isFile()) throw new Error(`Crewbot found an unsupported staged metadata entry at ${target}.`);
       }

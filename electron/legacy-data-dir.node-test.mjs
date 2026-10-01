@@ -241,6 +241,20 @@ test("refuses symlinked migrated metadata without writing through to its externa
   assert.equal(readFileSync(path.join(destination, "bots.json"), "utf8"), "preserve this external file");
 });
 
+test("refuses dangling metadata symlinks without creating their external targets", () => {
+  const { home, source, destination } = fixture();
+  writeFileSync(path.join(source, "bots.json"), JSON.stringify([{ id: "bot", cwd: source }]));
+  migrateLegacyDataDir(destination, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
+  const missingTarget = path.join(home, "external-target-that-must-stay-missing.json");
+  rmSync(path.join(destination, "bots.json"));
+  symlinkSync(missingTarget, path.join(destination, "bots.json"));
+
+  assert.throws(() => recoverLegacyDataDirForService(destination), /symbolic link in migrated metadata/i);
+  assert.equal(existsSync(missingTarget), false);
+  assert.equal(existsSync(source), false);
+  assert.equal(existsSync(path.join(destination, "bots.json")), false);
+});
+
 test("does not trust an existing symlink as a previously restored legacy root", () => {
   const { home, source, destination } = fixture();
   writeFileSync(path.join(source, "bots.json"), "[]");

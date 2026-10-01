@@ -126,6 +126,37 @@ describe("service rollback", () => {
     expect(err.join("\n")).toMatch(/symbolic link in migrated metadata/i);
   });
 
+  it("refuses a dangling metadata link before stopping Crewbot or creating the target", () => {
+    const home = mkdtempSync(join(tmpdir(), "crewbot-service-dangling-link-"));
+    roots.push(home);
+    const source = join(home, ".openmausbot");
+    const dataDir = join(home, ".crewbot");
+    const missingTarget = join(home, "missing-external-metadata.json");
+    const units = join(home, "systemd");
+    const legacyUnit = join(units, "openmausbot.service");
+    const legacyBackup = `${legacyUnit}.crewbot-backup`;
+    mkdirSync(source);
+    mkdirSync(units);
+    writeFileSync(join(source, "bots.json"), "[]");
+    writeFileSync(legacyBackup, `Environment=OMB_DATA_DIR=${source}\n`);
+    migrateLegacyDataDir(dataDir, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
+    rmSync(join(dataDir, "bots.json"));
+    symlinkSync(missingTarget, join(dataDir, "bots.json"));
+
+    const calls: string[] = [];
+    const err: string[] = [];
+    const plan = servicePlan("linux", dataDir, home)!;
+    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
+      log: () => {}, error: (line) => err.push(line),
+    });
+
+    expect(code).toBe(1);
+    expect(calls).toEqual([]);
+    expect(existsSync(missingTarget)).toBe(false);
+    expect(existsSync(source)).toBe(false);
+    expect(err.join("\n")).toMatch(/symbolic link in migrated metadata/i);
+  });
+
   it("does not replace an existing legacy unit with a different backup", () => {
     const home = mkdtempSync(join(tmpdir(), "crewbot-service-unit-conflict-"));
     roots.push(home);
@@ -156,11 +187,13 @@ describe("service rollback", () => {
     const home = mkdtempSync(join(tmpdir(), "crewbot-service-custom-rollback-"));
     roots.push(home);
     const dataDir = join(home, "custom-crewbot-data");
-    const legacyDataDir = join(home, "custom-openmausbot-data");
+    const legacyDataDir = join(home, "custom openmausbot data");
     const units = join(home, "systemd");
     const legacyUnit = join(units, "openmausbot.service");
     const legacyBackup = `${legacyUnit}.crewbot-backup`;
-    const unit = `Environment=OMB_DATA_DIR=${legacyDataDir}\n`;
+    const unusedLegacyDataDir = join(home, "unused openmausbot data");
+    const escapedLegacyDataDir = legacyDataDir.replaceAll(" ", "\\s");
+    const unit = `Environment="OMB_DATA_DIR=${unusedLegacyDataDir}"\nEnvironment="CREWBOT_DATA_DIR=${unusedLegacyDataDir}"\nEnvironment=CREWBOT_DATA_DIR=${escapedLegacyDataDir}\n`;
     mkdirSync(dataDir);
     mkdirSync(legacyDataDir);
     mkdirSync(units);
@@ -251,5 +284,59 @@ describe("service rollback", () => {
     expect(code).toBe(1);
     expect(calls).toEqual([]);
     expect(err.join("\n")).toMatch(/non-absolute data path/);
+  });
+
+  it("refuses malformed quoted data path assignments instead of falling back to the default", () => {
+    const home = mkdtempSync(join(tmpdir(), "crewbot-service-malformed-environment-"));
+    roots.push(home);
+    const dataDir = join(home, "new-data");
+    const defaultLegacyDataDir = join(home, ".openmausbot");
+    const units = join(home, "systemd");
+    const legacyUnit = join(units, "openmausbot.service");
+    const legacyBackup = `${legacyUnit}.crewbot-backup`;
+    mkdirSync(dataDir);
+    mkdirSync(defaultLegacyDataDir);
+    mkdirSync(units);
+    writeFileSync(join(defaultLegacyDataDir, "old.txt"), "keep old data");
+    writeFileSync(legacyBackup, 'Environment="CREWBOT_DATA_DIR=/custom data\n');
+
+    const calls: string[] = [];
+    const err: string[] = [];
+    const plan = servicePlan("linux", dataDir, home)!;
+    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
+      log: () => {}, error: (line) => err.push(line),
+    });
+
+    expect(code).toBe(1);
+    expect(calls).toEqual([]);
+    expect(readFileSync(join(defaultLegacyDataDir, "old.txt"), "utf8")).toBe("keep old data");
+    expect(err.join("\n")).toMatch(/unfinished systemd quote or escape/);
+  });
+
+  it("refuses an ambiguous unquoted data path with spaces before changing services", () => {
+    const home = mkdtempSync(join(tmpdir(), "crewbot-service-ambiguous-environment-"));
+    roots.push(home);
+    const dataDir = join(home, "new-data");
+    const defaultLegacyDataDir = join(home, ".openmausbot");
+    const units = join(home, "systemd");
+    const legacyUnit = join(units, "openmausbot.service");
+    const legacyBackup = `${legacyUnit}.crewbot-backup`;
+    mkdirSync(dataDir);
+    mkdirSync(defaultLegacyDataDir);
+    mkdirSync(units);
+    writeFileSync(join(defaultLegacyDataDir, "old.txt"), "keep old data");
+    writeFileSync(legacyBackup, `Environment=CREWBOT_DATA_DIR=${join(home, "custom data")}\n`);
+
+    const calls: string[] = [];
+    const err: string[] = [];
+    const plan = servicePlan("linux", dataDir, home)!;
+    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
+      log: () => {}, error: (line) => err.push(line),
+    });
+
+    expect(code).toBe(1);
+    expect(calls).toEqual([]);
+    expect(readFileSync(join(defaultLegacyDataDir, "old.txt"), "utf8")).toBe("keep old data");
+    expect(err.join("\n")).toMatch(/unsupported Environment assignment/);
   });
 });

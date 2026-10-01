@@ -31,27 +31,75 @@ function isRegularFile(path: string): boolean {
   return true;
 }
 
-function systemdValue(value: string): string {
-  const trimmed = value.trim();
-  return trimmed.startsWith('"') && trimmed.endsWith('"')
-    ? trimmed.slice(1, -1).replace(/\\([\\"])/g, "$1")
-    : trimmed.replace(/\\([\\"])/g, "$1");
+function systemdWords(value: string): string[] {
+  const words: string[] = [];
+  let word = "";
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+  let started = false;
+  for (const char of value) {
+    if (escaped) {
+      if (!["\\", "'", '"', "s"].includes(char)) throw new Error(`Crewbot cannot safely parse an unsupported systemd escape in: ${value}`);
+      word += char === "s" ? " " : char;
+      escaped = false;
+      started = true;
+    } else if (char === "\\" && quote !== "'") {
+      escaped = true;
+      started = true;
+    } else if (quote) {
+      if (char === quote) quote = null;
+      else word += char;
+      started = true;
+    } else if (char === "'" || char === '"') {
+      quote = char;
+      started = true;
+    } else if (/\s/.test(char)) {
+      if (started) words.push(word);
+      word = "";
+      started = false;
+    } else {
+      word += char;
+      started = true;
+    }
+  }
+  if (escaped || quote) throw new Error(`Crewbot cannot safely parse an unfinished systemd quote or escape in: ${value}`);
+  if (started) words.push(word);
+  return words;
 }
 
 function serviceDataDir(unit: string, home: string): string {
-  const checkedPath = (value: string): string => {
-    const path = systemdValue(value);
+  const checkedPath = (path: string): string => {
     if (!isAbsolute(path)) throw new Error(`Crewbot cannot safely roll back an old service with a non-absolute data path: ${path}`);
     return resolve(path);
   };
-  const environment = unit.match(/^Environment=(?:CREWBOT_DATA_DIR|OMB_DATA_DIR)=(.*)$/m);
-  if (environment) return checkedPath(environment[1]);
-  const start = unit.match(/^ExecStart=(.*)$/m)?.[1];
-  if (start) {
-    const tokens = start.match(/"(?:\\.|[^"\\])*"|\S+/g)?.map((token) => systemdValue(token)) ?? [];
-    const index = tokens.indexOf("--data-dir");
-    if (index >= 0 && tokens[index + 1]) return checkedPath(tokens[index + 1]);
+  const execPaths: string[] = [];
+  for (const line of unit.split(/\r?\n/).filter((value) => value.startsWith("ExecStart="))) {
+    const tokens = systemdWords(line.slice("ExecStart=".length));
+    for (let index = 0; index < tokens.length; index += 1) {
+      if (tokens[index].startsWith("--data-dir=")) throw new Error("Crewbot cannot safely parse an old service using --data-dir=VALUE; restore that service manually before starting it.");
+      if (tokens[index] !== "--data-dir") continue;
+      if (!tokens[index + 1]) throw new Error("Crewbot found an old service --data-dir option without a value; no service was changed.");
+      execPaths.push(checkedPath(tokens[index + 1]));
+      index += 1;
+    }
   }
+  if (new Set(execPaths).size > 1) throw new Error("Crewbot found conflicting --data-dir paths in the old service commands; both data directories were preserved and no service was changed.");
+  if (execPaths.length) return execPaths[execPaths.length - 1];
+
+  const environmentValues = new Map<string, string>();
+  for (const line of unit.split(/\r?\n/)) {
+    if (line.startsWith("EnvironmentFile=")) throw new Error("Crewbot cannot safely infer the old service data path from EnvironmentFile; preserve both data directories and restore the service manually.");
+    if (!line.startsWith("Environment=")) continue;
+    for (const assignment of systemdWords(line.slice("Environment=".length))) {
+      const separator = assignment.indexOf("=");
+      if (separator < 0) throw new Error(`Crewbot found an unsupported Environment assignment in the old service: ${assignment}; no service was changed.`);
+      const name = assignment.slice(0, separator);
+      if (name !== "CREWBOT_DATA_DIR" && name !== "OMB_DATA_DIR") continue;
+      environmentValues.set(name, assignment.slice(separator + 1));
+    }
+  }
+  const environmentPath = environmentValues.get("CREWBOT_DATA_DIR")?.trim() || environmentValues.get("OMB_DATA_DIR")?.trim();
+  if (environmentPath) return checkedPath(environmentPath);
   return resolve(home, ".openmausbot");
 }
 
