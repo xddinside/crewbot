@@ -291,7 +291,7 @@ function runServiceInstall({ home, owner, port, dataDir, env = {} }) {
     as: owner, home, repoRoot: REPO_ROOT, env,
   });
   if (result.status !== 0) fail(`\`crewbot service install\` exited ${result.status}\n${result.stdout}\n${result.stderr}`);
-  return result.stdout;
+  return result;
 }
 
 /** Production rollback. Boundaries under test are refusals, so this reports the
@@ -414,7 +414,7 @@ async function caseLegacyStopFailure(context) {
 
   // Production migrates the data root inside `service install`, before it prints
   // the plan. That is the real ordering the printed rollback has to survive.
-  const plan = printedPlan(runServiceInstall({ home, owner, port: crewbotPort, dataDir }));
+  const plan = printedPlan(runServiceInstall({ home, owner, port: crewbotPort, dataDir }).stdout);
   const production = productionPlan(dataDir, home);
   const expected = [...(production.prepareLegacy ?? []), ...production.activate, ...(production.retireLegacy ?? [])];
   assert(
@@ -547,7 +547,7 @@ async function caseInterruptedCutoverThenRollback(context) {
   assert(conversationRows(dataDir).some((text) => text.includes(SEED_TEXT)), "the interrupted root still holds the seeded conversation");
 
   const installResult = runServiceInstall({ home, owner, port: crewbotPort, dataDir });
-  const plan = printedPlan(installResult);
+  const plan = printedPlan(installResult.stdout);
   const executed = executePrinted(plan.commands);
   record("case 2 install and its printed plan", {
     stdout: String(installResult.stdout).trim().slice(0, 600),
@@ -568,6 +568,15 @@ async function caseInterruptedCutoverThenRollback(context) {
       ? migrationReceipts(legacyRoot).map((entry) => ({ id: entry.id, phase: entry.phase }))
       : [],
   });
+  // The interrupted cutover must leave the seeded conversation reachable. If the
+  // receipt is gone and the conversation with it, the install completed against a
+  // root that no longer holds the user's data — report that plainly rather than
+  // as a missing receipt.
+  const conversationSurvived = existsSync(dataDir) && conversationRows(dataDir).some((text) => text.includes(SEED_TEXT));
+  assert(
+    conversationSurvived,
+    `the interrupted cutover lost the seeded conversation: no completed receipt under ${dataDir}, no legacy root at ${legacyRoot}, and the installed root does not hold the conversation. \`crewbot service install\` reported success and started crewbot.service against ${dataDir} regardless.`,
+  );
   const receipt = completedReceipt(dataDir);
   const rolledBack = migrationReceipts(dataDir).filter((entry) => entry.phase === "rolled-back");
   assert(rolledBack.length >= 1, `production rolled the interrupted migration back before redoing it (${JSON.stringify(rolledBack.map((entry) => entry.id))})`);
