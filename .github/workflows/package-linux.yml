@@ -132,14 +132,15 @@ jobs:
           cp release/SHA256SUMS-ubuntu-x64.txt release-assets/
           cp release/latest-linux.yml release-assets/
           node scripts/verify-linux-release-assets.mjs release-assets "$VERSION"
-      - name: Upload smoke diagnostics on failure
+      - name: Upload diagnostic-only package and smoke logs on failure
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
-          name: crewbot-ubuntu-smoke-diagnostics
+          name: crewbot-ubuntu-diagnostic-only-${{ github.run_id }}
           path: |
             /tmp/omb-linux-smoke-*
             /tmp/omb-linux-smoke-runtime-*
+            release/*.deb
           if-no-files-found: warn
           include-hidden-files: true
           retention-days: 7

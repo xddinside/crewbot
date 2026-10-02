@@ -10,7 +10,8 @@
 //
 // Needs a container runtime; installing a system package is the point.
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync, writeSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { packageInstallCommand } from "../electron/package-install-command.mjs";
@@ -50,9 +51,20 @@ function inContainer(script, { expectFailure = false } = {}) {
     return output;
   } catch (error) {
     if (expectFailure) return String(error.stdout ?? "") + String(error.stderr ?? "");
-    console.error(String(error.stdout ?? ""));
-    console.error(String(error.stderr ?? ""));
-    throw error;
+    const stdout = String(error.stdout ?? "");
+    const stderr = String(error.stderr ?? "");
+    const logBase = path.join(tmpdir(), `omb-linux-smoke-deb-command-${process.pid}-${Date.now()}`);
+    const stdoutPath = `${logBase}.stdout.log`;
+    const stderrPath = `${logBase}.stderr.log`;
+    writeFileSync(stdoutPath, stdout);
+    writeFileSync(stderrPath, stderr);
+    writeSync(2, `[smoke-deb-command] full container output saved to ${stdoutPath} and ${stderrPath}\n`);
+    for (const [label, output] of [["stdout", stdout], ["stderr", stderr]]) {
+      const tail = output.split(/\r?\n/).slice(-120).join("\n");
+      writeSync(2, `[smoke-deb-command] last 120 ${label} lines:\n${tail}\n`);
+    }
+    const reason = error.status != null ? `exit ${error.status}` : error.signal ?? error.code ?? "unknown failure";
+    throw new Error(`container command failed (${reason}); complete output is in the saved logs`);
   }
 }
 
@@ -62,6 +74,7 @@ const prepare = [
   "set -e",
   "apt-get update -qq",
   "apt-get install -y -qq sudo >/dev/null",
+  `printf 'Dpkg::Use-Pty "0";\\n' > /etc/apt/apt.conf.d/99-smoke-no-pty`,
   `mkdir -p "$(dirname "${staged}")"`,
   `cp /tmp/package.deb "${staged}"`,
 ].join("\n");
