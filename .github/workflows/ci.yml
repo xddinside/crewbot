@@ -112,13 +112,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      OMB_ELECTRON_FIXTURE_ROOT: ${{ runner.temp }}/omb-electron-fixtures-${{ github.run_id }}-${{ github.run_attempt }}
-      HOME: ${{ runner.temp }}/omb-electron-fixtures-${{ github.run_id }}-${{ github.run_attempt }}/home
-      XDG_CONFIG_HOME: ${{ runner.temp }}/omb-electron-fixtures-${{ github.run_id }}-${{ github.run_attempt }}/config
-      XDG_CACHE_HOME: ${{ runner.temp }}/omb-electron-fixtures-${{ github.run_id }}-${{ github.run_attempt }}/cache
-      XDG_DATA_HOME: ${{ runner.temp }}/omb-electron-fixtures-${{ github.run_id }}-${{ github.run_attempt }}/data
-      XDG_RUNTIME_DIR: ${{ runner.temp }}/omb-electron-fixtures-${{ github.run_id }}-${{ github.run_attempt }}/runtime
-      TMPDIR: ${{ runner.temp }}/omb-electron-fixtures-${{ github.run_id }}-${{ github.run_attempt }}/tmp
       DISPLAY: ""
       WAYLAND_DISPLAY: ""
       DBUS_SESSION_BUS_ADDRESS: ""
@@ -127,8 +120,19 @@ jobs:
     steps:
       - name: Create disposable Electron home and session directories
         run: |
-          mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" "$XDG_RUNTIME_DIR" "$TMPDIR"
-          chmod 0700 "$XDG_RUNTIME_DIR"
+          python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / f"omb-electron-fixtures-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
+          paths = {"HOME": "home", "XDG_CONFIG_HOME": "config", "XDG_CACHE_HOME": "cache", "XDG_DATA_HOME": "data", "XDG_RUNTIME_DIR": "runtime", "TMPDIR": "tmp"}
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"OMB_ELECTRON_FIXTURE_ROOT={root}\n")
+              for key, directory in paths.items():
+                  path = root / directory
+                  path.mkdir(parents=True, exist_ok=True)
+                  path.chmod(0o700)
+                  env.write(f"{key}={path}\n")
+          PYTHON
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
