@@ -62,7 +62,10 @@ export function systemctl(args, options = {}) {
 }
 
 export function systemctlProp(unit, property) {
-  const value = stdout("systemctl", ["show", "-p", property, "--value", unit], { allowFailure: true });
+  // `systemctl show` exits non-zero for an unknown unit, which is a state this
+  // function is asked to report as "no such unit" rather than crash on. Read it
+  // tolerantly and let the empty result mean absent.
+  const value = run("systemctl", ["show", "-p", property, "--value", unit], { allowFailure: true }).stdout.trim();
   return value === "" ? null : value;
 }
 
@@ -207,7 +210,11 @@ export function requireNativeSystemd({ repoRoot }) {
   if (version.status !== 0 || !/^systemd \d+/.test(versionLine)) {
     fail(`refusing to run: ${realSystemctl} is not the real systemd client\n${version.stdout}\n${version.stderr}`);
   }
-  const systemState = stdout("systemctl", ["is-system-running"], { allowFailure: true });
+  // `is-system-running` exits non-zero for `degraded` — that is the documented
+  // contract, not a failure of the command. Ask for the state tolerantly and
+  // judge the value, instead of routing it through the strict helper that
+  // demands exit 0 and so rejects the very state this gate accepts.
+  const systemState = run("systemctl", ["is-system-running"], { allowFailure: true }).stdout.trim();
   if (!["running", "degraded", "starting"].includes(systemState)) {
     fail(`refusing to run: systemd reports the system as ${systemState || "unknown"}, so unit state cannot be trusted`);
   }
@@ -225,7 +232,7 @@ export function requireNativeSystemd({ repoRoot }) {
 export function serviceOwner() {
   const owner = process.env.SUDO_USER?.trim() || stdout("id", ["-un"]);
   if (!owner || owner === "root") fail("refusing to run: the service must be owned by an unprivileged account, not root");
-  const passwd = stdout("getent", ["passwd", owner], { allowFailure: true }).split(":");
+  const passwd = run("getent", ["passwd", owner], { allowFailure: true }).stdout.split(":");
   if (passwd.length < 6 || !passwd[5]?.startsWith("/")) fail(`could not read ${owner} from the passwd database`);
   runOk("sudo", ["-n", "-u", owner, "sudo", "-n", "true"]);
   return { owner, home: passwd[5], shell: passwd[6] };
