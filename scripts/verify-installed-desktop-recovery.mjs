@@ -45,6 +45,7 @@ import {
   CLICK_RECOVERY,
   READ_CHAT_STATE,
   connectToRenderer,
+  mutateInRenderer,
   saveScreenshot,
   spawnInstalledApp,
 } from "./installed-desktop-recovery/renderer.mjs";
@@ -141,12 +142,6 @@ async function api(base, path, init) {
   try { body = text ? JSON.parse(text) : null; } catch { body = { raw: text }; }
   return { status: response.status, body };
 }
-
-const json = (payload) => ({
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify(payload),
-});
 
 async function waitForSettled(base, botId, threadId, { timeoutMs = 90_000 } = {}) {
   const deadline = Date.now() + timeoutMs;
@@ -395,26 +390,28 @@ async function main() {
     step("renderer attached", location);
 
     // ── the synthetic conversation that reaches the failure ──
-    const created = await api(base, "/api/bots", json({
-      name: BOT_NAME,
-      modelSelection: { instanceId: "claude", model: "claude-sonnet-5" },
-    }));
+    // Mutations are issued from inside the shipped renderer. The installed
+    // server refuses a bare loopback client with `403 … must come from the
+    // desktop app or a paired device`, and that guard is the product's, so the
+    // journey goes through the app's own client code rather than around it.
+    const mutate = (path, init) => renderer.evaluate(mutateInRenderer(path, init));
+    const created = await mutate("/api/bots", {
+      body: { name: BOT_NAME, modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } },
+    });
     if (created.status >= 400) throw new Error(`creating the fixture bot failed: ${JSON.stringify(created)}`);
     const botId = created.body.bot.id;
     const failedThread = created.body.bot.threadId;
-    const pinned = await api(base, `/api/bots/${botId}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ cwd: fixture.missingCwd }),
+    const pinned = await mutate(`/api/bots/${botId}`, {
+      method: "PATCH", body: { cwd: fixture.missingCwd },
     });
     if (pinned.status >= 400) throw new Error(`pinning the working folder failed: ${JSON.stringify(pinned)}`);
 
-    const sibling = await api(base, `/api/bots/${botId}/tasks`, json({ title: SIBLING_THREAD_TITLE }));
+    const sibling = await mutate(`/api/bots/${botId}/tasks`, { body: { title: SIBLING_THREAD_TITLE } });
     if (sibling.status >= 400) throw new Error(`creating the sibling thread failed: ${JSON.stringify(sibling)}`);
     const siblingThread = sibling.body.task.threadId;
     step("fixture bot ready", `bot ${botId}, failed thread ${failedThread}, sibling ${siblingThread}`);
 
-    await api(base, `/api/bots/${botId}/messages`, json({ text: SIBLING_REQUEST, threadId: siblingThread }));
+    await mutate(`/api/bots/${botId}/messages`, { body: { text: SIBLING_REQUEST, threadId: siblingThread } });
     await waitForSettled(base, botId, siblingThread);
     const beforeFailure = storedTasks(dataDir, botId);
     const siblingBefore = beforeFailure.get(siblingThread);
@@ -645,10 +642,9 @@ async function main() {
     // ── thread-scoped Stop on a synthetic running turn ──
     // A second bot uses the repository's hanging fake engine, so its turn really
     // is running and the installed composer's Stop really has something to stop.
-    const stopBot = await api(base, "/api/bots", json({
-      name: "Stop fixture",
-      modelSelection: { instanceId: "hanging", model: "claude-sonnet-5" },
-    }));
+    const stopBot = await mutate("/api/bots", {
+      body: { name: "Stop fixture", modelSelection: { instanceId: "hanging", model: "claude-sonnet-5" } },
+    });
     if (stopBot.status >= 400) throw new Error(`creating the stop fixture bot failed: ${JSON.stringify(stopBot)}`);
     const stopBotId = stopBot.body.bot.id;
     const stopThread = stopBot.body.bot.threadId;
@@ -686,8 +682,8 @@ async function main() {
       throw new Error(`stopped work applied a stale assistant answer: ${cancelledAssistant.map((m) => m.id).join(", ")}`);
     }
     // The sibling thread of the recovery bot is still usable after that Stop.
-    const siblingStillWorks = await api(base, `/api/bots/${botId}/messages`,
-      json({ text: "Still usable after the other thread was stopped", threadId: siblingThread }));
+    const siblingStillWorks = await mutate(`/api/bots/${botId}/messages`,
+      { body: { text: "Still usable after the other thread was stopped", threadId: siblingThread } });
     if (siblingStillWorks.status >= 400) throw new Error(`the sibling stopped working: ${JSON.stringify(siblingStillWorks)}`);
     await waitForSettled(base, botId, siblingThread);
     evidence.screenshots.push(await saveScreenshot(renderer, fixture.evidence, "09-after-stop"));

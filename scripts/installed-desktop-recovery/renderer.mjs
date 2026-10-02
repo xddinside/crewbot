@@ -133,6 +133,50 @@ export const READ_CHAT_STATE = `(() => {
   };
 })()`;
 
+/** Create the fixture's bot from inside the renderer.
+ *
+ * The installed server refuses a mutating loopback request that does not carry
+ * the desktop app's own capability token:
+ * `403 forbidden: this change must come from the desktop app or a paired
+ * device`. That guard is the product's, and it is correct — a bare HTTP client
+ * on loopback is exactly what it must refuse. So the mutation is issued from the
+ * shipped renderer, through the app's own client code that supplies the token,
+ * rather than from the fixture's `fetch`. The guard is not relaxed and the
+ * desktop-owner token is not read out of the process. */
+export const createBotInRenderer = (name, modelSelection) => `(async () => {
+  const response = await fetch("/api/bots", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(${JSON.stringify({ name, modelSelection })}),
+  });
+  const text = await response.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = { raw: text }; }
+  return { status: response.status, body };
+})()`;
+
+/** A mutating request issued from inside the shipped renderer.
+ *
+ * The installed server refuses a mutating loopback request without the desktop
+ * app's own capability token (`403 … must come from the desktop app or a paired
+ * device`). That guard is correct — a bare loopback client is exactly what it
+ * must refuse — so the fixture issues its mutations from the renderer, through
+ * the app's own client code that carries the token. The guard is not relaxed and
+ * the token is never read out of the process.
+ *
+ * `body` may be omitted for an empty POST. */
+export const mutateInRenderer = (path, { method = "POST", body = null } = {}) => `(async () => {
+  const response = await fetch(${JSON.stringify(path)}, {
+    method: ${JSON.stringify(method)},
+    headers: { "content-type": "application/json" },
+    ...(${body === null ? "false" : `true`} ? { body: JSON.stringify(${JSON.stringify(body)}) } : {}),
+  });
+  const text = await response.text();
+  let parsed = null;
+  try { parsed = text ? JSON.parse(text) : null; } catch { parsed = { raw: text }; }
+  return { status: response.status, body: parsed };
+})()`;
+
 /** Click the shipped recovery control by its accessible text. A real click
  * through the element's own listener, not a synthetic dispatch of React
  * internals, so this exercises the same path a user's mouse takes. */
