@@ -82,13 +82,36 @@ function systemctlOk(args) {
 }
 
 function stopUnit(unit) {
+  const before = unitMainPid(unit);
   systemctl(["stop", unit], { allowFailure: true });
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (systemctlProp(unit, "ActiveState") !== "active") return;
+    // Leaving `active` is not the same as being gone: systemd marks the unit
+    // stopped before the process has necessarily exited and dropped the
+    // data-dir lease it still owns. Wait for the pid to disappear, so a
+    // following migration is not refused against a server that is on its way
+    // out.
+    if (systemctlProp(unit, "ActiveState") !== "active" && !pidIsAlive(before)) return;
     sleep(200);
   }
   fail(`${unit} was still active 60 s after systemctl stop`);
+}
+
+/** The pid systemd reports as the unit's main process, before it is stopped. */
+function unitMainPid(unit) {
+  const value = systemctlProp(unit, "MainPID");
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function pidIsAlive(pid) {
+  if (!Number.isInteger(pid)) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM means the pid exists but this account cannot signal it.
+    return error?.code === "EPERM";
+  }
 }
 
 /** Everything that must be true of a live unit that owns a data root. */
@@ -379,6 +402,13 @@ async function caseLegacyStopFailure(context) {
 
   stopUnit(LEGACY_UNIT);
   assert(!unitIsActive(LEGACY_UNIT), "the legacy unit is stopped before the cutover runs");
+
+  // The stopped unit must have taken its data-dir lease with it. Report the
+  // lease record itself when the guard still refuses, so the diagnosis names the
+  // pid the guard still considers alive instead of only its message.
+  const legacyLeasePath = join(legacyRoot, "openmausbot-server.lease");
+  const legacyLease = existsSync(legacyLeasePath) ? readFileSync(legacyLeasePath, "utf8").trim() : "(absent)";
+  record("legacy lease after stopping the unit", { leasePath: legacyLeasePath, lease: legacyLease.slice(0, 400) });
 
   // Production migrates the data root inside `service install`, before it prints
   // the plan. That is the real ordering the printed rollback has to survive.
