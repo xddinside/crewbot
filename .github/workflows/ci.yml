@@ -118,21 +118,6 @@ jobs:
       XDG_CURRENT_DESKTOP: ""
       DESKTOP_SESSION: ""
     steps:
-      - name: Create disposable Electron home and session directories
-        run: |
-          python3 - <<'PYTHON'
-          import os
-          from pathlib import Path
-          root = Path(os.environ["RUNNER_TEMP"]) / f"omb-electron-fixtures-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
-          paths = {"HOME": "home", "XDG_CONFIG_HOME": "config", "XDG_CACHE_HOME": "cache", "XDG_DATA_HOME": "data", "XDG_RUNTIME_DIR": "runtime", "TMPDIR": "tmp"}
-          with open(os.environ["GITHUB_ENV"], "a") as env:
-              env.write(f"OMB_ELECTRON_FIXTURE_ROOT={root}\n")
-              for key, directory in paths.items():
-                  path = root / directory
-                  path.mkdir(parents=True, exist_ok=True)
-                  path.chmod(0o700)
-                  env.write(f"{key}={path}\n")
-          PYTHON
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -151,6 +136,21 @@ jobs:
           sudo chown root:root "$electron_sandbox"
           sudo chmod 4755 "$electron_sandbox"
           test "$(stat -c '%U:%G %a' "$electron_sandbox")" = "root:root 4755"
+      - name: Create disposable Electron home and session directories
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / f"omb-electron-fixtures-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
+          paths = {"HOME": "home", "XDG_CONFIG_HOME": "config", "XDG_CACHE_HOME": "cache", "XDG_DATA_HOME": "data", "XDG_RUNTIME_DIR": "runtime", "TMPDIR": "tmp"}
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"OMB_ELECTRON_FIXTURE_ROOT={root}\n")
+              for key, directory in paths.items():
+                  path = root / directory
+                  path.mkdir(parents=True, exist_ok=True)
+                  path.chmod(0o700)
+                  env.write(f"{key}={path}\n")
+          PYTHON
       - name: Verify Electron approval mode transitions
         run: dbus-run-session -- xvfb-run -a pnpm exec electron scripts/smoke-approval-modes.cjs
       - name: Verify app permissions and guarded display capture
@@ -159,9 +159,8 @@ jobs:
         # Forks dist-server/index.js: the bundle the packaged-server job
         # builds in ITS checkout. This job builds its own copy.
         run: pnpm build:server && pnpm build:companion && dbus-run-session -- xvfb-run -a pnpm exec electron scripts/smoke-phone-relay-auth.cjs
-      - name: Remove disposable Electron home and session directories
-        if: always()
-        run: rm -rf "$OMB_ELECTRON_FIXTURE_ROOT"
+      # Keep the owned home/store until setup-node and pnpm post-job cache
+      # handlers finish. The disposable runner removes it after the job.
 
   gate:
     # `always` lets the check inspect dependency results; anything except
