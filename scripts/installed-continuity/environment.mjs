@@ -233,7 +233,19 @@ export function startOwnedKeyring({ env, password }) {
     execFileSync("sleep", ["0.1"], { env, stdio: "ignore" });
   }
   try { child.kill("SIGKILL"); } catch { /* already gone */ }
-  throw new Error(`gnome-keyring-daemon did not publish a control address:\n${announced}`);
+  // The daemon is silent when it exits before announcing, so report the exit
+  // status and what it was actually given as well as anything it printed.
+  throw new Error([
+    `gnome-keyring-daemon did not publish a control address within 20s`,
+    `exit: ${child.exitCode === null ? "still running" : child.exitCode}`,
+    `signal: ${child.signalCode ?? "none"}`,
+    `argv: --unlock --components=secrets`,
+    `HOME: ${env.HOME}`,
+    `XDG_RUNTIME_DIR: ${env.XDG_RUNTIME_DIR}`,
+    `DBUS_SESSION_BUS_ADDRESS: ${env.DBUS_SESSION_BUS_ADDRESS ?? "(unset)"}`,
+    `control directory: ${controlDirectory}`,
+    `stdout/stderr:\n${announced}`,
+  ].join("\n"));
 }
 
 /** Read the secret-service default collection through the D-Bus API itself.

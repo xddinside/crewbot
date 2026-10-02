@@ -726,10 +726,23 @@ async function main() {
     console.log(`[desktop-recovery] evidence: ${fixture.root}`);
     if (process.env.OMB_KEEP_RECOVERY_FIXTURE === "1") {
       step("fixture kept", fixture.root);
+      // Keep the evidence on disk but stop the owned display, bus and app. Left
+      // running they hold this process's event loop open, so the job hangs to
+      // its timeout and the real failure is never reported.
+      for (const restore of [...fixture.stopped].reverse()) {
+        try { restore(); } catch { /* teardown must not mask the real failure */ }
+      }
+      fixture.stopped.length = 0;
     } else {
       fixture.stop();
     }
   }
 }
 
-await main();
+await main().catch((error) => {
+  console.error(`[desktop-recovery] FAILED: ${error?.stack ?? error}`);
+  process.exitCode = 1;
+});
+// The runner's timeout must never be how this run reports itself: leave on the
+// recorded exit code once teardown has run.
+process.exit(process.exitCode ?? 0);

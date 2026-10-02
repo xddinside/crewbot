@@ -597,7 +597,14 @@ async function main() {
     if (keyring) keyring.stop();
     writeFileSync(join(fixture.logs, "evidence.json"), `${JSON.stringify(evidence, null, 2)}\n`);
     if (process.env.OMB_KEEP_CONTINUITY_FIXTURE === "1") console.log(`[continuity] kept ${fixture.root}`);
-    else fixture.stop();
+    // Stop the owned children even when the root is kept for inspection.
+    // Leaving them attached keeps this process's event loop alive, so the job
+    // hangs until its timeout and the real failure is never reported.
+    for (const restore of [...fixture.stopped].reverse()) {
+      try { restore(); } catch { /* teardown must not mask the real failure */ }
+    }
+    fixture.stopped.length = 0;
+    if (process.env.OMB_KEEP_CONTINUITY_FIXTURE !== "1") fixture.stop();
     execFileSync("sudo", ["dpkg", "--purge", CANDIDATE_PACKAGE.name], { stdio: "ignore" });
     execFileSync("sudo", ["dpkg", "--purge", OLD_PACKAGE.name], { stdio: "ignore" });
   }
@@ -607,3 +614,6 @@ await main().catch((error) => {
   console.error(`[continuity] FAILED: ${error?.stack ?? error}`);
   process.exitCode = 1;
 });
+// The runner's timeout must never be how this run reports itself: stop anything
+// still holding the loop open, then leave on the recorded exit code.
+process.exit(process.exitCode ?? 0);
