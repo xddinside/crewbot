@@ -144,6 +144,13 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y dbus-x11 xvfb
       - name: Prepare Electron test runtime
         run: node --input-type=commonjs -e "require('electron')"
+      - name: Configure and verify Electron's SUID sandbox helper
+        run: |
+          electron_sandbox="$(node -e 'const path = require("node:path"); const electron = require("electron"); process.stdout.write(path.join(path.dirname(electron), "chrome-sandbox"))')"
+          test -f "$electron_sandbox"
+          sudo chown root:root "$electron_sandbox"
+          sudo chmod 4755 "$electron_sandbox"
+          test "$(stat -c '%U:%G %a' "$electron_sandbox")" = "root:root 4755"
       - name: Verify Electron approval mode transitions
         run: dbus-run-session -- xvfb-run -a pnpm exec electron scripts/smoke-approval-modes.cjs
       - name: Verify app permissions and guarded display capture
