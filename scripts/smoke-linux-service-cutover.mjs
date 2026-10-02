@@ -548,6 +548,19 @@ async function caseInterruptedCutoverThenRollback(context) {
 
   const plan = printedPlan(runServiceInstall({ home, owner, port: crewbotPort, dataDir }));
   executePrinted(plan.commands);
+  // Report every receipt production left, not just the first absent one: the
+  // interesting states are a `rolled-back` receipt with no redo, and a redo
+  // whose completion receipt landed somewhere other than the expected root.
+  record("receipts after production redid the interrupted cutover", {
+    dataDir,
+    legacyRootPresent: existsSync(legacyRoot),
+    receipts: migrationReceipts(dataDir).map((entry) => ({
+      id: entry.id, phase: entry.phase, source: entry.source,
+    })),
+    legacyRootReceipts: existsSync(legacyRoot)
+      ? migrationReceipts(legacyRoot).map((entry) => ({ id: entry.id, phase: entry.phase }))
+      : [],
+  });
   const receipt = completedReceipt(dataDir);
   const rolledBack = migrationReceipts(dataDir).filter((entry) => entry.phase === "rolled-back");
   assert(rolledBack.length >= 1, `production rolled the interrupted migration back before redoing it (${JSON.stringify(rolledBack.map((entry) => entry.id))})`);
