@@ -196,15 +196,24 @@ export function startOwnedKeyring({ env, password }) {
   if (typeof password !== "string" || password.length < 16) {
     throw new Error("the fixture keyring needs its own generated password");
   }
-  const child = spawn("gnome-keyring-daemon", ["--start", "--unlock", "--components=secrets"], {
+  // `--start` is incompatible with `--unlock`: the daemon rejects the pair
+  // outright and never publishes a control address. `--unlock` alone both reads
+  // the generated password from stdin and reports GNOME_KEYRING_CONTROL, so it
+  // is the only correct invocation. stdin must be a pipe, and the control
+  // directory must exist at 0700 or the daemon refuses to start.
+  const controlDirectory = join(env.XDG_RUNTIME_DIR ?? "/tmp", "keyring");
+  mkdirSync(controlDirectory, { recursive: true, mode: 0o700 });
+  chmodSync(controlDirectory, 0o700);
+  const child = spawn("gnome-keyring-daemon", ["--unlock", "--components=secrets"], {
     env,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
   });
   let announced = "";
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk) => { announced += chunk; });
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk) => { announced += chunk; });
+  child.stdin.on("error", () => { /* the daemon may exit before reading it */ });
   child.stdin.end(`${password}\n`);
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {

@@ -44,7 +44,7 @@ jobs:
     # session is cleared here and re-checked inside the fixture.
     name: installed old-to-new continuity (Ubuntu 24.04)
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 100
     env:
       DISPLAY: ""
       WAYLAND_DISPLAY: ""

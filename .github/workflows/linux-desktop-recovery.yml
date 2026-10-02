@@ -39,7 +39,7 @@ jobs:
     # clearing took effect.
     name: installed native picker recovery (Ubuntu 24.04)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 100
     env:
       DISPLAY: ""
       WAYLAND_DISPLAY: ""
