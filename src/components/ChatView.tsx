@@ -147,6 +147,80 @@ export function canRestartWorkingFolderForFailure(
     sameWorkingFolderFailure(current.target, target);
 }
 
+/** One row's single owner of the picker/PATCH/replay lifecycle.
+ *
+ * A double activation — Enter twice on the focused recovery control, or a click
+ * that lands while the previous one is still resolving its picker — must not
+ * open a second chooser or queue a second retry. `acquire` is the only way in,
+ * and it hands the lifecycle to exactly one caller until `release`. */
+export function createWorkingFolderRecoveryLatch() {
+  let owner = false;
+  return {
+    get busy() {
+      return owner;
+    },
+    acquire(): boolean {
+      if (owner) return false;
+      owner = true;
+      return true;
+    },
+    release(): void {
+      owner = false;
+    },
+  };
+}
+
+/** One recovery activation. `isStillCurrent` re-reads live state, so it is
+ * asked after every await: the picker and the PATCH both outlive the click. */
+export type WorkingFolderRecoveryActivation = {
+  target: WorkingFolderRecoveryTarget;
+  chooseCwd: () => Promise<string | null | undefined>;
+  isStillCurrent: () => boolean;
+  restartTask: (request: { restartAtCwd: string; expectedErrorMessageId: string; expectedUserMessageId: string }) => Promise<unknown>;
+  retryRequest: (request: { messageId: string; text: string }) => void;
+  onError: (message: string) => void;
+};
+
+/** What one activation actually did. The caller reports it; nothing here
+ * decides whether the picker was cancelled by the user or a stale selection
+ * simply arrived too late — both leave the conversation untouched. */
+export type WorkingFolderRecoveryOutcome =
+  | { status: "cancelled" }
+  | { status: "stale" }
+  | { status: "retried"; cwd: string }
+  | { status: "failed"; message: string };
+
+/** Pick a replacement folder, pin it to the pinned task, then replay the exact
+ * failed human request — once, and only while that failure is still terminal.
+ *
+ * A cancelled picker returns before anything is mutated. A selection that
+ * arrives after a newer turn, a busy turn or a thread switch is dropped instead
+ * of replaying a message the user has moved past, and the task PATCH carries
+ * the failure's message IDs so the server refuses the same stale request on its
+ * own side. */
+export async function attemptWorkingFolderRecovery(
+  activation: WorkingFolderRecoveryActivation,
+): Promise<WorkingFolderRecoveryOutcome> {
+  const { target, chooseCwd, isStillCurrent, restartTask, retryRequest, onError } = activation;
+  if (!isStillCurrent()) return { status: "stale" };
+  const cwd = await chooseCwd();
+  if (!cwd) return { status: "cancelled" };
+  if (!isStillCurrent()) return { status: "stale" };
+  try {
+    await restartTask({
+      restartAtCwd: cwd,
+      expectedErrorMessageId: target.errorMessageId,
+      expectedUserMessageId: target.userMessageId,
+    });
+  } catch (error) {
+    if (isStillCurrent()) onError(error instanceof Error ? error.message : String(error));
+    return { status: "failed", message: error instanceof Error ? error.message : String(error) };
+  }
+  if (!isStillCurrent()) return { status: "stale" };
+  retryRequest({ messageId: target.userMessageId, text: target.userMessageText });
+  return { status: "retried", cwd };
+}
+
 /** "Today" / "Yesterday" / "Mon, Aug 11" — real dates, not a hardcoded label. */
 function dayLabel(at: number): string {
   const d = new Date(at);
@@ -988,7 +1062,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
   const mascotMotion = state.mascotMotion?.botId === bot.id ? state.mascotMotion : null;
   const [findOpen, setFindOpen] = useState(false);
   const [workingFolderRecoveryPending, setWorkingFolderRecoveryPending] = useState(false);
-  const workingFolderRecoveryPendingRef = useRef(false);
+  const workingFolderRecoveryLatch = useRef(createWorkingFolderRecoveryLatch()).current;
   const { replyTo, selectReply, clearReply, consumeReply, restoreReply } = useReplyDraft(
     bot.threadId,
     `bot:${bot.id}:${bot.threadId}`,
@@ -1163,32 +1237,29 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
     target: WorkingFolderRecoveryTarget,
     chooseCwd: () => Promise<string | null | undefined>,
   ) => {
-    if (!isCurrentWorkingFolderFailure(target) || workingFolderRecoveryPendingRef.current) return;
-    workingFolderRecoveryPendingRef.current = true;
+    if (!isCurrentWorkingFolderFailure(target) || !workingFolderRecoveryLatch.acquire()) return;
     setWorkingFolderRecoveryPending(true);
     try {
-      const cwd = await chooseCwd();
-      if (!cwd || !isCurrentWorkingFolderFailure(target)) return;
-      await api(`/api/bots/${bot.id}/tasks/${bot.threadId}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          restartAtCwd: cwd,
-          expectedErrorMessageId: target.errorMessageId,
-          expectedUserMessageId: target.userMessageId,
+      await attemptWorkingFolderRecovery({
+        target,
+        chooseCwd,
+        // The picker and the PATCH both outlive the failed turn, so each step
+        // re-reads the live state instead of trusting the captured action.
+        isStillCurrent: () => isCurrentWorkingFolderFailure(target),
+        restartTask: (request) => api(`/api/bots/${bot.id}/tasks/${bot.threadId}`, {
+          method: "PATCH",
+          body: JSON.stringify(request),
         }),
+        retryRequest: (request) => dispatch({
+          type: "editMessage",
+          botId: bot.id,
+          threadId: bot.threadId,
+          ...request,
+        }),
+        onError: (message) => dispatch({ type: "error", message }),
       });
-      // The picker or PATCH may outlive the failed turn. Only fork the exact
-      // user request that produced this still-current folder failure.
-      if (isCurrentWorkingFolderFailure(target)) {
-        dispatch({ type: "editMessage", botId: bot.id, threadId: bot.threadId,
-          messageId: target.userMessageId, text: target.userMessageText });
-      }
-    } catch (error) {
-      if (isCurrentWorkingFolderFailure(target)) {
-        dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
-      }
     } finally {
-      workingFolderRecoveryPendingRef.current = false;
+      workingFolderRecoveryLatch.release();
       setWorkingFolderRecoveryPending(false);
     }
   }, [bot.id, bot.threadId, dispatch, isCurrentWorkingFolderFailure]);
