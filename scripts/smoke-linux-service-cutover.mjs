@@ -546,8 +546,15 @@ async function caseInterruptedCutoverThenRollback(context) {
   record("reconstructed production's interrupted-cutover window", { journalId: interrupted.id, source: interrupted.source });
   assert(conversationRows(dataDir).some((text) => text.includes(SEED_TEXT)), "the interrupted root still holds the seeded conversation");
 
-  const plan = printedPlan(runServiceInstall({ home, owner, port: crewbotPort, dataDir }));
-  executePrinted(plan.commands);
+  const installResult = runServiceInstall({ home, owner, port: crewbotPort, dataDir });
+  const plan = printedPlan(installResult);
+  const executed = executePrinted(plan.commands);
+  record("case 2 install and its printed plan", {
+    stdout: String(installResult.stdout).trim().slice(0, 600),
+    stderr: String(installResult.stderr).trim().slice(0, 600),
+    commands: plan.commands,
+    executed: executed.map((entry) => ({ command: entry.command, status: entry.status })),
+  });
   // Report every receipt production left, not just the first absent one: the
   // interesting states are a `rolled-back` receipt with no redo, and a redo
   // whose completion receipt landed somewhere other than the expected root.
