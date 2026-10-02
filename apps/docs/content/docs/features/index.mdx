@@ -19,12 +19,12 @@ OpenMausBot turns agent CLIs into a messaging-style workspace. The harness norma
 
 ## Computers and tools
 
-- Local computer control with explicit opt-in and approval boundaries on supported hosts; Ubuntu currently fails closed under an input-safety hold
+- Ubuntu GNOME/Xorg local computer control with explicit opt-in and per-action approvals; GNOME/Wayland local control remains disabled behind its safety gate
 - Isolated Local VM desktops through Docker or Podman
 - Hosted Box cloud computers
 - A self-hosted Linux VPS backend over Docker's SSH transport
 - Live previews and in-app desktop takeover where the backend supports it
-- USB Android control through the Phone Harness skill
+- USB Android control through the Phone Harness skill on Linux
 - Connected apps through Composio, including multiple labeled accounts per toolkit
 
 ## Automation
@@ -36,17 +36,16 @@ OpenMausBot turns agent CLIs into a messaging-style workspace. The harness norma
 
 ## Voice and access
 
-- Spoken replies and per-bot voices through ElevenLabs, Fish Audio, built-in Mac voices, or Chatterbox
-- Native macOS dictation and half-duplex call mode
-- Paired iOS companion with chat, approvals, search, transcript controls, and opt-in computer viewing
+- Spoken replies through ElevenLabs, Fish Audio, or a configured Chatterbox server
+- Parked native source includes built-in Mac voices, macOS dictation and call mode, and an iOS companion; these do not count as supported features or current acceptance
 
 ## Desktop experience
 
-- macOS, Windows, and Ubuntu packages
+- Ubuntu 24.04 x86_64 DEB and AppImage artifacts are built by the manual Linux workflow; installed acceptance is pending
 - Theme switching and accessible contrast
 - Sidebar sections, compact headers, pinned messages, spoilers, and image attachments
-- Automatic updates on macOS and Windows
+- Linux AppImage updates use `latest-linux.yml` after a CrewBot release is published
 
-<Callout type="info" title="Platform differences are intentional">
-  macOS has the broadest native integration. Ubuntu chat, preview, Cloud, and Local VM are available, while host control is temporarily disabled under an input-safety hold. Windows installers are not yet signed, and the iOS companion keeps sensitive workspace configuration on the computer.
+<Callout type="info" title="Platform status">
+  Linux is the only supported platform during active development. Arch Linux is the daily development target; Ubuntu 24.04 x86_64 is the package and CI reference. Documented GNOME/Xorg and GNOME/Wayland behavior has session-specific limits, and Linux installed continuity and recovery acceptance remains pending. Native Android, iOS, macOS, and Windows source remains available, but its builds and proof are parked and deferred, never passed. The Phone Harness USB Android control path remains a Linux feature. See the [platform support policy](https://github.com/xddinside/crewbot/blob/main/docs/platform-support.md).
 </Callout>

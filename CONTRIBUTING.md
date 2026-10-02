@@ -22,7 +22,7 @@ and logged in. `pnpm install` installs the project's pinned [Portless](https://g
 Linux is the only supported platform during active development. Arch Linux is the daily development target; Ubuntu 24.04 x86_64 is the package and CI reference. Native Android, iOS, macOS, and Windows support is parked. See [platform support](docs/platform-support.md). The harness and shared protocols remain portable.
 
 ```sh
-git clone https://github.com/milind-soni/OpenMausBot && cd OpenMausBot
+git clone https://github.com/xddinside/crewbot.git && cd crewbot
 pnpm install
 
 pnpm dev:server    # isolated development harness → 127.0.0.1:18799 in the main checkout
@@ -67,7 +67,7 @@ For Ubuntu installation and real desktop checks, see [`docs/linux-desktop.md`](d
 
 ## Linux package workflow
 
-The manual `.github/workflows/package-linux.yml` workflow builds Ubuntu 24.04 x86_64 artifacts from an exact revision. It produces `crewbot-${version}-amd64.deb`, `crewbot-${version}-x86_64.AppImage`, `crewbot-amd64.deb`, `crewbot.AppImage`, and `SHA256SUMS-ubuntu-x64.txt` in the `crewbot-ubuntu-${version}-x64` artifact. The release updater feed uses `latest-linux.yml` with versioned artifact names, SHA-512, and size. Verify the workflow's checksum report and installed-package evidence before publishing. The Linux installed acceptance in [platform support](docs/platform-support.md) remains pending until its required continuity, credentials, isolation, rollback, and recovery fixtures pass. Do not describe pending proof as passed.
+The manual `.github/workflows/package-linux.yml` workflow builds Ubuntu 24.04 x86_64 artifacts from an exact revision. Its `crewbot-ubuntu-${version}-x64` artifact contains `crewbot-${version}-amd64.deb`, `crewbot-${version}-x86_64.AppImage`, stable names `crewbot-amd64.deb` and `crewbot.AppImage`, a four-row `SHA256SUMS-ubuntu-x64.txt`, and `latest-linux.yml`. The update feed records versioned artifact names, SHA-512, and sizes. Verify the workflow's checksum report and installed-package evidence before publishing. Linux installed acceptance in [platform support](docs/platform-support.md) remains pending until its continuity, credentials, isolation, rollback, and recovery fixtures pass. Record pending proof as pending.
 
 ## Repo map
 
@@ -257,7 +257,7 @@ out of its commits and screenshots.
 
 ## CI, in one glance
 
-Normal CI requires Linux jobs and reports one aggregate gate named `Linux CI gate`. The gate depends on static checks, four Ubuntu Vitest shards, packaged-server smoke, Electron smokes, FOSS checks, control-plane checks, UI smoke, and Linux package validation. A failed required job fails the gate. Native Android, iOS, macOS, and Windows jobs are manual historical recipes; their proof is deferred and does not gate Linux delivery.
+Normal CI requires Linux jobs and reports one aggregate gate named `Linux CI gate`. The gate depends on static checks, four Ubuntu Vitest shards, packaged-server smoke, Electron smokes, FOSS checks, control-plane checks, UI smoke, and Linux package validation. A failed required job fails the gate. The ARM64 Cloudflare connector installer smoke checks that installer only; it does not establish ARM64 desktop support. Native Android, iOS, macOS, and Windows jobs are manual historical recipes; their proof is deferred and does not gate Linux delivery.
 
 Read [platform support](docs/platform-support.md) for the Linux claims each job can establish and the installed-app acceptance that remains pending. The four shards are `pnpm exec vitest run --shard=1/4` through `4/4`. `pre-push` runs lint, typecheck, and locale checks when installed. For focused local checks, run `pnpm lint`, `pnpm typecheck`, and `pnpm i18n:check`. To wait for the pull request checks, use `gh pr checks <number> -R xddinside/crewbot --watch --interval 30`. Do not use helpers from another checkout.
 

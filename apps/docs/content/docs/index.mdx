@@ -17,7 +17,7 @@ OpenMausBot turns agent CLIs into a familiar desktop chat app. Each bot can have
 <ProductScreenshot name="docs-fresh-bot" alt="A new OpenMausBot bot named Bramble asking what it should help with" caption="A clean first-run bot. Each conversation belongs to a real agent process, not a simulated contact." />
 
 <Cards>
-  <Card title="Install OpenMausBot" href="/docs/getting-started/installation" description="Download a signed build or run the app from source." />
+  <Card title="Install OpenMausBot" href="/docs/getting-started/installation" description="Check Linux release status or build from source." />
   <Card title="Create your first bot" href="/docs/getting-started/first-bot" description="Choose an engine, give it a working folder, and send a task." />
   <Card title="Connect apps" href="/docs/connected-apps" description="Authorize Gmail, GitHub, Slack, Notion, and hundreds more." />
   <Card title="Give it a computer" href="/docs/computers" description="Use your desktop, an isolated local VM, Box, or your own VPS." />
@@ -43,10 +43,14 @@ OpenMausBot turns agent CLIs into a familiar desktop chat app. Each bot can have
 | Organize bots, tasks, rooms, and delegations | [Bots and tasks](./features/bots-and-tasks.mdx) |
 | Control a browser or desktop | [Computers](./computers/index.mdx) |
 | Run work every morning | [Automations](./features/automation.mdx) |
-| Reach my bots from an iPhone | [iOS companion](./mobile/ios-companion.mdx) |
+| Read the parked iOS companion guide | [iOS companion](./mobile/ios-companion.mdx) |
 | Back up or move my data | [Data and backups](./self-hosting/data-and-backups.mdx) |
 | Build from source or contribute | [Contributing](./contributing/index.mdx) |
 
+<Callout type="warn" title="Linux-first support">
+  Linux is the only supported platform during active development. Arch Linux is the daily development target; Ubuntu 24.04 x86_64 is the package and CI reference. Linux installed continuity and recovery acceptance remains pending. Native Android, iOS, macOS, and Windows support is parked, and its proof is deferred rather than passed. Linux CI also stages a Cloudflare connector for ARM64, which does not establish ARM64 desktop support. See the [platform support policy](https://github.com/xddinside/crewbot/blob/main/docs/platform-support.md).
+</Callout>
+
 <Callout type="info" title="Docs track released behavior">
-  OpenMausBot moves quickly. The changelog records shipped releases; proposed or unfinished work stays on GitHub until it lands.
+  The changelog records shipped releases. Proposed or unfinished work stays on GitHub until it lands.
 </Callout>

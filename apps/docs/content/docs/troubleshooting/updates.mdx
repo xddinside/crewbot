@@ -1,56 +1,48 @@
 ---
 title: Desktop updates
-description: Recover from a stuck download or restart and understand supported update paths.
+description: Understand Linux update paths and recover from a stuck update.
 icon: RefreshCw
 ---
 
-OpenMausBot checks for updates in the background and offers the download in a card at the bottom of the window. How the download is applied depends on what you installed.
+## Current release status
 
-| Build | What the button does |
-|---|---|
-| macOS, Windows, Linux AppImage | **Restart to update** — the app replaces itself and reopens. An AppImage is always rewritten at the path you launch, so your launcher, symlink or dock pin keeps working. |
-| Ubuntu `.deb` (and rpm/pacman) | **Install** — OpenMausBot downloads and verifies the package, copies the install command, and opens a terminal for you to paste it into. The app never installs a system package itself, so it never asks for your administrator password. |
+Linux is the only supported platform during active development, but installed continuity and recovery acceptance is still pending. There is no supported public CrewBot Linux release to update yet. Do not use old OpenMausBot or unrelated repository assets as CrewBot updates.
 
-Ubuntu packages are installed from the releases repository by hand, so the app hands you the exact line rather than guessing at a package handler:
+After a CrewBot release is published, the manual Linux package workflow provides the `crewbot-ubuntu-<version>-x64` artifact. It contains six files:
 
-```bash
-sudo apt-get install -y '/home/you/.cache/openmausbot-updater/pending/OpenMausBot-<version>-amd64.deb'
-```
+- `crewbot-<version>-amd64.deb`
+- `crewbot-<version>-x86_64.AppImage`
+- `crewbot-amd64.deb`
+- `crewbot.AppImage`
+- `SHA256SUMS-ubuntu-x64.txt`, with four rows for the DEB and AppImage files
+- `latest-linux.yml`, with versioned package names, SHA-512 hashes, and file sizes
 
-Reopen OpenMausBot once it finishes to be running the new version.
+The AppImage can update itself in place and keeps the path you launched. A DEB update downloads and verifies the package, then gives you an `apt-get` command to run; the app does not install system packages or ask for your administrator password. See the [Linux package workflow](https://github.com/xddinside/crewbot/blob/main/.github/workflows/package-linux.yml) and [platform support policy](https://github.com/xddinside/crewbot/blob/main/docs/platform-support.md).
 
 ## The download keeps spinning
 
-Leave the app open long enough for one complete attempt, then quit and reopen it. A failed differential update should fall back to the full package. If the same release remains stuck, download the current installer from the [official releases page](https://github.com/milind-soni/OpenMausBot/releases/latest) and install it over the existing copy.
+After a release is published, leave the app open for one complete update attempt, then quit and reopen it. If the same release remains stuck, download the matching official Linux artifact from the [CrewBot releases page](https://github.com/xddinside/crewbot/releases) and verify it against `SHA256SUMS-ubuntu-x64.txt` before installing it over the existing copy.
 
-On macOS, **Preparing update** is a separate step after the download finishes. macOS must stage the update before **Restart to update** becomes available. A completed download does not mean this preparation is finished.
+For a DEB, install the downloaded versioned file with APT so its dependencies are resolved:
 
-If an update fails, its error stays visible instead of being replaced by a background update check. If a restart is taking longer than expected, quit the app completely before trying again; repeatedly clicking Restart cannot speed it up.
+```bash
+sudo apt-get install -y ./crewbot-<version>-amd64.deb
+```
+
+For an AppImage, replace the file at the path you launch. Keep the existing application data; replacing the package does not require deleting it.
 
 ## Restart to update does nothing
 
-Quit OpenMausBot completely and launch it again. If the version did not change, install the latest release manually. Your conversations and settings live outside the application bundle and are not removed by replacing the app.
-
-The installed version runs the updater, not the version being downloaded. If you are upgrading from an older build with a stuck updater, you may need to install the new version manually once to receive the fix. Do not delete your OpenMausBot data directory.
+Quit the app completely and launch it again. If the version did not change, use the official release's matching Linux package as described above. The installed version runs the updater, not the version being downloaded. Keep your application data when recovering from a stuck update.
 
 ## Report an update failure
 
-Open **App settings → General → Diagnostics → Export Diagnostics…**. Include your operating system, the currently installed version, the target version, and whether the failure happened during download, preparation, or restart. Newer builds include a bounded, redacted updater log alongside the server and desktop logs. Review the exported file before sharing it privately with support.
-
-## No terminal opened
-
-The install command is on your clipboard either way. Open a terminal yourself and paste it. If the clipboard was overwritten, the package is already downloaded and you can run:
-
-```bash
-sudo apt-get install -y ~/.cache/openmausbot-updater/pending/OpenMausBot-*-amd64.deb
-```
-
-Use `apt-get`, not `dpkg -i` — only `apt-get` resolves dependencies, and on Ubuntu 24.04 ours are satisfied through virtual packages that `dpkg` alone will not follow.
+Open **App settings → General → Diagnostics → Export Diagnostics…**. Include your operating system, the installed version, the target version, and whether the failure happened during download or restart. Review the exported file before sharing it privately with support.
 
 ## Verify the installed version
 
-Open **App settings** and check the displayed version. A commit merged to `main` is not in the desktop app until a release workflow publishes a new version.
+Open **App settings** and check the displayed version. A commit merged to `main` is not part of the desktop app until a release workflow publishes it.
 
-<Callout type="warn" title="Use official artifacts">
-  Do not install update files forwarded through chat or uploaded to an unrelated repository. Use the OpenMausBot releases repository and its checksums.
+<Callout type="warn" title="Use official Linux artifacts">
+  Install only files from the CrewBot releases page. Verify the SHA-256 manifest before installing a downloaded package. Do not install forwarded files or assets from another repository.
 </Callout>

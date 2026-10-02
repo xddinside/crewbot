@@ -4,7 +4,7 @@ Linux is the only supported platform during active development. The goal is depe
 
 ## Linux coverage
 
-The development target is Arch Linux. Ubuntu 24.04 x86_64 is the reference for package builds and CI. Current desktop-session evidence is specific to GNOME on Xorg and GNOME on Wayland. These facts do not establish support for other distributions, desktop environments, or ARM64.
+The development target is Arch Linux. Ubuntu 24.04 x86_64 is the reference for package builds and CI. Current desktop-session evidence is specific to GNOME on Xorg and GNOME on Wayland. These facts do not establish support for other distributions, desktop environments, or ARM64. The CI Cloudflare connector installer smoke on ARM64 checks connector staging only; it does not prove an ARM64 desktop package.
 
 The Linux package workflow covers artifact construction and package-level checks. Linux installed acceptance is still pending. Before claiming dependable installed use, verify data, attachment, and credential continuity; stable/development isolation; permission behavior and Stop; service rollback; and recovery of the exact failed turn through the folder picker. Use isolated fixtures with synthetic credentials and disposable homes. Follow the [verification guide](verification/README.md) for server or conversation checks. Xvfb and synthetic tests establish only what they exercise.
 
