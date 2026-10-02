@@ -453,7 +453,7 @@ async function caseLegacyStopFailure(context) {
   // stop still leaves both data roots recoverable and both unit files intact.
   const strandedPid = Number(systemctlProp(LEGACY_UNIT, "MainPID"));
   assert(strandedPid === 0, `no legacy process is left owning the migrated tree (MainPID ${strandedPid})`);
-  assert(unitFile(LEGACY_UNIT) === existsSync(unitFile(LEGACY_UNIT)), "the legacy unit file itself survived the failed stop");
+  assert(existsSync(unitFile(LEGACY_UNIT)), "the legacy unit file itself survived the failed stop");
   assert(!existsSync(legacyRoot), "the legacy root stays moved until rollback republishes it");
   assert(conversationRows(dataDir).some((text) => text.includes(SEED_TEXT)), "the migrated conversation is recoverable after the failed stop");
   assert(
