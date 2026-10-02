@@ -267,7 +267,7 @@ function productionPlan(dataDir, home) {
  * succeed; from `failFrom` on, the first command must fail for real and the
  * sequence stops there.
  */
-function executePrinted(commands, { extraPath, failFrom = Number.POSITIVE_INFINITY } = {}) {
+function executePrinted(commands, { extraPath = [], failFrom = Number.POSITIVE_INFINITY } = {}) {
   const searchPath = [...extraPath, "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"].join(":");
   const results = [];
   for (const [index, command] of commands.entries()) {
