@@ -299,12 +299,17 @@ export function ensureDirectory(path, { owner, mode = 0o700 } = {}) {
   return path;
 }
 
-/** Run the production CLI as the service owner, with an explicit environment. */
-export function productionCli(args, { as, home, repoRoot, env = {}, extraPath = [] }) {
+/** Run the production CLI as the service owner, with an explicit environment.
+ *
+ * Tolerates a non-zero exit by default: several of the boundaries under test are
+ * refusals, so the caller has to be able to inspect the exit status and the
+ * message. Callers that require success assert on `result.status` themselves. */
+export function productionCli(args, { as, home, repoRoot, env = {}, extraPath = [], allowFailure = true } = {}) {
   const searchPath = [...extraPath, "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"].join(":");
   return run("sudo", ["-n", "-u", as, "-H", process.execPath, "--experimental-strip-types", join(repoRoot, "server", "openmausbot.ts"), ...args], {
     env: { ...process.env, HOME: home, PATH: searchPath, ...env },
     cwd: repoRoot,
+    allowFailure,
   });
 }
 

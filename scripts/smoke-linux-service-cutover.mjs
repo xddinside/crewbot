@@ -294,6 +294,8 @@ function runServiceInstall({ home, owner, port, dataDir, env = {} }) {
   return result.stdout;
 }
 
+/** Production rollback. Boundaries under test are refusals, so this reports the
+ * result and the caller decides whether a non-zero exit is the expected answer. */
 function runServiceRollback({ home, owner, dataDir }) {
   return productionCli(["service", "rollback", "--data-dir", dataDir], { as: owner, home, repoRoot: REPO_ROOT });
 }
