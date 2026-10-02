@@ -497,11 +497,13 @@ function buildInterruptedCutover(dataDir, home) {
   // is no receipt to build the crash window from.
   stopUnit(LEGACY_UNIT);
   assert(!unitIsActive(LEGACY_UNIT), "the legacy unit is stopped before the interrupted cutover is reconstructed");
-  // `migrateLegacyDataDir` refuses to move a legacy root into a destination that
-  // already exists unless it holds a migration journal. State that precondition
-  // explicitly, so a leftover root from a previous case is reported here rather
-  // than surfacing as a missing receipt several steps later.
+  // `migrateLegacyDataDir` only moves a legacy root that exists, into a
+  // destination that either does not exist or already holds a migration
+  // journal. State both, and what the migration then did, so a refusal is named
+  // here instead of surfacing as a missing receipt several steps later.
+  const legacyRoot = join(home, ".openmausbot");
   const destinationJournal = join(dataDir, ".crewbot-migration", "journal.json");
+  assert(existsSync(legacyRoot), `the legacy root ${legacyRoot} must exist to be migrated`);
   assert(
     !existsSync(dataDir) || existsSync(destinationJournal),
     `the Crewbot root ${dataDir} already exists without a migration journal, so the real migration would refuse to move the legacy root into it`,
@@ -510,7 +512,14 @@ function buildInterruptedCutover(dataDir, home) {
     `const { migrateLegacyDataDir } = await import(${JSON.stringify(join(REPO_ROOT, "electron", "legacy-data-dir.mjs"))});`,
     "migrateLegacyDataDir(process.argv[1], { home: process.argv[2] });",
   ].join("\n");
-  run(process.execPath, ["--input-type=module", "-e", script, dataDir, home], { env: { ...process.env, HOME: home } });
+  const migrated = run(process.execPath, ["--input-type=module", "-e", script, dataDir, home], { env: { ...process.env, HOME: home } });
+  record("ran the real migration to rebuild the cutover window", {
+    dataDir,
+    home,
+    exit: migrated.status,
+    stdout: migrated.stdout.trim().slice(0, 400),
+    stderr: migrated.stderr.trim().slice(0, 400),
+  });
   const receipt = completedReceipt(dataDir);
   // The move has happened and the journal still says "applying": the exact
   // window between the rename and the completion receipt. Every field comes
