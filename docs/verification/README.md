@@ -5,6 +5,12 @@ thin command-line adapter over `scripts/mcp-server.ts`, so verification uses
 the same URL validation, task pinning, bounded transcripts, wait states, and
 redaction as external MCP clients.
 
+## Platform scope
+
+Linux is the required platform for current delivery. Read the [platform support guide](../platform-support.md) before making a support claim. Arch is the daily development target; Ubuntu 24.04 x86_64 is the package and CI reference. Linux installed data/attachment/credential continuity, stable/development isolation, service rollback, and exact failed-turn folder-picker recovery remain pending until the required isolated fixtures pass.
+
+Native Android, iOS, macOS, and Windows recipes below remain useful historical instructions. Their current acceptance is parked and recorded as deferred, never passed. They do not gate Linux delivery. Keep shared protocol and security coverage that Linux uses. Xvfb or synthetic checks prove only the behavior they exercise.
+
 ## Launch
 
 Start a fixture in one terminal:
@@ -85,7 +91,7 @@ The [embedded server recovery smoke](desktop-server-recovery.md) crashes real
 Electron-owned fixture servers, verifies bounded recovery and private access,
 and proves quit cancels recovery without replaying an interrupted fixture turn.
 
-The [Tailscale discovery fixture](tailscale.md) checks standalone macOS CLI mode
+The [Tailscale discovery fixture](tailscale.md) is a historical native recipe for standalone macOS CLI mode
 and HTTP tailnet endpoint refresh without touching a real Tailscale installation.
 
 The [cloud preview fixture](cloud-preview.md) mounts the real Computer panel
@@ -119,10 +125,10 @@ keyless local generation, saved-key handling, and safe errors with a local fake 
 The [independent threads fixture](threads.md) checks nested sidebar navigation,
 per-thread models, simultaneous direct conversations and thread-scoped Stop.
 
-The [iOS thread checks](ios-threads.md) cover the native thread tree, folder
+The parked [iOS thread recipe](ios-threads.md) covers the native thread tree, folder
 search and draft isolation using disposable simulators and an offline fixture.
 
-The [Android thread checks](android-threads.md) cover the Compose thread tree,
+The parked [Android thread recipe](android-threads.md) covers the Compose thread tree,
 local selection, draft isolation and installable preview APK.
 
 The [right-to-left fixture](bidi.md) checks per-block direction in bot replies

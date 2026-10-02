@@ -1,8 +1,7 @@
 # Contributing to OpenMausBot
 
 Thanks for wanting to help — community PRs have already shipped in this repo, and more are welcome.
-This file tells you how to get a working dev setup, what the codebase expects from a change, and what
-makes a PR easy to merge. Read it once before opening anything; it's short on purpose.
+This file covers the Linux development setup, change expectations, and PR evidence. Read it once before opening anything; it's short on purpose.
 
 ## Ground rules
 
@@ -17,11 +16,10 @@ makes a PR easy to merge. Read it once before opening anything; it's short on pu
 
 ## Dev setup
 
-Requirements: **Node 24+**, **pnpm**, and for actually chatting with a bot, at least one agent CLI
+Requirements: **Linux x86_64**, **Node 24+**, **pnpm**, and for chatting with a bot, at least one agent CLI
 ([`claude`](https://claude.com/claude-code) or [`codex`](https://github.com/openai/codex)) installed
 and logged in. `pnpm install` installs the project's pinned [Portless](https://github.com/vercel-labs/portless) version.
-macOS is the primary release platform and Ubuntu 24.04 x64 is the Linux desktop beta;
-the harness server itself is portable Node and the test suite runs on macOS, Linux, and Windows.
+Linux is the only supported platform during active development. Arch Linux is the daily development target; Ubuntu 24.04 x86_64 is the package and CI reference. Native Android, iOS, macOS, and Windows support is parked. See [platform support](docs/platform-support.md). The harness and shared protocols remain portable.
 
 ```sh
 git clone https://github.com/milind-soni/OpenMausBot && cd OpenMausBot
@@ -29,7 +27,7 @@ pnpm install
 
 pnpm dev:server    # isolated development harness → 127.0.0.1:18799 in the main checkout
 pnpm dev           # Vite through Portless → https://crewbot.localhost
-pnpm dev:desktop   # Electron shell (macOS/Ubuntu; keep server + Vite running)
+pnpm dev:desktop   # Linux Electron shell; keep server + Vite running
 
 pnpm typecheck     # app + server
 pnpm test          # vitest suite (server unit + driver contract + API smoke)
@@ -37,8 +35,7 @@ pnpm test:watch    # same, in watch mode
 pnpm exec vitest run --shard=1/4   # one CI shard, exactly the files CI ran in it
 pnpm check:electron # syntax-check the plain JS Electron entrypoints
 
-pnpm package:mac   # DMG + ZIP; requires Swift/Xcode tools
-pnpm package:linux # Ubuntu x64 .deb + AppImage; no Swift required
+pnpm package:linux # Ubuntu x64 .deb + AppImage
 ```
 
 If this machine has no Portless proxy on its default ports, start one on an
@@ -68,23 +65,9 @@ launching Electron, run `node scripts/prepare-cloudflared.mjs --current`.
 
 For Ubuntu installation and real desktop checks, see [`docs/linux-desktop.md`](docs/linux-desktop.md).
 
-## Ubuntu release checklist
+## Linux package workflow
 
-Ubuntu release packages must come from the manual **Package Ubuntu** workflow on an exact release commit or tag,
-not from a developer workstation. The Ubuntu 24.04 runner builds and verifies both formats, launches the unpacked
-app and AppImage, routes `click` and `type_text` through the overlay-free bundled Cua runtime on Xorg, runs the
-fail-closed Wayland CUA smoke,
-and produces one release artifact containing:
-
-- the versioned `.deb` and AppImage;
-- stable `OpenMausBot-amd64.deb` and `OpenMausBot.AppImage` copies used by the latest-download links;
-- `SHA256SUMS-ubuntu-x64.txt` covering both versioned and stable names.
-
-Before publishing, confirm that `package.json` has the release version and dispatch the workflow against the same
-commit used for the other platforms. Attach all five Ubuntu files to the matching release in the separate
-[OpenMausBot releases](https://github.com/milind-soni/OpenMausBot/releases). Then verify the checksum
-file and install the `.deb` plus launch the AppImage in a clean Ubuntu 24.04 x86_64 GNOME environment. Never combine
-packages built from different commits under one version.
+The manual `.github/workflows/package-linux.yml` workflow builds Ubuntu 24.04 x86_64 artifacts from an exact revision. It produces `crewbot-${version}-amd64.deb`, `crewbot-${version}-x86_64.AppImage`, `crewbot-amd64.deb`, `crewbot.AppImage`, and `SHA256SUMS-ubuntu-x64.txt` in the `crewbot-ubuntu-${version}-x64` artifact. The release updater feed uses `latest-linux.yml` with versioned artifact names, SHA-512, and size. Verify the workflow's checksum report and installed-package evidence before publishing. The Linux installed acceptance in [platform support](docs/platform-support.md) remains pending until its required continuity, credentials, isolation, rollback, and recovery fixtures pass. Do not describe pending proof as passed.
 
 ## Repo map
 
@@ -99,7 +82,7 @@ packages built from different commits under one version.
 | `electron/` | Desktop shell: dictation, screen capture, local computer-use daemon. macOS-specific code lives here, gated. |
 | `dist-server/` | **Build output.** Never hand-edit, never include in PRs — it's regenerated by `pnpm build:server` at release time. |
 
-Data lives in `~/.openmausbot/` (bots, transcripts, per-thread NDJSON event logs, config with keys).
+See the [Linux desktop guide](docs/linux-desktop.md) for Linux data locations and package behavior.
 
 ## Tests
 
@@ -274,15 +257,9 @@ out of its commits and screenshots.
 
 ## CI, in one glance
 
-Every PR runs the same checks, each as its own job so a failure names itself:
+Normal CI requires Linux jobs and reports one aggregate gate named `Linux CI gate`. The gate depends on static checks, four Ubuntu Vitest shards, packaged-server smoke, Electron smokes, FOSS checks, control-plane checks, UI smoke, and Linux package validation. A failed required job fails the gate. Native Android, iOS, macOS, and Windows jobs are manual historical recipes; their proof is deferred and does not gate Linux delivery.
 
-- **typecheck + lint** — typecheck, lint, locale catalogs (`pnpm i18n:check`), Electron syntax check, production UI build. Once, on Ubuntu; none of it is platform-specific.
-- **vitest (os, shard n/4)** — the suite on macOS, Ubuntu and Windows, split into four shards each. The suite runs its files serially on purpose (fake CLIs and a real harness server), so one runner takes ~19 minutes; a shard takes 4–10. To reproduce a shard's failure locally, run the same `pnpm exec vitest run --shard=n/4`. Failures also appear as annotations on the PR.
-- **packaged server smoke (os)** — the server bundle copied out of the repo and started with no `node_modules` in reach.
-- **Windows CUA host smoke**, **Electron smokes (macOS)** — real Electron utility processes against disposable homes; never the live app.
-- **typecheck + test (os)** — the three checks the branch rules require. They only aggregate the jobs above; if one is red, the failing job is named in its log.
-
-A `pre-push` hook installed by `pnpm install` runs lint, typecheck and the locale check before a push (about a minute). `git push --no-verify` skips it once; `OMB_SKIP_HOOKS=1` skips it for a session.
+Read [platform support](docs/platform-support.md) for the Linux claims each job can establish and the installed-app acceptance that remains pending. The four shards are `pnpm exec vitest run --shard=1/4` through `4/4`. `pre-push` runs lint, typecheck, and locale checks when installed. For focused local checks, run `pnpm lint`, `pnpm typecheck`, and `pnpm i18n:check`. To wait for the pull request checks, use `gh pr checks 18 --watch --interval 30` with the actual PR number. Do not use helpers from another checkout.
 
 Provider fakes under `server/testing/fake-*.ts` must stay dependency-free: they run as bare subprocesses and at least one is copied out of the repo by a test, so a relative import from the repo dies at link time. `server/testing/fakes-self-contained.test.ts` enforces it.
 
@@ -295,7 +272,7 @@ Provider fakes under `server/testing/fake-*.ts` must stay dependency-free: they 
 - [ ] Ubuntu packaging changes pass `pnpm package:linux` and `node scripts/verify-linux-package.mjs`
 - [ ] New server behavior has a test; driver changes keep the contract tests green
 - [ ] No `dist-server/` churn, no lockfile churn beyond your actual dependency change
-- [ ] macOS-only code is platform-gated; nothing breaks the packaged app
+- [ ] OS-specific code stays behind existing platform adapters; Linux package behavior remains covered
 - [ ] UI changes include before/after screenshots
 
 By contributing you agree your contributions are licensed under the
