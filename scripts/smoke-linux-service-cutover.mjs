@@ -491,6 +491,12 @@ async function caseLegacyStopFailure(context) {
 
 /** Rebuild the crash window production itself would leave behind. */
 function buildInterruptedCutover(dataDir, home) {
+  // The real cutover stops the legacy unit before the move, because the lease
+  // guard refuses to migrate a root a live server owns. Stop it here too,
+  // otherwise this reconstructs nothing: the migration returns early and there
+  // is no receipt to build the crash window from.
+  stopUnit(LEGACY_UNIT);
+  assert(!unitIsActive(LEGACY_UNIT), "the legacy unit is stopped before the interrupted cutover is reconstructed");
   const script = [
     `const { migrateLegacyDataDir } = await import(${JSON.stringify(join(REPO_ROOT, "electron", "legacy-data-dir.mjs"))});`,
     "migrateLegacyDataDir(process.argv[1], { home: process.argv[2] });",
