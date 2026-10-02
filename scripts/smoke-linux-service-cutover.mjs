@@ -466,17 +466,12 @@ async function caseLegacyStopFailure(context) {
   // root, which the unprivileged legacy service could not then write to.
   const [printedNode, ...rollbackArgv] = plan.rollback;
   assert(printedNode === process.execPath, `the printed rollback command runs this same node binary (${printedNode})`);
-  // Re-run the printed argv verbatim, so what is proved is the command the
-  // product actually prints. Substitute the node binary for this fixture's
-  // `sudo` rather than dropping it, and keep `--experimental-strip-types` with
-  // the script it belongs to: handing that flag to `sudo` fails with
-  // `unrecognized option`, which is not what this case is about.
-  const rollbackCommand = [printedNode, ...rollbackArgv];
-  const nodeIndex = rollbackCommand.indexOf(join(REPO_ROOT, "server", "openmausbot.ts"));
-  assert(nodeIndex > 0, `the printed rollback argv carries the CLI entry script (${JSON.stringify(rollbackCommand)})`);
-  rollbackCommand[nodeIndex - 1] = process.execPath;
-  rollbackCommand.splice(nodeIndex, 0, "--experimental-strip-types");
-  const rollback = run("sudo", ["-n", "-u", owner, "-H", ...rollbackCommand], { cwd: REPO_ROOT });
+  // Run the printed argv verbatim under the owning account. The argv already
+  // carries its own node binary and `--experimental-strip-types`, so it must be
+  // passed through untouched: dropping the binary handed the flag to sudo, and
+  // substituting it duplicated the binary. What is under test is the command the
+  // product prints, so execute exactly that.
+  const rollback = run("sudo", ["-n", "-u", owner, "-H", printedNode, ...rollbackArgv], { cwd: REPO_ROOT });
   assert(rollback.status === 0, `the printed rollback command reported success (exit ${rollback.status}):\n${rollback.stdout}\n${rollback.stderr}`);
   record("the printed rollback command recovered the legacy service", rollback.stdout.trim());
 
