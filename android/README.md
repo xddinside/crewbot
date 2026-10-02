@@ -1,5 +1,7 @@
 # OpenMausBot Android companion
 
+> **Platform status:** Android support is parked during Linux-first development. This file preserves native source, build instructions, and historical evidence; it does not establish current support or acceptance. See [platform support](../docs/platform-support.md).
+
 The Android counterpart to the iOS companion app: pair a phone with a computer
 running OpenMausBot, then read and answer from the phone.
 

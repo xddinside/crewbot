@@ -1,5 +1,7 @@
 # OpenMausBot companion (iOS)
 
+> **Platform status:** iOS support is parked during Linux-first development. This file preserves native source, build instructions, and historical evidence; it does not establish current support or acceptance. See [platform support](../docs/platform-support.md).
+
 Your bots keep running on the laptop. This is the phone you watch them from,
 answer their approvals on, and send them the next thing.
 

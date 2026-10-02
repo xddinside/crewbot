@@ -1,11 +1,11 @@
 # Desktop-to-desktop companion mode
 
-Every OpenMausBot desktop build can play either role:
+Linux is the supported desktop platform during active development. This guide records desktop companion behavior and the shared protocol. Native Android, iOS, macOS, and Windows clients are parked; their acceptance is deferred. See the [platform support guide](platform-support.md).
 
 - **Host mode** is the normal app. It owns the agents, conversations, credentials, routines, and computers.
 - **Client mode** controls a paired host through the same authenticated, default-deny companion API used by the phone app.
 
-The roles are platform-independent. A Windows, macOS, or Ubuntu build can host, and any other desktop build can be its client. One app installation uses one role at a time; disconnecting a client returns that installation to host mode without deleting its local host data.
+The shared protocol remains portable across platform adapters. Current desktop support claims are limited to Linux. Parked native builds and clients do not count as current acceptance. One app installation uses one role at a time. Disconnecting a client returns it to host mode without deleting its local host data.
 
 This mode is separate from **Self-hosted server** in **Settings → Remote
 access → Connect to another computer** (also available through the **Server**
@@ -51,7 +51,7 @@ The client Calendar supports scheduled routines end to end: create, edit, move, 
 
 The remote Computer panel includes the host panel's per-agent **Scheduled tasks** card. It lists that agent's next routines and active run, opens the full schedule view, and creates a new schedule already assigned to the agent.
 
-A Mac remote client supports dictation and live calls against any host: Apple Speech runs locally on the Mac, and only the transcript crosses the paired connection. When a Mac client selects a built-in system voice, reply speech is synthesized and played locally on that Mac; ElevenLabs and Fish Audio reply audio is synthesized by the host and relayed byte for byte. A Windows remote client still needs a future Windows speech-to-text implementation for microphone input.
+The parked macOS source includes local dictation, calls, and built-in system voices. This describes retained implementation, not current support or acceptance. Linux dictation and call mode remain unavailable. Hosted ElevenLabs and Fish Audio playback is separate from native call mode.
 
 The host must be running and awake. Cleartext HTTP is accepted only for a `.ts.net` MagicDNS hostname because that connection is encrypted inside Tailscale's WireGuard tunnel. Raw IP addresses, LAN hostnames, URL credentials, paths, queries, and fragments are rejected.
 

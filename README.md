@@ -329,8 +329,7 @@ dedicated receiver through a hosted relay or a tool such as Tailscale Funnel.
 Early but real — the loop works end to end: message → agent → streamed reply → tools → approvals →
 computer use. Linux is the only supported platform during active development. Linux installed-package acceptance remains pending; native Android, iOS, macOS, and Windows proof is deferred. Rough edges to expect: hosted/mobile connectivity is still being built, and webhook
 triggers currently use the local receiver rather than an always-on hosted relay.
-Hosted voice needs an ElevenLabs or Fish Audio key; built-in Mac and local Chatterbox voices need no cloud key. Calls are macOS-only for now (they ride the same on-device dictation as
-the composer mic) — see [`docs/voice-mode.md`](docs/voice-mode.md) for the design and the known gaps.
+Hosted voice needs an ElevenLabs or Fish Audio key; local Chatterbox voices need no cloud key. Built-in Mac voices and macOS call-mode code remain in the parked native source; Linux dictation and call mode are unavailable. See [`docs/voice-mode.md`](docs/voice-mode.md) for the historical design and current limits.
 
 Contributions welcome — the driver SPI in [`server/contracts.ts`](server/contracts.ts) is deliberately
 small; adding a provider is one file in [`server/drivers/`](server/drivers/) plus a one-line registration.

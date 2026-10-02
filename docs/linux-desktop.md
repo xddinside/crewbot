@@ -1,10 +1,13 @@
 # Ubuntu Desktop
 
-crewbot has an Ubuntu 24.04 LTS x86_64 desktop beta. The Electron package embeds the harness server, so
-installed builds do not require Node, pnpm, Swift, or a terminal at runtime. For giving a bot the same kind
-of Linux desktop on your own server instead of this machine, see [byo-vps.md](byo-vps.md).
+Linux is the only supported platform during active development. Ubuntu 24.04 LTS x86_64 is the package and CI
+reference. Package checks run through the required [Linux CI gate](../CONTRIBUTING.md#ci-in-one-glance) and the
+manual [Linux package workflow](../.github/workflows/package-linux.yml). Linux installed continuity and recovery
+acceptance remains pending. The Electron package embeds the harness server, so installed builds do not require Node,
+pnpm, or a terminal at runtime. See the [platform support guide](platform-support.md) for scope and limits. For a bot's
+Linux desktop on your own server, see [byo-vps.md](byo-vps.md).
 
-## What works
+## Current Linux behavior
 
 - The native Electron window and embedded crewbot server on GNOME Xorg and GNOME Wayland.
 - Local Claude, Codex, Grok, Gemini, and other configured agent CLIs.
@@ -28,17 +31,15 @@ CUA supply-chain work is tracked in [issue #113](https://github.com/xddinside/cr
 [issue #79](https://github.com/xddinside/crewbot/issues/79), and guarded GNOME/Wayland support in
 [issue #109](https://github.com/xddinside/crewbot/issues/109).
 
-## Download packages
+## Linux package artifacts
 
-Choose one Ubuntu 24.04 x86_64 package from the latest release:
-
-- [Debian package (`crewbot-amd64.deb`)](https://github.com/xddinside/crewbot/releases/latest/download/crewbot-amd64.deb) — recommended; APT installs its desktop dependencies and configures the bundled bot browser's sandbox.
-- [Portable AppImage (`crewbot.AppImage`)](https://github.com/xddinside/crewbot/releases/latest/download/crewbot.AppImage) — does not install system files.
-- [SHA-256 checksums](https://github.com/xddinside/crewbot/releases/latest/download/SHA256SUMS-ubuntu-x64.txt)
-
-Versioned packages and previous releases remain available on the
-[releases page](https://github.com/xddinside/crewbot/releases).
-
+The manual [Linux package workflow](../.github/workflows/package-linux.yml) produces the
+`crewbot-ubuntu-${version}-x64` artifact with `crewbot-${version}-amd64.deb`,
+`crewbot-${version}-x86_64.AppImage`, stable names `crewbot-amd64.deb` and `crewbot.AppImage`, and
+`SHA256SUMS-ubuntu-x64.txt`. The release updater feed is `latest-linux.yml`; it records versioned package names,
+SHA-512 hashes, and sizes. These are the asset names for an approved release. Linux installed acceptance remains
+pending. See [package acceptance guidance](../CONTRIBUTING.md#linux-package-workflow) and the
+[releases page](https://github.com/xddinside/crewbot/releases) for published artifacts.
 ## Build packages
 
 Requirements for building from source:
@@ -143,7 +144,7 @@ Restart crewbot after installing or signing in to a CLI.
 
 ## Xorg and Wayland
 
-The shell, chat, cloud computers, connected apps, and preview-only capture work in both GNOME session types.
+The documented Ubuntu 24.04 GNOME coverage includes the shell, chat, cloud computers, connected apps, and preview-only capture in both session types. This evidence does not close the separate Linux installed continuity and recovery acceptance.
 The Wayland chooser/select/persistent-stream/cancel/end/retry lifecycle has been validated in a real Ubuntu
 24.04 GNOME Wayland session. crewbot detects Wayland before XWayland when both `WAYLAND_DISPLAY` and
 `DISPLAY` exist, so capture cannot accidentally bypass portal-mediated behavior.
