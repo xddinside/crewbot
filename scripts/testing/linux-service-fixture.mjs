@@ -199,7 +199,12 @@ export function requireNativeSystemd({ repoRoot }) {
     fail(`refusing to run: systemctl resolves to ${realSystemctl}, not the distribution's systemd client`);
   }
   const version = run("systemctl", ["--version"], { allowFailure: true });
-  if (version.status !== 0 || !/\+SYSTEMD \d/.test(version.stdout)) {
+  // The real client prints `systemd <version>` as its first line, followed by a
+  // feature line whose tokens vary by distro. Match the first line, not a
+  // feature token: Ubuntu 24.04's line has no `+SYSTEMD`, so asserting on one
+  // rejects the genuine article.
+  const versionLine = version.stdout.split("\n", 1)[0].trim();
+  if (version.status !== 0 || !/^systemd \d+/.test(versionLine)) {
     fail(`refusing to run: ${realSystemctl} is not the real systemd client\n${version.stdout}\n${version.stderr}`);
   }
   const systemState = stdout("systemctl", ["is-system-running"], { allowFailure: true });
@@ -213,7 +218,7 @@ export function requireNativeSystemd({ repoRoot }) {
     fail(`expected a source checkout with server/openmausbot.ts under ${repoRoot}`);
   }
   step(`native systemd confirmed: PID 1=${init}, ${version.stdout.split("\n")[0]}, systemctl=${realSystemctl}, system=${systemState}`);
-  return { init, systemctl: realSystemctl, systemdVersion: version.stdout.split("\n")[0].trim(), systemState };
+  return { init, systemctl: realSystemctl, systemdVersion: versionLine, systemState };
 }
 
 /** The unprivileged account that owns the service, never root. */

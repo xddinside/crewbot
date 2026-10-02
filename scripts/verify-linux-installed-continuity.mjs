@@ -262,7 +262,6 @@ async function main() {
     const ownedDisplay = startOwnedDisplay(fixture);
     fixture.stopped.push(() => ownedDisplay.stop());
     const ownedBus = startOwnedSessionBus(fixture);
-    fixture.stopped.push(() => ownedBus.stop());
     const baseEnv = fixtureBaseEnv(fixture, { display: ownedDisplay.display, dbusAddress: ownedBus.address });
     step("session", `owned display ${ownedDisplay.display} and session bus ${ownedBus.address}`);
     keyring = startOwnedKeyring({ env: baseEnv, password: syntheticSecret });

@@ -181,23 +181,48 @@ export async function startOwnedDisplay(fixture) {
 }
 
 /** This fixture's own session bus, with a socket inside the fixture root so
- * nothing can resolve to the runner's login bus. `--fork --print-pid` hands
- * back both the address and a pid this fixture can terminate. */
+ * nothing can resolve to the runner's login bus.
+ *
+ * The bus is spawned with `--nofork` and kept as a child, so its pid is the
+ * spawned child's pid rather than a number parsed out of `--print-pid`. That
+ * matters: `dbus-daemon --fork --print-pid` is parsed differently across the
+ * distro versions these runners carry, and some reject the flag outright with
+ * `Invalid file descriptor: "--print-pid"`, which fails the run before it
+ * starts.
+ *
+ * Readiness is the socket file appearing rather than `--print-address` output:
+ * waiting on the child's stdout needs a live event loop to drain the pipe, which
+ * a synchronous poll cannot provide, and the address is already fully determined
+ * by the socket path this fixture chose. */
 export function startOwnedSessionBus(fixture) {
   const socket = join(fixture.runtime, "dbus-session");
-  const printed = execFileSync(
+  const address = `unix:path=${socket}`;
+  const child = spawn(
     "dbus-daemon",
-    ["--session", "--fork", "--print-address", "--print-pid", `--address=unix:path=${socket}`],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 10_000 },
+    ["--session", "--nofork", `--address=${address}`],
+    { stdio: ["ignore", "pipe", "pipe"] },
   );
-  const [address, pid] = printed.trim().split("\n").map((line) => line.trim());
-  if (!address?.startsWith("unix:")) throw new Error(`dbus-daemon printed no usable address: ${printed}`);
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    if (existsSync(socket)) break;
+    if (child.exitCode !== null) {
+      throw new Error(`dbus-daemon exited with ${child.exitCode} before creating ${socket}: ${stderr}`);
+    }
+    execFileSync("sleep", ["0.1"], { stdio: "ignore" });
+  }
+  if (!existsSync(socket)) {
+    try { child.kill("SIGKILL"); } catch { /* already gone */ }
+    throw new Error(`dbus-daemon never created ${socket} within 10s: ${stderr}`);
+  }
   const owned = {
     address,
-    pid: Number(pid),
+    pid: child.pid,
     socket,
     stop() {
-      try { process.kill(Number(pid), "SIGTERM"); } catch { /* already gone */ }
+      try { child.kill("SIGTERM"); } catch { /* already gone */ }
     },
   };
   fixture.own(() => owned.stop());
