@@ -37,8 +37,11 @@ Run app development servers through `portless`.
 Choosing checks, or reproducing a CI failure, starts with
 [`CONTRIBUTING.md`](CONTRIBUTING.md#ci-in-one-glance): CI shards the suite four
 ways, and the `pre-push` hook already runs lint, typecheck, and the locale
-check. `pnpm run checks` runs that battery with bounded output, and
-`pnpm ci:wait` waits for CI in one blocking call.
+check. When available in this checkout, `pnpm run checks` runs that battery
+with bounded output, and `pnpm ci:wait` waits for CI in one blocking call.
+Otherwise run `pnpm lint`, `pnpm typecheck`, and `pnpm i18n:check` with
+checkout-local logs, then `gh pr checks <number> --watch --interval 30`.
+Never borrow root-bound unpublished helpers from another checkout.
 
 For distributing an implementation or review plan across agents, use
 [`parallel-work`](.agents/skills/parallel-work/SKILL.md) to scope tickets,
