@@ -488,7 +488,9 @@ jobs:
             done
           }
           ensure_draft "$GITHUB_REPOSITORY" --target "$SHA" \
-            --draft --title "crewbot $VERSION" --generate-notes
+            --draft --title "crewbot $VERSION" \
+            --notes "This release provides Linux x86_64 DEB and AppImage artifacts. Native Android, iOS, macOS, and Windows support is parked; their proof is deferred, not passed." \
+            --generate-notes
           target=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)
           target_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$target" --jq .sha)
           test "$target_sha" = "$SHA" || {
