@@ -497,6 +497,15 @@ function buildInterruptedCutover(dataDir, home) {
   // is no receipt to build the crash window from.
   stopUnit(LEGACY_UNIT);
   assert(!unitIsActive(LEGACY_UNIT), "the legacy unit is stopped before the interrupted cutover is reconstructed");
+  // `migrateLegacyDataDir` refuses to move a legacy root into a destination that
+  // already exists unless it holds a migration journal. State that precondition
+  // explicitly, so a leftover root from a previous case is reported here rather
+  // than surfacing as a missing receipt several steps later.
+  const destinationJournal = join(dataDir, ".crewbot-migration", "journal.json");
+  assert(
+    !existsSync(dataDir) || existsSync(destinationJournal),
+    `the Crewbot root ${dataDir} already exists without a migration journal, so the real migration would refuse to move the legacy root into it`,
+  );
   const script = [
     `const { migrateLegacyDataDir } = await import(${JSON.stringify(join(REPO_ROOT, "electron", "legacy-data-dir.mjs"))});`,
     "migrateLegacyDataDir(process.argv[1], { home: process.argv[2] });",
