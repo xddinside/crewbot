@@ -20,6 +20,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Verify release and asset names
         env:
           GH_TOKEN: ${{ github.token }}
@@ -36,21 +39,10 @@ jobs:
           mkdir assets
           gh release download "$TAG" --repo xddinside/crewbot --dir assets
           required=(
-            latest-linux.yml latest-mac.yml latest.yml
+            latest-linux.yml
             "crewbot-$version-amd64.deb"
-            "crewbot-$version-arm64.dmg"
-            "crewbot-$version-arm64.dmg.blockmap"
-            "crewbot-$version-arm64.zip"
-            "crewbot-$version-arm64.zip.blockmap"
-            "crewbot-$version-setup.exe"
-            "crewbot-$version-setup.exe.blockmap"
-            "crewbot-$version-x64.dmg"
-            "crewbot-$version-x64.dmg.blockmap"
-            "crewbot-$version-x64.zip"
-            "crewbot-$version-x64.zip.blockmap"
             "crewbot-$version-x86_64.AppImage"
-            crewbot-amd64.deb crewbot-intel.dmg crewbot-setup.exe
-            crewbot.AppImage crewbot.dmg SHA256SUMS-ubuntu-x64.txt
+            crewbot-amd64.deb crewbot.AppImage SHA256SUMS-ubuntu-x64.txt
           )
           for file in "${required[@]}"; do
             test -s "assets/$file" || { echo "::error::$TAG is missing $file"; exit 1; }
@@ -63,36 +55,4 @@ jobs:
           found=$(find assets -maxdepth 1 -type f | wc -l | tr -d ' ')
           test "$found" -eq "${#required[@]}" || {
             echo "::error::$TAG has an unexpected asset set"; find assets -maxdepth 1 -type f -printf '%f\n'; exit 1; }
-          node --input-type=module - "$version" <<'EOF'
-          import { createHash } from "node:crypto";
-          import { readFileSync, statSync } from "node:fs";
-          import { join } from "node:path";
-          const version = process.argv[2];
-          const expected = new Map([
-            ["latest-mac.yml", [
-              `crewbot-${version}-x64.zip`, `crewbot-${version}-arm64.zip`,
-              `crewbot-${version}-x64.dmg`, `crewbot-${version}-arm64.dmg`,
-            ]],
-            ["latest.yml", [`crewbot-${version}-setup.exe`]],
-            ["latest-linux.yml", [`crewbot-${version}-x86_64.AppImage`, `crewbot-${version}-amd64.deb`]],
-          ]);
-          const sha512 = (file) => createHash("sha512").update(readFileSync(join("assets", file))).digest("base64");
-          let bad = 0;
-          for (const [feed, names] of expected) {
-            const text = readFileSync(join("assets", feed), "utf8");
-            const entries = [...text.matchAll(/url:\s+(\S+)[\s\S]*?sha512:\s+(\S+)\n\s+size:\s+(\d+)/g)];
-            if (JSON.stringify(entries.map((entry) => entry[1]).sort()) !== JSON.stringify([...names].sort())) {
-              console.error(`wrong CrewBot asset paths in ${feed}`);
-              bad += 1;
-              continue;
-            }
-            for (const [, name, digest, size] of entries) {
-              if (sha512(name) !== digest || statSync(join("assets", name)).size !== Number(size)) {
-                console.error(`CrewBot feed mismatch: ${feed}`);
-                bad += 1;
-              }
-            }
-          }
-          if (bad) process.exit(1);
-          console.log(`ok: ${version} has CrewBot-only release names and valid updater feeds`);
-          EOF
+          node scripts/verify-linux-release-assets.mjs assets "$version" --allow-npm

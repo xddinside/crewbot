@@ -8,13 +8,8 @@ protocols:
   - name: OpenMausBot companion compatibility
     schemes: [openmausbot]
 
-# In-app auto-update reads latest-mac.yml + the .zip (macOS) or latest.yml +
-# the NSIS .exe (Windows) from the PUBLIC releases in this source repo.
-# Public → no token on users' machines. Baked into
-# app-update.yml; both metadata files are emitted here even with
-# --publish never, and must be uploaded to the GitHub release alongside the
-# artifacts — a release missing latest.yml leaves every Windows install
-# stranded on its installed version.
+# Linux is the active release channel. Parked macOS and Windows builds retain
+# their updater identities and recipes for explicit manual builds.
 publish:
   - provider: github
     owner: xddinside
