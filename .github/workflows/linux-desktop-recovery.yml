@@ -80,6 +80,23 @@ jobs:
           dbus dbus-x11 imagemagick openbox x11-utils xdotool xvfb
           libnotify4 libsecret-1-0 libnss3 libasound2t64 libgbm1 libgtk-3-0 libxss1
           libxtst6 xdg-utils libdrm2
+      # The package's own post-install refuses to run unless /opt is a real
+      # root-owned 0755 directory: it treats anything else as an unsafe ancestor
+      # for a root-owned /opt/crewbot. GitHub's runner image ships /opt as 0775,
+      # so install the package on a parent that matches a normal Ubuntu machine.
+      # This is the same recipe `ci.yml` and `package-linux.yml` already use; the
+      # product check is left intact rather than weakened for the fixture.
+      - name: Match a normal Ubuntu package parent on the ephemeral runner
+        run: |
+          set -euo pipefail
+          test ! -L /opt
+          test "$(stat -c '%F %U:%G' /opt)" = "directory root:root"
+          case "$(stat -c '%a' /opt)" in
+            755) ;;
+            775|777) sudo chmod 0755 /opt ;;
+            *) echo "Unexpected /opt mode: $(stat -c '%a' /opt)" >&2; exit 1 ;;
+          esac
+          test "$(stat -c '%U:%G %a' /opt)" = "root:root 755"
       - name: Prove the job carries no desktop or login session
         run: |
           set -euo pipefail

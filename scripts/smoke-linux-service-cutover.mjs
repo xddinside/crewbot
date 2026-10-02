@@ -328,7 +328,11 @@ function resetRoots({ label }) {
     if (problem) fail(`${label}: could not remove owned unit file ${unitFile(name)}: ${problem}`);
   }
   systemctlOk(["daemon-reload"]);
-  systemctlOk(["reset-failed"]);
+  // After the unit files are gone the manager has nothing loaded, and a
+  // manager-wide `reset-failed` exits non-zero in exactly that state. The point
+  // here is to clear stale state between cases, so tolerate an empty manager
+  // instead of failing the case on a cleanup step.
+  systemctl(["reset-failed"], { allowFailure: true });
   for (const name of [".openmausbot", ".crewbot"]) {
     const problem = removeQuietly(join(evidence.environment.home, name));
     if (problem) fail(`${label}: could not remove owned data root ${name}: ${problem}`);
@@ -565,6 +569,9 @@ function cleanUp() {
     report.removed.push(`systemctl disable ${unit} -> exit ${disabled.status}`);
   }
   systemctl(["daemon-reload"], { allowFailure: true });
+  // A manager-wide `reset-failed` exits non-zero when no unit is loaded, which
+  // is the normal state late in teardown. Cleanup must still remove and report
+  // what it owns, so tolerate that rather than failing on an empty manager.
   systemctl(["reset-failed"], { allowFailure: true });
   for (const name of [CREWBOT_UNIT, LEGACY_UNIT, LEGACY_BACKUP]) {
     const path = unitFile(name);
@@ -573,6 +580,9 @@ function cleanUp() {
     else report.removed.push(`unit file ${path}`);
   }
   systemctl(["daemon-reload"], { allowFailure: true });
+  // A manager-wide `reset-failed` exits non-zero when no unit is loaded, which
+  // is the normal state late in teardown. Cleanup must still remove and report
+  // what it owns, so tolerate that rather than failing on an empty manager.
   systemctl(["reset-failed"], { allowFailure: true });
   for (const unit of OWNED_UNITS) {
     const state = systemctlProp(unit, "LoadState");
