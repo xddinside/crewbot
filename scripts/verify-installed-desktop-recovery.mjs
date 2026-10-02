@@ -307,13 +307,31 @@ async function main() {
 
     const installLog = spawnSync("sudo", ["dpkg", "-i", deb], { encoding: "utf8" });
     if (installLog.status !== 0) {
-      // The package declares its own dependencies; `dpkg -i` cannot fetch
-      // them, so the one supported repair is `apt-get -f`, and its output is
-      // kept for the diagnosis when even that is not enough.
-      const repair = spawnSync("sudo", ["apt-get", "install", "-f", "-y"], { encoding: "utf8" });
-      writeFileSync(join(fixture.logs, "dpkg-install.log"), `${installLog.stdout}\n${installLog.stderr}\n${repair.stdout}\n${repair.stderr}`);
-      step("dependency repair", `exit ${repair.status}`);
-      throw new Error(`installing the candidate package failed: ${installLog.stderr || installLog.stdout}`);
+      // `dpkg -i` cannot fetch the dependencies the package declares, and the
+      // `apt-get -f` repair needs package lists plus those dependencies already
+      // selected. Install them explicitly, then let apt configure. The runner
+      // image carries none of them, so without this the install fails with
+      // `libnotify4`/`libsecret-1-0` not installed.
+      const repair = spawnSync(
+        "sudo",
+        [
+          "apt-get", "install", "-y", "--no-install-recommends",
+          // Electron's packaged runtime dependencies that the runner image omits.
+          "libnotify4", "libsecret-1-0", "libnss3", "libasound2t64", "libgbm1",
+          "libgtk-3-0", "libxss1", "libxtst6", "xdg-utils", "libdrm2",
+        ],
+        { encoding: "utf8" },
+      );
+      writeFileSync(
+        join(fixture.logs, "dpkg-install.log"),
+        `${installLog.stdout}\n${installLog.stderr}\n${repair.stdout}\n${repair.stderr}`,
+      );
+      step("dependency install", `exit ${repair.status}`);
+      const configure = spawnSync("sudo", ["apt-get", "install", "-f", "-y"], { encoding: "utf8" });
+      step("dependency repair", `exit ${configure.status}`);
+      if (configure.status !== 0) {
+        throw new Error(`installing the candidate package failed: ${configure.stderr || configure.stdout}`);
+      }
     }
     installed = true;
     const installedVersion = spawnSync("dpkg-query", ["-W", "-f=${Version}", "crewbot"], { encoding: "utf8" }).stdout.trim();

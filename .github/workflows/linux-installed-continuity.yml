@@ -72,6 +72,8 @@ jobs:
         run: >-
           sudo apt-get update && sudo apt-get install -y
           dbus dbus-x11 gnome-keyring libglib2.0-bin libsecret-tools x11-utils xvfb
+          libnotify4 libsecret-1-0 libnss3 libasound2t64 libgbm1 libgtk-3-0 libxss1
+          libxtst6 xdg-utils libdrm2
 
       # The workflow clears every session variable, so this process inherits no
       # display, no session bus and no keyring. The fixture starts its own Xvfb

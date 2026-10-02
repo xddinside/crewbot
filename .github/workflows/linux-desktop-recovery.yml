@@ -78,6 +78,8 @@ jobs:
         run: >-
           sudo apt-get update && sudo apt-get install -y
           dbus dbus-x11 imagemagick openbox x11-utils xdotool xvfb
+          libnotify4 libsecret-1-0 libnss3 libasound2t64 libgbm1 libgtk-3-0 libxss1
+          libxtst6 xdg-utils libdrm2
       - name: Prove the job carries no desktop or login session
         run: |
           set -euo pipefail
