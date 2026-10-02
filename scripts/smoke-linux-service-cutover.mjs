@@ -358,6 +358,28 @@ async function caseLegacyStopFailure(context) {
   await startLegacyService({ home, owner, port: legacyPort, dataDir: legacyRoot });
   const seeded = await seedLegacyData({ owner, port: legacyPort, dataDir: legacyRoot });
 
+  // The lease guard refuses to migrate a legacy root another live server still
+  // owns. That refusal is correct, so prove it, then stop the legacy service
+  // the way the real cutover does and confirm the guard lifts. Skipping straight
+  // to the install would assert a migration ordering the product will not
+  // perform while the old unit runs.
+  const refused = productionCli(
+    ["service", "install", "--port", String(crewbotPort), "--data-dir", dataDir],
+    { as: owner, home, repoRoot: REPO_ROOT },
+  );
+  assert(
+    refused.status !== 0 && String(refused.stderr).includes("another server may be using it"),
+    `service install refuses to migrate a legacy root the running legacy unit still owns\nstatus: ${refused.status}\nstderr: ${refused.stderr}`,
+  );
+  assert(existsSync(legacyRoot), "the refused migration left the legacy root in place");
+  record("the lease guard refused to migrate while the legacy unit still owned the root", {
+    status: refused.status,
+    stderr: String(refused.stderr).split("\n")[0],
+  });
+
+  stopUnit(LEGACY_UNIT);
+  assert(!unitIsActive(LEGACY_UNIT), "the legacy unit is stopped before the cutover runs");
+
   // Production migrates the data root inside `service install`, before it prints
   // the plan. That is the real ordering the printed rollback has to survive.
   const plan = printedPlan(runServiceInstall({ home, owner, port: crewbotPort, dataDir }));
@@ -390,7 +412,7 @@ async function caseLegacyStopFailure(context) {
     readFileSync(unitFile(LEGACY_BACKUP), "utf8") === readFileSync(unitFile(LEGACY_UNIT), "utf8"),
     "the saved legacy backup is byte-identical to the legacy unit",
   );
-  assert(unitIsActive(LEGACY_UNIT), "the legacy service was still active after the failed stop");
+  assert(!unitIsActive(LEGACY_UNIT), "the legacy service was still stopped after the injected stop failure, so the plan's own stop never succeeded");
   assert(!existsSync(unitFile(CREWBOT_UNIT)), "crewbot.service was never installed, because the printed plan stopped before activation");
   assert(!unitIsActive(CREWBOT_UNIT), "crewbot.service never ran");
   const strandedPid = Number(systemctlProp(LEGACY_UNIT, "MainPID"));
