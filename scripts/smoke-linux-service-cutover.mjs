@@ -167,7 +167,15 @@ async function startLegacyService({ home, owner, port, dataDir }) {
     unitSha256: sha256(rendered.unit),
   });
   systemctlOk(["daemon-reload"]);
-  systemctlOk(["reset-failed", LEGACY_UNIT]);
+  // Confirm systemd actually adopted the file before driving it, so a unit that
+  // never loaded is reported as such instead of surfacing later as an opaque
+  // `reset-failed ... not loaded`. A pre-start `reset-failed` also exits
+  // non-zero for a unit that is loaded but has never failed, which is the normal
+  // state here, so it stays tolerant.
+  const loadState = systemctlProp(LEGACY_UNIT, "LoadState");
+  assert(loadState === "loaded", `${LEGACY_UNIT} reports LoadState=${loadState ?? "unknown"} after daemon-reload, so the installed unit file was not adopted`);
+  record("systemd adopted the legacy unit file", { unit: LEGACY_UNIT, loadState });
+  systemctl(["reset-failed", LEGACY_UNIT], { allowFailure: true });
   systemctlOk(["enable", "--now", LEGACY_UNIT]);
   await waitForHealth(port, { label: `legacy ${LEGACY_UNIT}` });
   assert(unitIsActive(LEGACY_UNIT), `${LEGACY_UNIT} is active before the cutover`);
