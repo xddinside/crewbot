@@ -1,0 +1,141 @@
+name: Parked platform CI
+
+# Native platform checks are retained as explicit opt-in proof while those
+# platforms are parked. Results do not gate Linux delivery.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vitest:
+    name: vitest (${{ matrix.os }}, shard ${{ matrix.shard }}/4)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+        shard: [1, 2, 3, 4]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prepare Electron test runtime
+        run: node --input-type=commonjs -e "require('electron')"
+      - name: Run tests
+        run: pnpm exec vitest run --shard=${{ matrix.shard }}/4 --reporter=default --reporter=github-actions
+      - name: Broker and Electron unit tests
+        if: matrix.shard == 1
+        run: pnpm broker:test && pnpm test:electron
+
+  packaged-server:
+    name: packaged server smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:packaged-server
+
+  windows-cua:
+    name: Windows CUA host smoke
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Smoke the staged Windows CUA host (no computer actions)
+        run: pnpm build:cua:win && pnpm smoke:cua-win
+
+  ios:
+    name: Swift tests + iOS build + thread UI
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Swift package tests
+        run: swift test --package-path ios
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          cd ios
+          xcodegen generate
+      - name: Build the simulator app
+        run: |
+          cd ios
+          xcodebuild \
+            -project OpenMausCompanion.xcodeproj \
+            -scheme OpenMausCompanion \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Verify thread navigation on disposable iPhone and iPad simulators
+        run: bash scripts/verify-ios-thread-navigation-ci.sh
+      - name: Keep native thread test results and screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ios-thread-ui-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/omb-ios-threads-*.xcresult
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 7
+
+  android:
+    name: Kotlin tests + Android build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+          cache-path: |
+            ~/.gradle/caches
+            ~/.m2/repository/org/robolectric
+      - name: Kotlin tests and debug / preview APKs
+        run: |
+          cd android
+          ./gradlew --no-daemon :core:test :app:testDebugUnitTest :app:assembleDebug :app:assemblePreview
+      - name: Upload the installable Android preview
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-threads-preview-${{ github.sha }}-${{ github.run_attempt }}
+          path: android/app/build/outputs/apk/preview/app-preview.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload the Android test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-test-reports
+          path: |
+            android/core/build/reports/tests
+            android/core/build/test-results
+            android/app/build/reports/tests
+            android/app/build/test-results
+          if-no-files-found: warn
+          retention-days: 7
