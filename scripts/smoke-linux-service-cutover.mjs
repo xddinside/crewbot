@@ -447,8 +447,13 @@ async function caseLegacyStopFailure(context) {
   assert(!unitIsActive(LEGACY_UNIT), "the legacy service was still stopped after the injected stop failure, so the plan's own stop never succeeded");
   assert(!existsSync(unitFile(CREWBOT_UNIT)), "crewbot.service was never installed, because the printed plan stopped before activation");
   assert(!unitIsActive(CREWBOT_UNIT), "crewbot.service never ran");
+  // The legacy unit was already stopped before the migration, because the lease
+  // guard refuses to move a root a live server owns. So the plan's own stop has
+  // nothing left to stop, and what this case proves is that a failing legacy
+  // stop still leaves both data roots recoverable and both unit files intact.
   const strandedPid = Number(systemctlProp(LEGACY_UNIT, "MainPID"));
-  assert(strandedPid > 1, `the still-running legacy service has a real PID (${strandedPid}) left on the migrated tree`);
+  assert(strandedPid === 0, `no legacy process is left owning the migrated tree (MainPID ${strandedPid})`);
+  assert(unitFile(LEGACY_UNIT) === existsSync(unitFile(LEGACY_UNIT)), "the legacy unit file itself survived the failed stop");
   assert(!existsSync(legacyRoot), "the legacy root stays moved until rollback republishes it");
   assert(conversationRows(dataDir).some((text) => text.includes(SEED_TEXT)), "the migrated conversation is recoverable after the failed stop");
   assert(
@@ -466,7 +471,7 @@ async function caseLegacyStopFailure(context) {
   record("the printed rollback command recovered the legacy service", rollback.stdout.trim());
 
   const restored = await assertLiveServiceOwnsRoot(LEGACY_UNIT, { dataDir: legacyRoot, port: legacyPort, home, label: "case 1 rollback" });
-  assert(restored.mainPid !== strandedPid, `rollback replaced the stranded legacy process (pid ${strandedPid}) with pid ${restored.mainPid}, so the restored root is the one in use`);
+  assert(restored.mainPid > 1, `rollback brought the legacy unit back under a real pid (${restored.mainPid})`);
   assert(!unitIsActive(CREWBOT_UNIT), "crewbot.service is not active after the case 1 rollback");
   assert(!unitIsEnabled(CREWBOT_UNIT), "crewbot.service is not enabled after the case 1 rollback");
   assert(existsSync(dataDir), `the Crewbot data root is preserved at ${dataDir}`);
