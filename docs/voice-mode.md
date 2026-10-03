@@ -1,8 +1,10 @@
 # Voice in OpenMausBot
 
-Historical decision doc, 2026-08-14. It records the original ElevenLabs-only
-shape; the current product also supports Fish Audio, built-in Mac voices, and
-local Chatterbox. See the current [voice guide](../apps/docs/content/docs/features/voice-and-memory.mdx).
+Historical design doc, 2026-08-14. It records the original ElevenLabs-only
+shape. Later source added Fish Audio, built-in Mac voices, and local Chatterbox.
+macOS support is parked, so those native voice paths are retained implementation,
+not a current support promise. Linux dictation and call mode remain unavailable. See the current
+[voice guide](../apps/docs/content/docs/features/voice-and-memory.mdx).
 
 ## Shape
 
@@ -94,7 +96,7 @@ delegate real work to specialists over `ask_bot` — no new machinery required.
 
 ## Known gaps
 
-- **Calls are macOS-only**, because dictation is. The voice half works everywhere.
+- **Native call-mode source is macOS-specific and parked.** It is not current acceptance. Linux dictation and call mode are unavailable. Hosted voice playback is a separate feature.
 - **Rooms don't speak yet**, though per-bot voices already exist (`bot.voice`).
 - **No spend meter.** ElevenLabs bills per character. Auto-speak is off by
   default partly for that reason, but the app should eventually show usage.

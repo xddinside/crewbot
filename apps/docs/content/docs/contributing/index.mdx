@@ -4,14 +4,14 @@ description: Work with the project architecture and keep changes reviewable.
 icon: GitPullRequest
 ---
 
-OpenMausBot welcomes focused fixes and features. Read the repository's [CONTRIBUTING.md](https://github.com/milind-soni/OpenMausBot/blob/main/CONTRIBUTING.md) before opening a pull request.
+Linux is the only supported platform during active development. Arch Linux is the daily development target; Ubuntu 24.04 x86_64 is the package and CI reference. Native Android, iOS, macOS, and Windows work is parked and requires an explicit decision to resume. Read the repository [CONTRIBUTING.md](https://github.com/xddinside/crewbot/blob/main/CONTRIBUTING.md) and [platform support policy](https://github.com/xddinside/crewbot/blob/main/docs/platform-support.md) before opening a pull request.
 
 ## Before building
 
 - Search open and recently merged issues and pull requests.
 - Link overlapping work and coordinate with the current contributor.
 - Extend the existing harness, renderer, companion, and provider boundaries instead of adding a parallel system.
-- Open an issue before a large cross-platform change.
+- Get an explicit product decision before resuming work on a parked platform.
 
 ## Local checks
 
@@ -22,7 +22,11 @@ pnpm build
 pnpm check:electron
 ```
 
-Run the platform-specific package or native tests when your change touches macOS, Windows, Ubuntu, Cloudflare, or iOS.
+Run the Linux package checks for package changes. Native Android, iOS, macOS, and Windows builds are parked and do not count as Linux acceptance. Preserve shared protocol and security coverage used by Linux.
+
+The required CI aggregate is **Linux CI gate**. It covers static checks, four Ubuntu Vitest shards, packaged-server smoke, Electron smokes, FOSS checks, control-plane checks, UI smoke, and Linux package validation. Use the documented isolated fixtures for server or conversation changes. Linux installed continuity, credential migration, stable/development isolation, service rollback, and failed-turn recovery remain required proof.
+
+The manual [Linux package workflow](https://github.com/xddinside/crewbot/blob/main/.github/workflows/package-linux.yml) creates `crewbot-ubuntu-<version>-x64` with four DEB/AppImage files, a four-row `SHA256SUMS-ubuntu-x64.txt`, and `latest-linux.yml` updater metadata. The required **Linux CI gate** also runs a Cloudflare connector installer smoke on ARM64. That installer-only proof does not claim ARM64 desktop support. Package artifacts alone do not establish installed continuity.
 
 ## Keep PRs narrow
 

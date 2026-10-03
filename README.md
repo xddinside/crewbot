@@ -14,30 +14,14 @@ Talk to them like contacts. Watch them work. Approve what matters.
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
-![Electron](https://img.shields.io/badge/Electron-macOS%20%C2%B7%20Windows%20%C2%B7%20Ubuntu-2B2E3A?logo=electron&logoColor=9FEAF9)
+![Platform](https://img.shields.io/badge/development-Linux%20only-2B2E3A?logo=linux&logoColor=9FEAF9)
 ![Agents](https://img.shields.io/badge/agents-Claude%20·%20Codex-d97757)
 [![Release](https://img.shields.io/github/v/release/xddinside/crewbot?label=release&color=1084fe&cacheSeconds=300)](https://github.com/xddinside/crewbot/releases/latest)
 ![PRs](https://img.shields.io/badge/PRs-welcome-38d591)
 
 <br>
 
-<a href="https://github.com/xddinside/crewbot/releases/latest/download/crewbot.dmg">
-  <img src="https://img.shields.io/github/v/release/xddinside/crewbot?style=for-the-badge&label=%E2%AC%87%EF%B8%8F%20%20Download%20for%20Mac%20%28Apple%20silicon%29&labelColor=070707&color=1084fe&cacheSeconds=300" alt="Download the latest crewbot for Mac with Apple silicon (.dmg)" height="40">
-</a>
-&nbsp;
-<a href="https://github.com/xddinside/crewbot/releases/latest/download/crewbot-intel.dmg">
-  <img src="https://img.shields.io/github/v/release/xddinside/crewbot?style=for-the-badge&label=%E2%AC%87%EF%B8%8F%20%20Download%20for%20Mac%20%28Intel%29&labelColor=070707&color=2a9d8f&cacheSeconds=300" alt="Download the latest crewbot for Intel Macs (.dmg)" height="40">
-</a>
-&nbsp;
-<a href="https://github.com/xddinside/crewbot/releases/latest/download/crewbot-setup.exe">
-  <img src="https://img.shields.io/github/v/release/xddinside/crewbot?style=for-the-badge&label=%E2%AC%87%EF%B8%8F%20%20Download%20for%20Windows&labelColor=070707&color=4cc2ff&cacheSeconds=300" alt="Download the latest crewbot for Windows (.exe)" height="40">
-</a>
-&nbsp;
-<a href="https://github.com/xddinside/crewbot/releases/latest/download/crewbot-amd64.deb">
-  <img src="https://img.shields.io/github/v/release/xddinside/crewbot?style=for-the-badge&label=%E2%AC%87%EF%B8%8F%20%20Download%20for%20Ubuntu&labelColor=070707&color=e95420&cacheSeconds=300" alt="Download the latest crewbot for Ubuntu (.deb)" height="40">
-</a>
-
-<sub>[latest crewbot release](https://github.com/xddinside/crewbot/releases/latest) &nbsp;·&nbsp; macOS: Apple silicon & Intel &nbsp;·&nbsp; Windows: x64 installer &nbsp;·&nbsp; Ubuntu 24.04 x64: .deb or AppImage</sub>
+<sub>Linux is the only supported platform during active development. Native Android, iOS, macOS, and Windows clients are parked. Linux installed-package acceptance is still pending; see the [platform support guide](docs/platform-support.md).</sub>
 
 <br>
 
@@ -67,9 +51,8 @@ already have:
 - **Local first.** One small harness server on `127.0.0.1` owns every agent process. Transcripts, keys, and
   events live in `~/.crewbot`, not a cloud.
 - **Agents with hands.** Each bot can use a cloud Linux desktop, an isolated Local VM, or—where the platform
-  safety boundary is currently certified—your own computer, plus 500+ apps through Composio. Host control is
-  available on macOS and Ubuntu Xorg after explicit opt-in. Ubuntu Wayland host control remains disabled while
-  issue #345 is resolved.
+  safety boundary is currently certified—your own computer, plus 500+ apps through Composio. Host control is available on Ubuntu Xorg after explicit opt-in. Ubuntu Wayland host control remains disabled
+  behind its safety gate.
 
 ## Features
 
@@ -90,7 +73,7 @@ providers dimmed with the reason. Switch a bot's model mid-conversation.
 ### 🖥️ Every bot gets a computer
 
 Open the Computer panel and the bot's cloud desktop spins up on its own — live screen preview while it
-works, "Open desktop" to take over in your browser, or point the bot at *this Mac* instead.
+works, "Open desktop" to take over in your browser, or point the bot at *this computer* where the supported Linux session permits it.
 
 <img src="docs/screenshots/computer-panel.png" alt="Computer panel with live screen preview" width="100%">
 
@@ -198,7 +181,7 @@ expressions · screenshots of the bot's work folded into the transcript.
 | Service | Purpose |
 |---|---|
 | **Claude · Codex · Grok** | The agents behind every bot, run through their local CLIs |
-| **Electron** | Desktop shells for macOS, Windows, and Ubuntu |
+| **Electron** | Linux desktop shell; native shell source remains for parked platforms |
 | **React + Vite + Tailwind CSS** | The chat app UI and its build |
 | **Box** ([box.ascii.dev](https://box.ascii.dev)) | Each bot's cloud computer |
 | **Composio** | Connected apps — Gmail, Slack, GitHub, and more |
@@ -241,7 +224,7 @@ flowchart LR
 | API | `server/index.ts` | Bots, turns, approvals, model catalog, computer lifecycle, connectors, config — HTTP + SSE. |
 | Voice | `server/tts/` | ElevenLabs, Fish Audio, built-in Mac voices, or local Chatterbox. Cloud keys stay on the harness; markdown is rewritten into something worth hearing before it is spoken. |
 | App | `src/` | The chat shell. Server-backed store, one reducer, zero client-side transports. |
-| Desktop | `electron/` | macOS, Windows, and Ubuntu shells with an embedded harness and platform capabilities; Apple speech stays macOS-only, Ubuntu Xorg has opt-in local control, and Wayland remains fail-closed. |
+| Desktop | `electron/` | Linux shell with an embedded harness and platform capabilities; Ubuntu Xorg has opt-in local control, and Wayland remains fail-closed. Native platform adapters remain in source while those clients are parked. |
 
 ### Orchestrate crewbot over MCP
 
@@ -256,15 +239,10 @@ See [MCP server setup and tool reference](docs/mcp-server.md).
 
 **crewbot releases ([latest release](https://github.com/xddinside/crewbot/releases/latest)):** the harness server is embedded, so no separate server setup is required. The first fork release is being prepared; until it is published, install from source below.
 
-| | Download | Install |
-|---|---|---|
-| **macOS** (Apple silicon) | [crewbot.dmg](https://github.com/xddinside/crewbot/releases/latest/download/crewbot.dmg) | Drag it to Applications, open it. |
-| **macOS** (Intel) | [crewbot-intel.dmg](https://github.com/xddinside/crewbot/releases/latest/download/crewbot-intel.dmg) | Same app, built for Intel Macs. |
-| **Windows** (x64) | [crewbot-setup.exe](https://github.com/xddinside/crewbot/releases/latest/download/crewbot-setup.exe) | Run it — one-click, per-user, no admin rights. |
-| **Ubuntu 24.04** (x64) | [crewbot-amd64.deb](https://github.com/xddinside/crewbot/releases/latest/download/crewbot-amd64.deb) · [crewbot.AppImage](https://github.com/xddinside/crewbot/releases/latest/download/crewbot.AppImage) | Install the `.deb` with APT, or make the AppImage executable and run it. GNOME is the supported desktop. |
+Linux is the supported development platform. The Arch Linux workstation is the daily development target; Ubuntu 24.04 x86_64 is the package and CI reference. A public Linux release is not ready until installed acceptance is complete. See [platform support](docs/platform-support.md) and the [Ubuntu Desktop guide](docs/linux-desktop.md) for current coverage and package instructions.
 
 See the [Ubuntu Desktop guide](docs/linux-desktop.md) for installation, capabilities, and troubleshooting.
-Any desktop build can also pair as a client to another Windows, macOS, or Ubuntu host over Tailscale; see [desktop-to-desktop companion mode](docs/desktop-companion.md).
+The Linux desktop can pair to another Linux host over Tailscale; see [desktop-to-desktop companion mode](docs/desktop-companion.md).
 
 
 **From source:**
@@ -284,36 +262,23 @@ If the default Portless proxy ports are unavailable, start an unprivileged HTTPS
 `pnpm exec portless proxy start --port 1355 --https`, then prefix the development commands with
 `PORTLESS_PORT=1355`; the desktop uses the same port.
 
-Requirements: **macOS, Windows, or Ubuntu 24.04 x64**, **Node 24+**, **pnpm**, and at least one agent CLI — [`claude`](https://claude.com/claude-code),
+Requirements: **Linux x86_64** (Arch for daily development; Ubuntu 24.04 for package proof), **Node 24+**, **pnpm**, and at least one agent CLI — [`claude`](https://claude.com/claude-code),
 [`codex`](https://github.com/openai/codex), or [`grok`](https://x.ai/cli) — installed and logged in. They appear
 in the model picker automatically.
 
-Package the desktop application:
+Package the Linux desktop locally with `pnpm package:linux`. Release artifacts are produced by the manual Linux package workflow after its acceptance gates pass.
 
-```sh
-pnpm package:mac      # macOS: DMG + ZIP; requires Swift/Xcode tools
-pnpm package:win      # Windows: installer + ZIP
-pnpm package:linux    # Ubuntu x64: .deb + AppImage + verified CUA runtime
-```
+### Linux capability status
 
-### Desktop capability status
+Linux desktop behavior has distinct coverage. Arch Linux is the daily development environment. Ubuntu 24.04 x86_64 is the package and CI reference. The documented real desktop-session evidence covers GNOME Xorg and GNOME Wayland; it does not establish support for every distribution, desktop, or ARM64.
 
-| Capability | macOS | Ubuntu 24.04 Xorg | Ubuntu 24.04 Wayland |
-|---|---|---|---|
-| Packaged app, embedded harness, local agent CLIs | Supported | Beta | Beta |
-| Composio and Box/cloud computers | Supported | Beta | Beta |
-| Explicit preview-only local screen capture | Supported | Beta | Beta |
-| Bot control of this computer | Supported | Beta, explicit opt-in | Disabled: Wayland safety gate |
-| Native on-device dictation | Supported | Planned | Planned |
+| Capability | Ubuntu 24.04 Xorg | Ubuntu 24.04 Wayland |
+|---|---|---|
+| Packaged app, embedded harness, local agent CLIs | Package/CI reference | Package/CI reference |
+| Explicit preview-only local screen capture | Covered | Covered through GNOME portal |
+| Bot control of this computer | Explicit opt-in | Disabled by safety gate |
 
-The Linux preview is user-initiated and never enables local bot control or Auto routing. On Xorg, the reviewed Cua
-Driver 0.19.3 runtime starts only after explicit opt-in and without its full-screen cursor overlay. On Wayland the
-app never starts it and clears legacy opt-ins while that real-seat safety gate remains unresolved. Chat, preview,
-Cloud, and Local VM remain available on both sessions. See the [Ubuntu Desktop guide](docs/linux-desktop.md) and tracking
-issues [#29](https://github.com/milind-soni/OpenMausBot/issues/29),
-[#345](https://github.com/milind-soni/OpenMausBot/issues/345), and
-[#113](https://github.com/milind-soni/OpenMausBot/issues/113).
-
+Linux installed data, attachment, credential, service rollback, and recovery acceptance remains pending. Synthetic/Xvfb results do not replace installed-app evidence. See [platform support](docs/platform-support.md) and the [Ubuntu Desktop guide](docs/linux-desktop.md).
 The Linux packager downloads only the tag-pinned upstream archive during the build, verifies its size, SHA-256,
 complete member allowlist, and inner executable hashes, then packages only the CLI and cursor-theme sidecar. The
 installed app never downloads or self-updates native automation code. Cua's MIT notice, Inter's SIL OFL, a generated
@@ -338,7 +303,6 @@ pnpm typecheck     # app + server
 pnpm test          # unit, driver, API, and desktop capability tests
 pnpm build         # typecheck + production build
 pnpm check:electron # syntax-check Electron main/preload files
-pnpm package:win   # Windows installer + zip → release/
 pnpm package:linux # Ubuntu x64 .deb + AppImage → release/
 ```
 
@@ -363,11 +327,9 @@ dedicated receiver through a hosted relay or a tool such as Tailscale Funnel.
 ## Status
 
 Early but real — the loop works end to end: message → agent → streamed reply → tools → approvals →
-computer use. macOS, Windows, and Ubuntu 24.04 x64 have released builds; Ubuntu remains a beta with the
-capability limits above. Rough edges to expect: hosted/mobile connectivity is still being built, and webhook
+computer use. Linux is the only supported platform during active development. Linux installed-package acceptance remains pending; native Android, iOS, macOS, and Windows proof is deferred. Rough edges to expect: hosted/mobile connectivity is still being built, and webhook
 triggers currently use the local receiver rather than an always-on hosted relay.
-Hosted voice needs an ElevenLabs or Fish Audio key; built-in Mac and local Chatterbox voices need no cloud key. Calls are macOS-only for now (they ride the same on-device dictation as
-the composer mic) — see [`docs/voice-mode.md`](docs/voice-mode.md) for the design and the known gaps.
+Hosted voice needs an ElevenLabs or Fish Audio key; local Chatterbox voices need no cloud key. Built-in Mac voices and macOS call-mode code remain in the parked native source; Linux dictation and call mode are unavailable. See [`docs/voice-mode.md`](docs/voice-mode.md) for the historical design and current limits.
 
 Contributions welcome — the driver SPI in [`server/contracts.ts`](server/contracts.ts) is deliberately
 small; adding a provider is one file in [`server/drivers/`](server/drivers/) plus a one-line registration.

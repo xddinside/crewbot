@@ -64,19 +64,20 @@ jobs:
           test "${#deb[@]}" -eq 1
           sudo --preserve-env=CI,RUNNER_TEMP node scripts/smoke-deb-upgrade.mjs "${deb[0]}"
       - name: Prove the handed-over Ubuntu command installs
-        # The .deb path ends with a command on the user's clipboard, so the
-        # command is the deliverable. Runs it as root on a clean Ubuntu through
-        # a real shell, and checks that the `dpkg -i` it replaced still fails
-        # there — the reason the app must not run that itself.
+        # Use a fresh Ubuntu rootfs in a real chroot so package postinst stages
+        # AppArmor policy for the image instead of trying to load host policy.
+        # The chroot proves command dependency resolution and profile staging;
+        # native browser/AppArmor checks below remain separate acceptance.
         run: |
           deb=(release/*.deb)
           test "${#deb[@]}" -eq 1
-          pnpm smoke:deb-command "${deb[0]}"
-      - name: Prove an AppImage update lands on the launched path
-        # Installs the current published release over a copy named after a
-        # version, which is the shape that used to orphan the launcher. Runs
-        # against the real feed, so it also covers the differential download.
-        run: pnpm smoke:linux-update
+          pnpm smoke:deb-command "${deb[0]}" --runner-chroot
+      - name: Prove the freshly built AppImage update lands on the launched path
+        # The artifact-only workflow can run before a public release exists.
+        # Keep the real canonical-feed check in `pnpm smoke:linux-update` for
+        # post-publication proof; this mode serves the freshly built package
+        # bytes from an isolated loopback feed through the same packaged updater.
+        run: dbus-run-session -- xvfb-run -a pnpm exec electron --no-sandbox scripts/smoke-linux-update.mjs --fixture-feed
       - name: Configure Chromium sandbox for the unpacked app
         run: |
           sudo chown root:root release/linux-unpacked/chrome-sandbox
@@ -114,17 +115,34 @@ jobs:
               crewbot-amd64.deb > SHA256SUMS-ubuntu-x64.txt
           )
           echo "artifact-name=crewbot-ubuntu-${version}-x64" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "version: $version"
           echo "commit:  $(git rev-parse HEAD)"
           cat release/SHA256SUMS-ubuntu-x64.txt
-      - name: Upload smoke diagnostics on failure
+      - name: Verify the Linux artifact set and updater feed
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          cp "release/crewbot-$VERSION-amd64.deb" release-assets/
+          cp "release/crewbot-$VERSION-x86_64.AppImage" release-assets/
+          cp release/crewbot-amd64.deb release-assets/
+          cp release/crewbot.AppImage release-assets/
+          cp release/SHA256SUMS-ubuntu-x64.txt release-assets/
+          cp release/latest-linux.yml release-assets/
+          node scripts/verify-linux-release-assets.mjs release-assets "$VERSION"
+      - name: Upload diagnostic-only package and smoke logs on failure
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
-          name: crewbot-ubuntu-smoke-diagnostics
+          name: crewbot-ubuntu-diagnostic-only-${{ github.run_id }}
           path: |
             /tmp/omb-linux-smoke-*
             /tmp/omb-linux-smoke-runtime-*
+            ${{ runner.temp }}/omb-linux-smoke-deb-command-*.stdout.log
+            ${{ runner.temp }}/omb-linux-smoke-deb-command-*.stderr.log
+            release/*.deb
           if-no-files-found: warn
           include-hidden-files: true
           retention-days: 7
@@ -132,10 +150,6 @@ jobs:
         with:
           name: ${{ steps.release.outputs.artifact-name }}
           path: |
-            release/crewbot-*-amd64.deb
-            release/crewbot-*-x86_64.AppImage
-            release/crewbot-amd64.deb
-            release/crewbot.AppImage
-            release/SHA256SUMS-ubuntu-x64.txt
+            release-assets/*
           if-no-files-found: error
           retention-days: 14

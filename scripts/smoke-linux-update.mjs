@@ -1,10 +1,10 @@
 // End-to-end proof that an AppImage update lands on the path the user
-// launches, run against the real release feed.
+// launches, run against the canonical release feed or the local fixture feed.
 //
 // The unit tests drive AppImageUpdater.doInstall with hand-made files. This
 // drives the whole thing: the shipped bundle, extracted from the packaged
-// AppImage, checking the real canonical release feed, downloading the real
-// asset, and installing it over a copy that carries a version in its name —
+// AppImage, checking the selected feed, downloading its asset, and installing
+// it over a copy that carries a version in its name —
 // the exact shape that used to orphan the launcher.
 //
 // The current version is reported by the app adapter, not read from the file,
@@ -13,7 +13,9 @@
 //
 // Runs under Electron (electron-updater needs its net stack):
 //   xvfb-run -a pnpm exec electron scripts/smoke-linux-update.mjs
+//   xvfb-run -a pnpm exec electron scripts/smoke-linux-update.mjs --fixture-feed
 import { createHash } from "node:crypto";
+import { createServer } from "node:http";
 import {
   copyFileSync,
   existsSync,
@@ -22,6 +24,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
@@ -38,9 +41,12 @@ const releaseDir = path.join(root, "release");
 // A version older than the oldest release we would ever test against, so the
 // published feed is always an upgrade regardless of what is packaged here.
 const PRETEND_VERSION = "0.0.1";
+const fixtureFeed = process.argv.includes("--fixture-feed");
+let fixtureServer;
 
 function fail(message) {
   console.error(`[smoke-linux-update] ${message}`);
+  if (fixtureServer?.listening) fixtureServer.close();
   app.exit(1);
 }
 
@@ -58,6 +64,58 @@ function onlyAppImage() {
   const matches = readdirSync(releaseDir).filter((name) => name.endsWith(".AppImage"));
   if (matches.length !== 1) throw new Error(`expected one packaged AppImage, found ${matches.length}`);
   return path.join(releaseDir, matches[0]);
+}
+
+async function startFixtureFeed(packaged) {
+  const name = path.basename(packaged);
+  const feed = readFileSync(path.join(releaseDir, "latest-linux.yml"));
+  const appImageEntry = [...feed.toString("utf8").matchAll(/url:\s+(\S+)[\s\S]*?sha512:\s+(\S+)\n\s+size:\s+(\d+)/g)]
+    .find(([, url]) => url === name);
+  if (!appImageEntry) throw new Error(`latest-linux.yml does not reference the built AppImage ${name}`);
+  if (appImageEntry[2] !== sha512(packaged) || Number(appImageEntry[3]) !== statSync(packaged).size) {
+    throw new Error(`latest-linux.yml hash or size does not match the built AppImage ${name}`);
+  }
+
+  const assets = new Map([
+    ["latest-linux.yml", { bytes: feed, contentType: "text/yaml; charset=utf-8" }],
+    [name, { bytes: readFileSync(packaged), contentType: "application/octet-stream" }],
+  ]);
+  fixtureServer = createServer((request, response) => {
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      response.writeHead(405).end();
+      return;
+    }
+    let assetName;
+    try {
+      assetName = decodeURIComponent(new URL(request.url ?? "/", "http://127.0.0.1").pathname.slice(1));
+    } catch {
+      response.writeHead(400).end();
+      return;
+    }
+    const asset = assets.get(assetName);
+    if (!asset) {
+      response.writeHead(404).end();
+      return;
+    }
+    response.writeHead(200, {
+      "content-type": asset.contentType,
+      "content-length": asset.bytes.byteLength,
+      "cache-control": "no-store",
+    });
+    response.end(request.method === "HEAD" ? undefined : asset.bytes);
+  });
+  await new Promise((resolve, reject) => {
+    fixtureServer.once("error", reject);
+    fixtureServer.listen(0, "127.0.0.1", resolve);
+  });
+  const address = fixtureServer.address();
+  if (!address || typeof address === "string") throw new Error("loopback updater fixture did not bind a TCP port");
+  return `http://127.0.0.1:${address.port}/`;
+}
+
+function closeFixtureFeed() {
+  if (!fixtureServer?.listening) return Promise.resolve();
+  return new Promise((resolve, reject) => fixtureServer.close((error) => error ? reject(error) : resolve()));
 }
 
 async function main() {
@@ -105,13 +163,19 @@ async function main() {
   updater.updateConfigPath = updateConfig;
   updater.forceDevUpdateConfig = true;
   updater.autoDownload = false;
+  if (fixtureFeed) {
+    const url = await startFixtureFeed(packaged);
+    updater.setFeedURL({ provider: "generic", url, useMultipleRangeRequest: false });
+    updater.disableDifferentialDownload = true;
+    console.log(`[smoke-linux-update] checking local fixture feed at ${url}`);
+  }
   updater.logger = { info: log, warn: log, error: log, debug: () => {} };
 
   function log(...values) {
     console.log("   ", ...values.map(String));
   }
 
-  console.log("[smoke-linux-update] checking the real release feed…");
+  if (!fixtureFeed) console.log("[smoke-linux-update] checking the canonical release feed…");
   const result = await updater.checkForUpdates();
   if (!result?.updateInfo?.version) throw new Error("the feed returned no update");
   // A feed response alone is not an offer: a version comparison that decided
@@ -153,7 +217,7 @@ async function main() {
       "the launcher still points at a real file",
       execTarget === launched && existsSync(launched),
     ],
-    ["the file now holds the published build", sha512(launched) === expected.sha512],
+    ["the file now holds the offered build", sha512(launched) === expected.sha512],
     ["the relaunch uses the launched path", relaunched === launched],
   ];
 
@@ -164,12 +228,14 @@ async function main() {
   }
   if (failed > 0) {
     console.error(`[smoke-linux-update] ${failed} check(s) failed; workspace kept at ${workspace}`);
+    await closeFixtureFeed();
     app.exit(1);
     return;
   }
 
+  await closeFixtureFeed();
   rmSync(workspace, { recursive: true, force: true });
-  console.log(`[smoke-linux-update] OK — updated 0.0.1 → ${offered} in place`);
+  console.log(`[smoke-linux-update] OK — updated 0.0.1 → ${offered} in place${fixtureFeed ? " using local fixture bytes" : " from the canonical feed"}`);
   app.exit(0);
 }
 

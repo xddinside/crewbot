@@ -6,14 +6,13 @@ icon: AudioLines
 
 ## Spoken replies
 
-Pick a voice engine in App Settings, choose a voice, and use the speaker control on a response. Auto-speak can read new replies as they arrive. Four engines are available:
+Pick a voice engine in App Settings, choose a voice, and use the speaker control on a response. Auto-speak can read new replies as they arrive. The supported Linux desktop offers these voice engines:
 
 - **ElevenLabs** — cloud voices, needs an API key.
 - **Fish Audio** — cloud voices from the Fish Audio library, needs its own API key.
-- **Built-in Mac voices** — the voices already installed on macOS, no key.
 - **Chatterbox (local)** — an open-source, MIT-licensed engine reached through an OpenAI-compatible server you configure. With a server on your own machine there is no cloud call; the address can also point at any HTTP(S) server you choose.
 
-The harness rewrites code-heavy Markdown into speech-friendly text before synthesis. Keys remain on the harness and never reach the renderer.
+The parked macOS source retains built-in system voices; macOS support is not current acceptance. The harness rewrites code-heavy Markdown into speech-friendly text before synthesis. Keys remain on the harness and never reach the renderer.
 
 ### Fish Audio
 
@@ -35,13 +34,11 @@ There is no API key. OpenMausBot sends the text to the configured server address
 
 ## Call mode
 
-On macOS, call mode combines native on-device speech recognition with the configured voice. It is deliberately half-duplex: the microphone pauses while the bot speaks to prevent the app from transcribing its own audio.
-
-Tool progress and approval requests can be narrated during a call so long-running work does not sound disconnected.
+The native macOS call-mode implementation is parked source, not a current supported feature. Linux call mode is unavailable. Its historical design combines on-device speech recognition with the configured voice and pauses the microphone during playback.
 
 ## Dictation
 
-The composer microphone uses Apple's local speech recognition in the macOS desktop build. Linux and Windows dictation are not currently shipped.
+Linux dictation is unavailable. The parked macOS source contains Apple local speech recognition; that implementation does not establish current support or acceptance.
 
 ## Memory
 

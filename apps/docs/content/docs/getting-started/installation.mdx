@@ -1,27 +1,51 @@
 ---
 title: Installation
-description: Install OpenMausBot on macOS, Windows, or Ubuntu.
+description: Set up OpenMausBot on Linux or build it from source.
 icon: Download
 ---
 
-## Download a released build
+## Linux release status
 
-Choose your computer below. Each link always downloads the latest published build.
+Linux is the only supported platform during active development. Arch Linux is the daily development target; Ubuntu 24.04 x86_64 is the package and CI reference. Linux installed continuity and recovery acceptance is still pending, so there is no supported public CrewBot Linux release to download yet.
 
-| Platform | Recommended package | Notes |
-|---|---|---|
-| macOS Apple silicon | [Download `.dmg`](https://github.com/milind-soni/OpenMausBot/releases/latest/download/OpenMausBot.dmg) | Signed and notarized. Drag to Applications. |
-| macOS Intel | [Download `.dmg`](https://github.com/milind-soni/OpenMausBot/releases/latest/download/OpenMausBot-intel.dmg) | Signed and notarized. |
-| Windows x64 | [Download installer](https://github.com/milind-soni/OpenMausBot/releases/latest/download/OpenMausBot-setup.exe) | Per-user installer; Windows signing is not yet available. |
-| Ubuntu 24.04 x64 | [Download `.deb`](https://github.com/milind-soni/OpenMausBot/releases/latest/download/OpenMausBot-amd64.deb) · [AppImage](https://github.com/milind-soni/OpenMausBot/releases/latest/download/OpenMausBot.AppImage) | The `.deb` is recommended; the AppImage is portable. |
+After acceptance and publication, the manual [Ubuntu package workflow](https://github.com/xddinside/crewbot/blob/main/.github/workflows/package-linux.yml) will provide the `crewbot-ubuntu-<version>-x64` artifact with:
 
-<Callout type="warn" title="Windows SmartScreen">
-  The Windows installer is not code-signed yet. Windows may show “Unknown publisher.” Verify that you downloaded it from the official OpenMausBot releases repository before choosing **More info → Run anyway**.
-</Callout>
+- `crewbot-<version>-amd64.deb`
+- `crewbot-<version>-x86_64.AppImage`
+- `crewbot-amd64.deb` and `crewbot.AppImage` stable names
+- `SHA256SUMS-ubuntu-x64.txt`, with four hash rows for the DEB and AppImage files
+- `latest-linux.yml`, with versioned package names, SHA-512 hashes, and file sizes
 
-## Install an agent CLI
+The Linux CI gate also retains an ARM64 Cloudflare connector installer smoke. That checks connector staging only; it does not establish ARM64 desktop support. See the [Linux platform support policy](https://github.com/xddinside/crewbot/blob/main/docs/platform-support.md) for acceptance status and coverage limits.
 
-OpenMausBot needs at least one supported agent engine installed and signed in. Claude and Codex are the most common starting points.
+## Build from source
+
+Use Linux x86_64 with Node.js 24 or newer, pnpm 10.33.0, and at least one authenticated agent CLI. The repository's [contribution guide](../contributing/index.mdx) lists the required checks.
+
+```bash
+git clone https://github.com/xddinside/crewbot.git
+cd crewbot
+corepack enable
+pnpm install --frozen-lockfile
+```
+
+Run the harness, web UI, and Electron shell in separate terminals. `pnpm dev` uses Portless for the web UI.
+
+```bash
+pnpm dev:server
+pnpm dev
+pnpm dev:desktop
+```
+
+For package build and Ubuntu desktop behavior, see the [Ubuntu desktop guide](https://github.com/xddinside/crewbot/blob/main/docs/linux-desktop.md).
+
+## Parked native platforms
+
+Native Android, iOS, macOS, and Windows support is parked. Their source and historical build instructions remain in the repository, but their builds and acceptance do not gate Linux delivery. Old OpenMausBot `.dmg` and `.exe` releases are upstream history, not CrewBot downloads. Android is reconsidered after dependable Linux daily use; other platforms require public release, demonstrated demand, and an explicit decision to resume support.
+
+## Agent CLI setup
+
+OpenMausBot needs at least one agent engine installed and signed in. Claude and Codex are common starting points.
 
 1. Install the CLI from its official provider.
 2. Run it once in a terminal and complete sign-in.
@@ -30,25 +54,6 @@ OpenMausBot needs at least one supported agent engine installed and signed in. C
 
 See [Agent engines](../providers/index.mdx) for the complete list and explicit path overrides.
 
-## Build from source
-
-Requirements: Node.js 24 or newer, pnpm 10.33.0, and at least one authenticated agent CLI.
-
-```bash
-git clone https://github.com/milind-soni/OpenMausBot.git
-cd OpenMausBot
-corepack enable
-pnpm install --frozen-lockfile
-```
-
-Run the harness, web UI, and Electron shell in separate terminals:
-
-```bash
-pnpm dev:server
-pnpm dev
-pnpm dev:desktop
-```
-
 ## Where data lives
 
-OpenMausBot stores its application data under `~/.openmausbot`. Electron window and browser data use the normal per-platform application data directory.
+Linux application data and configuration locations are described in the [Ubuntu desktop guide](https://github.com/xddinside/crewbot/blob/main/docs/linux-desktop.md). Preserve existing OpenMausBot data when upgrading or migrating; do not delete it as part of installation.
