@@ -41,6 +41,8 @@
     "dev:desktop": "node scripts/prepare-cloudflared.mjs --current && node scripts/run-development.mjs electron .",
     "build": "tsc -b && tsc -p tsconfig.server.json && vite build",
     "typecheck": "tsc -b && tsc -p tsconfig.server.json",
+    "checks": "node scripts/checks.mjs",
+    "ci:wait": "node scripts/ci-wait.mjs",
     "test": "vitest run && pnpm broker:test && pnpm test:electron && pnpm test:packaged-server",
     "test:electron": "node --test \"electron/*.node-test.mjs\" \"scripts/*.node-test.mjs\"",
     "bench:observation": "node --experimental-strip-types scripts/bench-observation.ts",
