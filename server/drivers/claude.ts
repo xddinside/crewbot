@@ -9,7 +9,7 @@
 //   - the bot's cloud computer (box.ascii.dev) via server/computer-proxy.ts
 //     — screenshot/exec/open_url, the CUA-on-the-box bridge
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join, dirname, isAbsolute, normalize } from "node:path";
@@ -207,7 +207,7 @@ export function claudeInheritWarning(env: NodeJS.ProcessEnv): ProviderSnapshot["
   return {
     title: "Bots inherit this machine's Claude Code setup",
     message:
-      "OMB_CLAUDE_INHERIT_USER_CONFIG=1 is set on the OpenMausBot process, so every Claude bot also loads this " +
+      "OMB_CLAUDE_INHERIT_USER_CONFIG=1 is set on the crewbot process, so every Claude bot also loads this " +
       "computer's own MCP servers, connectors, skills, hooks and personal CLAUDE.md on every turn — often thousands " +
       "of extra tokens per model call, and tools nobody gave the bot. Unless a bot genuinely needs a server from " +
       "your user-scope Claude config, remove the variable and restart; add the server under Settings → MCP servers " +
@@ -353,7 +353,7 @@ export function claudeCliUpdate(version: string | null, cli: string): ProviderSn
   const missing = (Object.keys(CLAUDE_FLAG_FLOORS) as (keyof typeof CLAUDE_FLAG_FLOORS)[])
     .filter((flag) => !claudeCliSupports(parsed, flag));
   const effects = [
-    ...(missing.includes("--autocompact") ? ["no compaction window picked by OpenMausBot"] : []),
+    ...(missing.includes("--autocompact") ? ["no compaction window picked by crewbot"] : []),
     ...(missing.includes("--setting-sources") ? ["bots still see this machine's own Claude Code setup"] : []),
     ...(missing.includes("--system-prompt-snapshot") ? ["coordinated resumed turns cannot refresh stale system prompts"] : []),
   ];
@@ -387,6 +387,7 @@ export const STATIC_CLAUDE_MODELS: ModelCatalog = {
   options: [
     { id: "claude-fable-5-1", label: "Claude Fable 5.1" },
     { id: "claude-fable-5", label: "Claude Fable 5" },
+    { id: "claude-opus-5-5", label: "Claude Opus 5.5", contextWindow: 1_000_000 },
     { id: "claude-opus-5", label: "Claude Opus 5" },
     { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
     { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
@@ -495,17 +496,17 @@ type AskBehavior = "allow" | "deny" | "answer";
 type AskResolutionSource = "user" | "timeout" | "system";
 
 const DENY_TIMEOUT_NOTE =
-  "OpenMausBot: nobody answered this permission request in time. Skip this action and finish what you can without it.";
-const QUESTION_TIMEOUT_NOTE = "OpenMausBot: nobody answered in time. Use your best judgment and continue.";
-const DUPLICATE_ASK_ID_NOTE = "OpenMausBot: duplicate ask id — skipping this request.";
+  "crewbot: nobody answered this permission request in time. Skip this action and finish what you can without it.";
+const QUESTION_TIMEOUT_NOTE = "crewbot: nobody answered in time. Use your best judgment and continue.";
+const DUPLICATE_ASK_ID_NOTE = "crewbot: duplicate ask id — skipping this request.";
 
 /** The system-source reply for an ask that outlives the turn — used both to
  * drain in-flight `pending` asks on close() and to answer one that arrives
  * on an already-closed broker (see the `closed` branch below). */
 function systemEndedReply(kind: Ask["kind"]): { behavior: AskBehavior; message: string } {
   return kind === "question"
-    ? { behavior: "answer", message: "OpenMausBot: the turn is ending — wrap up." }
-    : { behavior: "deny", message: "OpenMausBot: the turn ended" };
+    ? { behavior: "answer", message: "crewbot: the turn is ending — wrap up." }
+    : { behavior: "deny", message: "crewbot: the turn ended" };
 }
 
 /** The structured questions behind an ask, when it is one. Claude's own
@@ -560,13 +561,46 @@ export function brokerSocketCandidates(threadId: string, botId?: string): string
       .update(`${DATA_DIR}\0${process.pid}\0${botId ?? ""}\0${threadId}`)
       .digest("hex")
       .slice(0, 16);
-    return [base, join(tmpdir(), `omb-perm-${scope}.sock`)];
+    // Verification fixtures intentionally point TMPDIR inside their isolated
+    // data directory. That path can exceed macOS's sun_path limit too, so use
+    // the short system temp root and a private per-broker child directory.
+    return [base, join("/tmp", `omb-perm-${scope}`, "broker.sock")];
   }
   return [
     base,
     `${base}-${randomBytes(3).toString("hex")}`,
     `${base}-${randomBytes(3).toString("hex")}`,
   ];
+}
+
+function preparePrivateSocketDirectory(directory: string): boolean {
+  let created = false;
+  try {
+    mkdirSync(directory, { mode: 0o700 });
+    created = true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  }
+  try {
+    const directoryStat = lstatSync(directory);
+    const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
+    if (
+      !directoryStat.isDirectory() ||
+      directoryStat.isSymbolicLink() ||
+      (uid !== undefined && directoryStat.uid !== uid) ||
+      (directoryStat.mode & 0o077) !== 0
+    ) {
+      throw new Error("permission broker fallback directory must be private and owned by the current user");
+    }
+  } catch (error) {
+    if (created) {
+      try {
+        rmdirSync(directory);
+      } catch {}
+    }
+    throw error;
+  }
+  return created;
 }
 
 export async function createPermissionBroker(opts: {
@@ -680,8 +714,13 @@ export async function createPermissionBroker(opts: {
   // deny nobody could explain. Keep the turn fail-closed on total failure,
   // but leave an actionable diagnostic either way.
   let server: ReturnType<typeof createNetServer> | null = null;
+  let fallbackDirectoryToRemove: string | undefined;
   for (const [index, candidate] of opts.socketPaths.entries()) {
     const attempt = createNetServer(connectionHandler);
+    if (index > 0 && process.platform !== "win32") {
+      const directory = dirname(candidate);
+      if (preparePrivateSocketDirectory(directory)) fallbackDirectoryToRemove = directory;
+    }
     try {
       unlinkSync(candidate);
     } catch {}
@@ -710,7 +749,7 @@ export async function createPermissionBroker(opts: {
     }
     if (outcome === "listening") {
       if (index > 0) {
-        console.error(`permission broker: ${opts.socketPaths[0]} is still held — bound fallback ${candidate}`);
+        console.error(`permission broker: first candidate unavailable — bound fallback ${candidate}`);
       }
       boundPath = candidate;
       server = attempt;
@@ -722,6 +761,12 @@ export async function createPermissionBroker(opts: {
     try {
       attempt.close();
     } catch {}
+    if (fallbackDirectoryToRemove) {
+      try {
+        rmdirSync(fallbackDirectoryToRemove);
+      } catch {}
+      fallbackDirectoryToRemove = undefined;
+    }
     if (index === opts.socketPaths.length - 1) {
       console.error(`permission broker unavailable on ${candidate}: ${outcome.message}`);
       break;
@@ -757,6 +802,12 @@ export async function createPermissionBroker(opts: {
       try {
         unlinkSync(boundPath);
       } catch {}
+      if (fallbackDirectoryToRemove) {
+        try {
+          rmdirSync(fallbackDirectoryToRemove);
+        } catch {}
+        fallbackDirectoryToRemove = undefined;
+      }
     },
     /** Where the broker actually listens — argv for the proxy child must
      * use this, not the deterministic base, when a fallback was bound. */
@@ -1178,7 +1229,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           env: local.env,
         };
         // The isolated Local VM preserves the established pre-allow behavior.
-        // Host tools always route through OpenMausBot's permission broker.
+        // Host tools always route through crewbot's permission broker.
         if (!controlsHost) allowed.push("mcp__computer");
       }
       // peer-agent comms (list_bots/ask_bot) — the harness builds the whole
@@ -1671,7 +1722,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       });
 
       child.on("error", (e) => {
-        emit({ ...base(threadId, currentTurnId()), type: "runtime.error", ...describeSpawnFailure(e, config.cli) });
+        emit({ ...base(threadId, currentTurnId()), type: "runtime.error", ...describeSpawnFailure(e, config.cli, cwd) });
         settle(false, "spawn_error");
       });
 

@@ -31,11 +31,13 @@ import {
 } from "./container-computer.ts";
 import { VPS_CONTAINER_LABEL, VPS_IMAGE, VPS_MANAGED_LABEL, VPS_VIEWER_LABEL, vpsContainerName } from "./vps-computer.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { resolveDataDir } from "./testing/data-dir-guard.ts";
+import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const FAKE_CLI = join(SERVER_DIR, "testing", "fake-acp-cli.ts");
-const PORT = 18800 + Math.floor(Math.random() * 10_000);
-const BASE = `http://127.0.0.1:${PORT}`;
+let PORT = 0;
+let BASE = "";
 const IMAGE_ID = `sha256:${"a".repeat(64)}`;
 const CONTAINER_ID = "b".repeat(64);
 
@@ -172,9 +174,11 @@ posixOnly("VPS turn routing e2e (fake ACP fleet + fake docker over SSH)", () => 
   };
 
   beforeAll(async () => {
+    PORT = await freePortBlock([0, 1]);
+    BASE = `http://127.0.0.1:${PORT}`;
     chmodSync(FAKE_CLI, 0o755);
     home = mkdtempSync(join(tmpdir(), "omb-vps-routing-"));
-    mkdirSync(join(home, ".openmausbot"), { recursive: true });
+    mkdirSync(resolveDataDir({}, home), { recursive: true });
     const fakeBin = join(home, "fakebin");
     mkdirSync(fakeBin, { recursive: true });
     gateFile = join(home, "turn.gate");
@@ -203,7 +207,7 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
     writeFileSync(dockerLog, "");
 
     writeFileSync(
-      join(home, ".openmausbot", "config.json"),
+      join(resolveDataDir({}, home), "config.json"),
       JSON.stringify({
         instances: {
           vps: {
@@ -576,9 +580,12 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
         // both turns finish; the wait settles as free-and-continuing or as
         // stopped, depending on which turn ended first — never as an error
         writeFileSync(gateFile, "open");
-        await until(async () => (await botById(bot.id))?.busy === false, "both turns settling");
+        await until(async () => !(await taskBusy(refill.threadId)) && !(await taskBusy(check.threadId)), "both VPS tasks settling");
+        await until(async () => {
+          const names = await activities(refill.threadId);
+          return names.some((name) => name === "Computer free — continuing" || name === "Stopped waiting for the computer");
+        }, "the computer wait settling");
         const settled = await activities(refill.threadId);
-        expect(settled.some((name) => name === "Computer free — continuing" || name === "Stopped waiting for the computer")).toBe(true);
         expect(settled.join("|")).not.toMatch(/still busy|error/i);
         // the last thread out clears the claim: the alias can move again
         expect((await api("PUT", "/api/config", { vps: { sshAlias: "production-vps" } })).status).toBe(200);

@@ -7,6 +7,8 @@ const generatedPaths = [
   "dist-server",
   "release",
   "electron/resources/speech-helper",
+  "electron/resources/crewbot Speech.app",
+  "electron/resources/crewbot Recorder.app",
   "electron/resources/OpenMausBot Speech.app",
 ];
 

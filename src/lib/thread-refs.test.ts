@@ -124,14 +124,15 @@ describe("canonical thread links", () => {
 
   it("copies and parses one spelling, and rejects near-misses", () => {
     const link = threadRefUrl({ botId: "scout", threadId: uuid });
-    expect(link).toBe(`openmausbot://thread/${uuid}?bot=scout`);
+    expect(link).toBe(`crewbot://thread/${uuid}?bot=scout`);
     // the paste path accepts exactly what copy emits
     expect(parseThreadRefUrl(link)).toEqual({ threadId: uuid, botId: "scout" });
+    expect(parseThreadRefUrl(`crewbot://thread/${uuid}`)).toEqual({ threadId: uuid });
     expect(parseThreadRefUrl(`openmausbot://thread/${uuid}`)).toEqual({ threadId: uuid });
     for (const miss of [
-      `openmausbot://thread/${uuid}/extra?bot=scout`,
-      `openmausbot://thread/${uuid}?bot=scout&x=1`,
-      `openmausbot://thread/${uuid}?bot=`,
+      `crewbot://thread/${uuid}/extra?bot=scout`,
+      `crewbot://thread/${uuid}?bot=scout&x=1`,
+      `crewbot://thread/${uuid}?bot=`,
       `omb://thread/${uuid}?bot=scout`,
       "https://thread/" + uuid,
     ]) {
@@ -160,7 +161,7 @@ describe("canonical thread links", () => {
     expect(serializeThreadRefs(sent + " plus #Nothing", threads)).toBe(sent + " plus #Nothing");
     // brackets in a title survive the round trip
     const bracketed = [scout("b", "QA [PR] 245")];
-    expect(serializeThreadRefs("see #QA [PR] 245", bracketed)).toBe("see [QA \\[PR\\] 245](openmausbot://thread/b?bot=scout)");
+    expect(serializeThreadRefs("see #QA [PR] 245", bracketed)).toBe("see [QA \\[PR\\] 245](crewbot://thread/b?bot=scout)");
   });
 
   it("displays canonical links as title chips and dead links as raw text", () => {

@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const {
   FILES,
   LEGACY_STAGE_GRACE_MS,
+  STAGE_PREFIX,
   cleanupAppImageCuaBundle,
   reapStaleAppImageCuaBundles,
   stageAppImageCuaBundle,
@@ -48,7 +49,7 @@ describe.skipIf(process.platform === "win32")("AppImage CUA private staging", ()
       files,
       processId: 4242,
     });
-    expect(path.basename(stage.directory)).toMatch(/^openmausbot-cua-linux-x64-4242-/);
+    expect(path.basename(stage.directory)).toMatch(/^crewbot-cua-linux-x64-4242-/);
     expect(fs.lstatSync(stage.directory).mode & 0o777).toBe(0o700);
     expect(fs.lstatSync(stage.driverPath).mode & 0o777).toBe(0o755);
     cleanupAppImageCuaBundle(stage, { temporaryRoot: root });
@@ -62,7 +63,7 @@ describe.skipIf(process.platform === "win32")("AppImage CUA private staging", ()
     expect(() => stageAppImageCuaBundle({ resourcesPath, temporaryRoot: root })).toThrow(
       "failed integrity validation",
     );
-    expect(fs.readdirSync(root).filter((name) => name.startsWith("openmausbot-cua"))).toEqual([]);
+    expect(fs.readdirSync(root).filter((name) => name.startsWith(STAGE_PREFIX))).toEqual([]);
   });
 
   it("refuses cleanup outside its exact private stage namespace", () => {
@@ -126,7 +127,7 @@ describe.skipIf(process.platform === "win32")("AppImage CUA private staging", ()
       files[name] = createHash("sha256").update(bytes).digest("hex");
     }
     const createLegacy = (suffix) => {
-      const directory = path.join(root, `openmausbot-cua-linux-x64-${suffix}`);
+      const directory = path.join(root, `${STAGE_PREFIX}${suffix}`);
       fs.mkdirSync(directory, { mode: 0o700 });
       for (const name of Object.keys(files)) {
         fs.copyFileSync(path.join(source, name), path.join(directory, name));

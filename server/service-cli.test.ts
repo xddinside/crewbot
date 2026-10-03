@@ -1,12 +1,13 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runServiceCommand, serviceServeArgs } from "./service-cli.ts";
+import { acquireDataDirLease } from "./data-dir-lease.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
 
-describe("openmausbot service", () => {
+describe("crewbot service", () => {
   let dir: string;
   const out: string[] = [];
   const err: string[] = [];
@@ -24,28 +25,97 @@ describe("openmausbot service", () => {
   });
 
   it("writes the unit next to the data and prints how to install it; refuses an npx cache", () => {
-    const code = runServiceCommand({ action: "install", dataDir: dir, port: 8799, domain: "maus.example.com", script: "/usr/lib/node_modules/openmausbot/cli.js", node: "/usr/bin/node", platform: "linux", home: "/home/maus", user: "maus" }, io);
+    const code = runServiceCommand({ action: "install", dataDir: dir, port: 8799, domain: "maus.example.com", script: "/usr/lib/node_modules/crewbot/cli.js", node: "/usr/bin/node", platform: "linux", home: "/home/maus", user: "maus" }, io);
     expect(code).toBe(0);
-    const unit = readFileSync(join(dir, "openmausbot.service"), "utf8");
+    const unit = readFileSync(join(dir, "crewbot.service"), "utf8");
     expect(unit).toContain("--domain maus.example.com");
     expect(unit).toContain("AmbientCapabilities=CAP_NET_BIND_SERVICE");
-    expect(out.join("\n")).toContain("sudo systemctl enable --now openmausbot");
+    expect(out.join("\n")).toContain("sudo systemctl enable --now crewbot");
+    expect(out.join("\n")).toContain("sudo test -f /etc/systemd/system/openmausbot.service");
+    expect(out.join("\n")).toContain("sudo cp --preserve=all /etc/systemd/system/openmausbot.service /etc/systemd/system/openmausbot.service.crewbot-backup");
+    expect(out.join("\n")).toContain("sudo systemctl disable --now openmausbot.service");
+    expect(out.join("\n")).toContain("'/usr/bin/node' '/usr/lib/node_modules/crewbot/cli.js' 'service' 'rollback' '--data-dir'");
+    const instructions = out.join("\n");
+    expect(instructions.indexOf("sudo test -f /etc/systemd/system/openmausbot.service")).toBeLessThan(instructions.indexOf("sudo cp --preserve=all /etc/systemd/system/openmausbot.service"));
+    expect(instructions.indexOf("sudo cp --preserve=all /etc/systemd/system/openmausbot.service")).toBeLessThan(instructions.indexOf("sudo systemctl disable --now openmausbot.service"));
+    expect(instructions.indexOf("sudo systemctl disable --now openmausbot.service")).toBeLessThan(instructions.indexOf("sudo systemctl enable --now crewbot"));
+    expect(instructions.indexOf("sudo systemctl enable --now crewbot")).toBeLessThan(instructions.indexOf("sudo rm /etc/systemd/system/openmausbot.service"));
     expect(out.join("\n")).toContain("no setcap is needed");
 
     out.length = 0;
-    const refused = runServiceCommand({ action: "install", dataDir: join(dir, "x"), port: 8799, script: "/home/maus/.npm/_npx/deadbeef/node_modules/openmausbot/cli.js", node: "/usr/bin/node", platform: "linux" }, io);
+    const refused = runServiceCommand({ action: "install", dataDir: join(dir, "x"), port: 8799, script: "/home/maus/.npm/_npx/deadbeef/node_modules/crewbot/cli.js", node: "/usr/bin/node", platform: "linux" }, io);
     expect(refused).toBe(1);
-    expect(err.join("\n")).toMatch(/npm install -g openmausbot/);
-    expect(existsSync(join(dir, "x", "openmausbot.service"))).toBe(false);
+    expect(err.join("\n")).toMatch(/npm install -g crewbot/);
+    expect(existsSync(join(dir, "x", "crewbot.service"))).toBe(false);
+  });
+
+  it("imports legacy data before service install creates the default data directory", () => {
+    const previousHome = process.env.HOME;
+    const previousUserProfile = process.env.USERPROFILE;
+    const legacy = join(dir, ".openmausbot");
+    const dataDir = join(dir, ".crewbot");
+    mkdirSync(legacy);
+    writeFileSync(join(legacy, "fixture.txt"), "legacy workspace");
+    process.env.HOME = dir;
+    process.env.USERPROFILE = dir;
+    try {
+      expect(runServiceCommand({
+        action: "install", dataDir, port: 8799, script: "/usr/lib/node_modules/crewbot/cli.js", node: "/usr/bin/node",
+        platform: "linux", home: dir, user: "crewbot",
+      }, io)).toBe(0);
+      expect(existsSync(legacy)).toBe(false);
+      expect(readFileSync(join(dataDir, "fixture.txt"), "utf8")).toBe("legacy workspace");
+      expect(existsSync(join(dataDir, "crewbot.service"))).toBe(true);
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousUserProfile;
+    }
+  });
+
+  it("reports a blocked migration and does not create an empty service data directory", () => {
+    const previousHome = process.env.HOME;
+    const previousUserProfile = process.env.USERPROFILE;
+    const legacy = join(dir, ".openmausbot");
+    const dataDir = join(dir, ".crewbot");
+    mkdirSync(legacy);
+    writeFileSync(join(legacy, "fixture.txt"), "legacy workspace");
+    process.env.HOME = dir;
+    process.env.USERPROFILE = dir;
+    const lease = acquireDataDirLease(legacy);
+    try {
+      const code = runServiceCommand({
+        action: "install", dataDir, port: 8799, script: "/usr/lib/node_modules/crewbot/cli.js", node: "/usr/bin/node",
+        platform: "linux", home: dir, user: "crewbot",
+      }, io);
+
+      expect(code).toBe(1);
+      expect(err.join("\n")).toMatch(/cannot migrate a legacy data directory while another server may be using it/i);
+      expect(existsSync(dataDir)).toBe(false);
+      expect(readFileSync(join(legacy, "fixture.txt"), "utf8")).toBe("legacy workspace");
+    } finally {
+      lease.release();
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousUserProfile;
+    }
   });
 
   it("writes a launchd agent on macOS and explains uninstall on both", () => {
-    expect(runServiceCommand({ action: "install", dataDir: dir, port: 8799, tunnel: true, script: "/opt/homebrew/lib/node_modules/openmausbot/cli.js", node: "/opt/homebrew/bin/node", platform: "darwin", home: "/Users/maus" }, io)).toBe(0);
-    expect(readFileSync(join(dir, "com.openmausbot.serve.plist"), "utf8")).toContain("<string>--tunnel</string>");
+    expect(runServiceCommand({ action: "install", dataDir: dir, port: 8799, tunnel: true, script: "/opt/homebrew/lib/node_modules/crewbot/cli.js", node: "/opt/homebrew/bin/node", platform: "darwin", home: "/Users/maus" }, io)).toBe(0);
+    expect(readFileSync(join(dir, "dev.xddinside.crewbot.serve.plist"), "utf8")).toContain("<string>--tunnel</string>");
     expect(out.join("\n")).toContain("launchctl bootstrap");
     out.length = 0;
     expect(runServiceCommand({ action: "uninstall", dataDir: dir, port: 8799, script: "/x", node: "/n", platform: "linux" }, io)).toBe(0);
-    expect(out.join("\n")).toContain("sudo systemctl disable --now openmausbot");
+    expect(out.join("\n")).toContain("sudo systemctl disable --now crewbot");
     expect(runServiceCommand({ action: "install", dataDir: dir, port: 8799, script: "/x", node: "/n", platform: "win32" }, io)).toBe(1);
+  });
+
+  it("refuses service changes from an isolated development launch", () => {
+    expect(runServiceCommand({ action: "uninstall", dataDir: dir, port: 8799, script: "/x", node: "/n", platform: "linux", development: true }, io)).toBe(1);
+    expect(err.join("\n")).toMatch(/disabled for the isolated development launch/i);
+    expect(existsSync(join(dir, "crewbot.service"))).toBe(false);
   });
 });

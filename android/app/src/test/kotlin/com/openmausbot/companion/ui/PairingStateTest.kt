@@ -738,6 +738,10 @@ class PairingConfirmationTest {
         )
         assertEquals("192.168.1.42", invite?.connection?.host)
         assertEquals(8810, invite?.connection?.port)
+        val crewbotInvite = PairingInvite.parse(
+            "crewbot://pair?address=192.168.1.42:8810&token=$credential",
+        )
+        assertEquals("192.168.1.42", crewbotInvite?.connection?.host)
     }
 
     @Test

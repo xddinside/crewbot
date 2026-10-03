@@ -56,10 +56,14 @@ describe("the exchange with the control plane", () => {
     }
   });
 
-  it("is off with an empty allow-list and says so when the sign-in service is down", async () => {
-    const off = createEmailSignIn({ allow: () => ({ admins: [], members: [] }) });
+  it("requires both an allow-list and an explicitly configured service", async () => {
+    const allow = { admins: ["a@b.test"], members: [] };
+    expect(createEmailSignIn({ allow, env: {} }).enabled()).toBe(false);
+    expect(createEmailSignIn({ allow, env: { CREWBOT_CONTROL_PLANE_URL: "https://accounts.openmausbot.com" } }).enabled()).toBe(false);
+    expect(createEmailSignIn({ allow, env: { CREWBOT_CONTROL_PLANE_URL: "https://accounts.crewbot.example" } }).enabled()).toBe(true);
+    const off = createEmailSignIn({ allow: { admins: [], members: [] }, env: { CREWBOT_CONTROL_PLANE_URL: "https://accounts.crewbot.example" } });
     expect(off.enabled()).toBe(false);
-    const down = createEmailSignIn({ allow: { admins: ["a@b.test"], members: [] }, env: { ...process.env, OMB_CONTROL_PLANE_URL: "http://127.0.0.1:9" } });
+    const down = createEmailSignIn({ allow, env: { OMB_CONTROL_PLANE_URL: "http://127.0.0.1:9" } });
     expect(await down.start("a@b.test")).toMatchObject({ ok: false, status: 502 });
   });
 });

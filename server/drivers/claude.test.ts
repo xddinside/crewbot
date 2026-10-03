@@ -224,12 +224,34 @@ describe("ClaudeDriver.decodeConfig", () => {
       expect(new Set(candidates).size).toBe(candidates.length);
     } else {
       // macOS has a small Unix-socket path limit, so a deep HOME needs a
-      // short fallback under the OS temp root.
+      // short fallback under the system temp root, outside an isolated TMPDIR.
       expect(candidates).toHaveLength(2);
-      expect(candidates[1]).toMatch(/omb-perm-[0-9a-f]{16}\.sock$/);
+      expect(candidates[1]).toMatch(/^\/tmp\/omb-perm-[0-9a-f]{16}\/broker\.sock$/);
       expect(candidates[1]).not.toBe(candidates[0]);
     }
   });
+
+  it.skipIf(process.platform === "win32")(
+    "uses a private short fallback when the isolated TMPDIR path is too long for a socket",
+    async () => {
+      const isolatedTemp = mkdtempSync(join(tmpdir(), "omb-deep-temp-"));
+      const fallbackDirectory = join("/tmp", `omb-perm-test-${process.pid}-${Date.now()}`);
+      const fallback = join(fallbackDirectory, "broker.sock");
+      const broker = await createPermissionBroker({
+        socketPaths: [join(isolatedTemp, `${"x".repeat(120)}.sock`), fallback],
+        onAsk: () => {},
+        onResolve: () => {},
+      });
+      try {
+        expect(broker.socketPath).toBe(fallback);
+        expect(existsSync(fallback)).toBe(true);
+      } finally {
+        broker.close();
+        expect(existsSync(fallbackDirectory)).toBe(false);
+        rmSync(isolatedTemp, { recursive: true, force: true });
+      }
+    },
+  );
 
   // Windows can't listen on filesystem socket paths at all (EACCES), so the
   // unbindable-first-candidate unit runs on POSIX; the fake-CLI e2e below
@@ -1635,7 +1657,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       await expect(pendingAnswer).resolves.toMatchObject({ id: "before-stop", behavior: "deny" });
       const lateAnswer = nextAnswer();
       conn.write(JSON.stringify({ t: "ask", id: "after-stop", tool: "Bash", input: { command: "echo too late" } }) + "\n");
-      await expect(lateAnswer).resolves.toMatchObject({ id: "after-stop", behavior: "deny", message: "OpenMausBot: the turn ended" });
+      await expect(lateAnswer).resolves.toMatchObject({ id: "after-stop", behavior: "deny", message: "crewbot: the turn ended" });
       expect(recorder.events.filter((e) => e.type === "request.opened")).toHaveLength(openedBefore);
       await expect(instance.adapter.respondToRequest(threadId, "after-stop", { behavior: "allow" })).resolves.toBe("unavailable");
     } finally {
@@ -1771,7 +1793,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await expect(answer).resolves.toMatchObject({
       id: "ask-between",
       behavior: "deny",
-      message: "OpenMausBot: the turn ended",
+      message: "crewbot: the turn ended",
     });
     expect(recorder.events.filter((e) => e.type === "request.opened")).toHaveLength(opensBefore);
     await expect(
@@ -2259,7 +2281,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(await nextAnswer()).toMatchObject({
       id: "dup-1",
       behavior: "deny",
-      message: "OpenMausBot: duplicate ask id — skipping this request.",
+      message: "crewbot: duplicate ask id — skipping this request.",
     });
     expect(recorder.events.filter((e) => e.type === "request.opened" && e.requestId === "dup-1")).toHaveLength(1);
 
@@ -2291,7 +2313,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(await conn2Answer).toMatchObject({
       id: "dup-2",
       behavior: "deny",
-      message: "OpenMausBot: duplicate ask id — skipping this request.",
+      message: "crewbot: duplicate ask id — skipping this request.",
     });
     expect(recorder.events.filter((e) => e.type === "request.opened" && e.requestId === "dup-2")).toHaveLength(1);
 
@@ -2349,7 +2371,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(await nextAnswer()).toMatchObject({
       id: "dup-4",
       behavior: "deny",
-      message: "OpenMausBot: duplicate ask id — skipping this request.",
+      message: "crewbot: duplicate ask id — skipping this request.",
     });
     expect(recorder.events.filter((e) => e.type === "request.opened" && e.requestId === "dup-4")).toHaveLength(1);
 
@@ -2393,7 +2415,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(await reply).toMatchObject({
       id: "ask-late",
       behavior: "deny",
-      message: "OpenMausBot: the turn ended",
+      message: "crewbot: the turn ended",
     });
     expect(recorder.events.filter((e) => e.type === "request.opened")).toHaveLength(opensBefore);
     await expect(instance.adapter.respondToRequest("t-perm-late", "ask-late", { behavior: "allow" })).resolves.toBe(
@@ -2428,7 +2450,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(await reply).toMatchObject({
       id: "q-late",
       behavior: "answer",
-      message: "OpenMausBot: the turn is ending — wrap up.",
+      message: "crewbot: the turn is ending — wrap up.",
     });
     expect(recorder.events.filter((e) => e.type === "request.opened")).toHaveLength(opensBefore);
     await expect(

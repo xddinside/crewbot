@@ -13,6 +13,13 @@ import fs from "node:fs";
 // asserts the two lists never drift apart.
 export const CREDENTIAL_ENV_NAMES = [
   "XAI_API_KEY",
+  "CREWBOT_ANTHROPIC_API_KEY",
+  "CREWBOT_ANTHROPIC_API_URL",
+  "CREWBOT_TTS_KEY",
+  "CREWBOT_FISH_AUDIO_API_KEY",
+  "CREWBOT_OPENAI_IMAGE_KEY",
+  "CREWBOT_CUSTOM_IMAGE_KEY",
+  "CREWBOT_COMPOSIO_BROKER_TOKEN",
   "OMB_ANTHROPIC_API_KEY",
   "OMB_ANTHROPIC_API_URL",
   "OPENAI_COMPAT_API_KEY",
@@ -284,7 +291,7 @@ export function buildDiagnosticsReport({
   now = new Date().toISOString(),
 } = {}) {
   const lines = [];
-  lines.push("OpenMausBot diagnostics");
+  lines.push("crewbot diagnostics");
   lines.push(`Generated: ${now}`);
   lines.push("");
   lines.push("## App");
@@ -331,7 +338,7 @@ export function buildDiagnosticsReport({
 export function diagnosticsFileName(date = new Date()) {
   const pad = (n) => String(n).padStart(2, "0");
   return (
-    `openmausbot-diagnostics-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}` +
+    `crewbot-diagnostics-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}` +
     `-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}.txt`
   );
 }

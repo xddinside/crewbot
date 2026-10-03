@@ -8,6 +8,7 @@ import {
   Bug,
   Copy,
   Crown,
+  FolderOpen,
   MessageSquareReply,
   Monitor,
   Pencil,
@@ -98,6 +99,54 @@ const USER_COLLAPSE_CHARS = 600;
 const USER_COLLAPSE_LINES = 8;
 const noop = () => {};
 
+type WorkingFolderRecoveryTarget = {
+  errorMessageId: string;
+  userMessageId: string;
+  userMessageText: string;
+};
+type WorkingFolderRecoveryState = {
+  botId: string;
+  threadId: string;
+  busy: boolean;
+  target: WorkingFolderRecoveryTarget | null;
+};
+
+/** The recovery control belongs only to a terminal folder failure after the latest human turn. */
+export function latestWorkingFolderFailure(messages: Message[]): WorkingFolderRecoveryTarget | null {
+  const terminal = messages.at(-1);
+  if (terminal?.role !== "bot" || terminal.kind !== "activity" || !terminal.tool?.name.startsWith("error:")) return null;
+  if (!terminal.tool.name.slice(6).trim().startsWith("the working folder ")) return null;
+
+  const latestUser = [...messages].reverse().find(
+    (message) => message.role === "user" && message.kind === "text" && !message.queued && !peerLine(message),
+  );
+  if (!latestUser || messages.indexOf(latestUser) >= messages.indexOf(terminal)) return null;
+  return {
+    errorMessageId: terminal.id,
+    userMessageId: latestUser.id,
+    userMessageText: latestUser.text ?? "",
+  };
+}
+
+function sameWorkingFolderFailure(
+  left: WorkingFolderRecoveryTarget | null,
+  right: WorkingFolderRecoveryTarget,
+): boolean {
+  return left?.errorMessageId === right.errorMessageId &&
+    left.userMessageId === right.userMessageId &&
+    left.userMessageText === right.userMessageText;
+}
+
+export function canRestartWorkingFolderForFailure(
+  current: WorkingFolderRecoveryState,
+  botId: string,
+  threadId: string,
+  target: WorkingFolderRecoveryTarget,
+): boolean {
+  return !current.busy && current.botId === botId && current.threadId === threadId &&
+    sameWorkingFolderFailure(current.target, target);
+}
+
 /** "Today" / "Yesterday" / "Mon, Aug 11" — real dates, not a hardcoded label. */
 function dayLabel(at: number): string {
   const d = new Date(at);
@@ -150,11 +199,19 @@ export function ErrorRow({
   message,
   onRetry,
   setupInstance,
+  onChooseWorkingFolder,
+  onRestartWorkingFolder,
+  workingFolderRecoveryPending = false,
 }: {
   message: string;
   onRetry?: () => void;
   setupInstance?: InstanceInfo;
+  onChooseWorkingFolder?: () => void;
+  onRestartWorkingFolder?: (cwd: string) => void;
+  workingFolderRecoveryPending?: boolean;
 }) {
+  const [folderPath, setFolderPath] = useState("");
+  const workingFolderError = message.startsWith("the working folder ");
   return (
     <div className="flex justify-start">
       <div className="w-fit max-w-[min(42rem,78%)] rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-[13.5px] text-danger">
@@ -162,7 +219,48 @@ export function ErrorRow({
           <AlertTriangle size={15} className="mt-0.5 shrink-0" />
           <span className="min-w-0 break-words">{message}</span>
         </div>
-        {isProviderSafetyBlock(message) ? (
+        {workingFolderError ? (
+          <div className="mt-2">
+            <p className="text-[12.5px] leading-relaxed text-ink-secondary">{t("chat.workingFolderRecovery")}</p>
+            {onChooseWorkingFolder ? (
+              <button
+                type="button"
+                onClick={onChooseWorkingFolder}
+                disabled={workingFolderRecoveryPending}
+                className="mt-2 flex min-h-10 items-center gap-1.5 rounded-lg border border-danger/30 px-3 py-2 text-[12.5px] hover:bg-danger/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60"
+              >
+                <FolderOpen size={14} aria-hidden="true" /> {t("chat.chooseFolderAndRetry")}
+              </button>
+            ) : onRestartWorkingFolder ? (
+              <form
+                className="mt-2 flex flex-wrap items-end gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const cwd = folderPath.trim();
+                  if (cwd) onRestartWorkingFolder(cwd);
+                }}
+              >
+                <label className="flex min-w-[min(100%,16rem)] flex-1 flex-col gap-1 text-[12px] text-ink-secondary">
+                  {t("chat.folderPath")}
+                  <input
+                    value={folderPath}
+                    onChange={(event) => setFolderPath(event.target.value)}
+                    placeholder={t("chat.folderPathPlaceholder")}
+                    autoComplete="off"
+                    className="min-h-10 rounded-lg border border-hairline/50 bg-inset px-3 text-base text-ink placeholder:text-ink-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={workingFolderRecoveryPending || !folderPath.trim()}
+                  className="min-h-10 rounded-lg border border-danger/30 px-3 py-2 text-[12.5px] hover:bg-danger/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60"
+                >
+                  {t("chat.useFolderAndRetry")}
+                </button>
+              </form>
+            ) : null}
+          </div>
+        ) : isProviderSafetyBlock(message) ? (
           <p className="mt-2 text-[12.5px] leading-relaxed text-ink-secondary">
             {PROVIDER_SAFETY_GUIDANCE}{" "}
             <a href={PROVIDER_SAFETY_HELP_URL} target="_blank" rel="noreferrer" className="underline">About provider safety checks</a>
@@ -603,6 +701,10 @@ const MessagesList = memo(function MessagesList({
   onCancelEdit,
   onSubmitEdit,
   onRegenerate,
+  onChooseWorkingFolder,
+  onRestartWorkingFolder,
+  workingFolderRecoveryTarget,
+  workingFolderRecoveryPending,
   onReply,
 }: {
   bot: Bot;
@@ -622,6 +724,10 @@ const MessagesList = memo(function MessagesList({
   onCancelEdit: () => void;
   onSubmitEdit: (id: string, text: string) => void;
   onRegenerate: () => void;
+  onChooseWorkingFolder?: (target: WorkingFolderRecoveryTarget) => void;
+  onRestartWorkingFolder?: (cwd: string, target: WorkingFolderRecoveryTarget) => void;
+  workingFolderRecoveryTarget: WorkingFolderRecoveryTarget | null;
+  workingFolderRecoveryPending: boolean;
   onReply: (message: Message) => void;
 }) {
   const { state, dispatch } = useStore();
@@ -762,11 +868,19 @@ const MessagesList = memo(function MessagesList({
               // link to another conversation.
               // plain tool runs stay out unless Settings → Tool calls is on.
               if (m.tool?.name.startsWith("error:")) {
+                const isCurrentFolderFailure = workingFolderRecoveryTarget?.errorMessageId === m.id;
                 return (
                   <ErrorRow
                     message={m.tool.name.slice(6).trim()}
                     onRetry={m.id === messages.at(-1)?.id && canRetryLast ? onRegenerate : undefined}
                     setupInstance={m.tool.setup ? engine : undefined}
+                    onChooseWorkingFolder={isCurrentFolderFailure && workingFolderRecoveryTarget && onChooseWorkingFolder
+                      ? () => onChooseWorkingFolder(workingFolderRecoveryTarget)
+                      : undefined}
+                    onRestartWorkingFolder={isCurrentFolderFailure && workingFolderRecoveryTarget && onRestartWorkingFolder
+                      ? (cwd) => onRestartWorkingFolder(cwd, workingFolderRecoveryTarget)
+                      : undefined}
+                    workingFolderRecoveryPending={workingFolderRecoveryPending}
                   />
                 );
               }
@@ -873,6 +987,8 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
   const provisioning = state.provisioning[bot.id];
   const mascotMotion = state.mascotMotion?.botId === bot.id ? state.mascotMotion : null;
   const [findOpen, setFindOpen] = useState(false);
+  const [workingFolderRecoveryPending, setWorkingFolderRecoveryPending] = useState(false);
+  const workingFolderRecoveryPendingRef = useRef(false);
   const { replyTo, selectReply, clearReply, consumeReply, restoreReply } = useReplyDraft(
     bot.threadId,
     `bot:${bot.id}:${bot.threadId}`,
@@ -892,6 +1008,27 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
 
   // only the active branch is rendered; forks stay reachable via ‹ › nav
   const messages = useMemo(() => visibleMessages(bot), [bot]);
+  const workingFolderRecoveryTarget = useMemo(
+    () => bot.busy ? null : latestWorkingFolderFailure(messages),
+    [bot.busy, messages],
+  );
+  const workingFolderRecoveryState = useRef<WorkingFolderRecoveryState>({
+    botId: bot.id,
+    threadId: bot.threadId,
+    busy: Boolean(bot.busy),
+    target: workingFolderRecoveryTarget,
+  });
+  const workingFolderRecoveryMounted = useRef(true);
+  useEffect(() => {
+    workingFolderRecoveryMounted.current = true;
+    return () => { workingFolderRecoveryMounted.current = false; };
+  }, []);
+  workingFolderRecoveryState.current = {
+    botId: bot.id,
+    threadId: bot.threadId,
+    busy: Boolean(bot.busy),
+    target: workingFolderRecoveryTarget,
+  };
   // The bot's run in the current ask — every command it ran, the control-CLI
   // ones verified — for the run card. Saving mirrors the /learn gate: the
   // flag, an engine with the agents tools, and a bot that can take a message
@@ -1018,6 +1155,50 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
       dispatch({ type: "editMessage", botId: bot.id, threadId: bot.threadId, messageId: lastUserMessage.id, text: lastUserMessage.text });
     }
   }, [lastUserMessage, bot.busy, bot.id, bot.threadId, dispatch]);
+  const isCurrentWorkingFolderFailure = useCallback((target: WorkingFolderRecoveryTarget) => {
+    return workingFolderRecoveryMounted.current &&
+      canRestartWorkingFolderForFailure(workingFolderRecoveryState.current, bot.id, bot.threadId, target);
+  }, [bot.id, bot.threadId]);
+  const recoverWorkingFolder = useCallback(async (
+    target: WorkingFolderRecoveryTarget,
+    chooseCwd: () => Promise<string | null | undefined>,
+  ) => {
+    if (!isCurrentWorkingFolderFailure(target) || workingFolderRecoveryPendingRef.current) return;
+    workingFolderRecoveryPendingRef.current = true;
+    setWorkingFolderRecoveryPending(true);
+    try {
+      const cwd = await chooseCwd();
+      if (!cwd || !isCurrentWorkingFolderFailure(target)) return;
+      await api(`/api/bots/${bot.id}/tasks/${bot.threadId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          restartAtCwd: cwd,
+          expectedErrorMessageId: target.errorMessageId,
+          expectedUserMessageId: target.userMessageId,
+        }),
+      });
+      // The picker or PATCH may outlive the failed turn. Only fork the exact
+      // user request that produced this still-current folder failure.
+      if (isCurrentWorkingFolderFailure(target)) {
+        dispatch({ type: "editMessage", botId: bot.id, threadId: bot.threadId,
+          messageId: target.userMessageId, text: target.userMessageText });
+      }
+    } catch (error) {
+      if (isCurrentWorkingFolderFailure(target)) {
+        dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
+      }
+    } finally {
+      workingFolderRecoveryPendingRef.current = false;
+      setWorkingFolderRecoveryPending(false);
+    }
+  }, [bot.id, bot.threadId, dispatch, isCurrentWorkingFolderFailure]);
+  const restartWorkingFolder = useCallback((cwd: string, target: WorkingFolderRecoveryTarget) =>
+    recoverWorkingFolder(target, async () => cwd), [recoverWorkingFolder]);
+  const chooseWorkingFolderAndRetry = useCallback((target: WorkingFolderRecoveryTarget) => {
+    const chooseFolder = window.ogb?.pickFolder;
+    if (!chooseFolder) return Promise.resolve();
+    return recoverWorkingFolder(target, () => chooseFolder(bot.cwd ?? undefined));
+  }, [bot.cwd, recoverWorkingFolder]);
 
   // Scroll pinning: follow the bottom while the user hasn't scrolled away.
   // Follow breaks ONLY on an upward user gesture (wheel/touch), never on
@@ -1404,6 +1585,10 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
             onCancelEdit={cancelEdit}
             onSubmitEdit={submitEdit}
             onRegenerate={regenerate}
+            onChooseWorkingFolder={window.ogb?.pickFolder ? chooseWorkingFolderAndRetry : undefined}
+            onRestartWorkingFolder={restartWorkingFolder}
+            workingFolderRecoveryTarget={workingFolderRecoveryTarget}
+            workingFolderRecoveryPending={workingFolderRecoveryPending}
             onReply={selectReply}
           />
           {laterCount > 0 && (
@@ -1487,6 +1672,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
       <Composer
         key={bot.threadId}
         bot={profile}
+        locked={workingFolderRecoveryPending}
         replyTo={replyTo}
         onClearReply={clearReply}
         onConsumeReply={consumeReply}

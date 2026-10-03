@@ -134,21 +134,52 @@ final class ThreadNavigationUITests: XCTestCase {
     func testUpdatesKeepSiblingThreadsSeparate() {
         let app = launchPreview()
         app.buttons["updates-button"].tap()
+        let updatesList = app.scrollViews["updates-list"]
+        XCTAssertTrue(updatesList.waitForExistence(timeout: 5))
         let gmail = app.buttons["update-preview-gmail"]
         let iCloud = app.buttons["update-preview-icloud"]
         let weekend = app.buttons["update-preview-weekend"]
+        let activeCount = app.descendants(matching: .any)
+            .matching(identifier: "updates-active-count").firstMatch
+        XCTAssertTrue(activeCount.waitForExistence(timeout: 5))
+        XCTAssertEqual(activeCount.label, "3 active")
         XCTAssertTrue(gmail.waitForExistence(timeout: 5))
-        XCTAssertTrue(iCloud.exists)
-        XCTAssertTrue(weekend.exists)
+        XCTAssertTrue(gmail.isHittable)
         XCTAssertTrue(gmail.label.contains("Triage Gmail"))
-        XCTAssertTrue(iCloud.label.contains("Triage iCloud"))
+
+        scrollUpdates(untilHittable: weekend, in: updatesList)
+        XCTAssertTrue(weekend.waitForExistence(timeout: 5))
         XCTAssertTrue(weekend.label.contains("Plan weekend"))
         XCTAssertFalse(app.buttons["update-preview-routine"].exists)
-        XCTAssertTrue(app.staticTexts["3 active"].exists)
-        if !iCloud.isHittable { app.swipeUp() }
+
+        scrollUpdates(untilHittable: iCloud, in: updatesList, direction: .down)
+        XCTAssertTrue(iCloud.waitForExistence(timeout: 5))
+        XCTAssertTrue(iCloud.isHittable)
+        XCTAssertTrue(iCloud.label.contains("Triage iCloud"))
         recordScreenshot("Separate updates for sibling threads", in: app)
         iCloud.tap()
         assertThread("Triage iCloud", in: app)
+        XCTAssertTrue(transcriptContains("I am reviewing iCloud here", in: app))
+        XCTAssertFalse(transcriptContains("I’m reviewing Gmail here", in: app))
+    }
+
+    private enum UpdatesScrollDirection {
+        case up, down
+    }
+
+    @MainActor
+    private func scrollUpdates(
+        untilHittable element: XCUIElement,
+        in scrollView: XCUIElement,
+        direction: UpdatesScrollDirection = .up
+    ) {
+        for _ in 0..<5 where !element.isHittable {
+            switch direction {
+            case .up: scrollView.swipeUp()
+            case .down: scrollView.swipeDown()
+            }
+        }
+        XCTAssertTrue(element.isHittable, "Expected \(element.identifier) to become visible in Updates")
     }
 
     @MainActor

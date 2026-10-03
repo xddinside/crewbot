@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { resolveDataDir } from "./testing/data-dir-guard.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { freePortBlock } from "./testing/ports.ts";
 
@@ -63,7 +64,7 @@ const fixture = (displayName: string, environment: Record<string, string>) => ({
 
 beforeAll(async () => {
   home = mkdtempSync(join(tmpdir(), "omb-room-chat-wait-"));
-  const data = join(home, ".openmausbot");
+  const data = resolveDataDir({}, home);
   const staticDir = join(home, "static");
   mkdirSync(data, { recursive: true });
   mkdirSync(join(staticDir, "assets"), { recursive: true });

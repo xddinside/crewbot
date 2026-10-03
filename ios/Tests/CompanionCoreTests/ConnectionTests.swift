@@ -77,6 +77,14 @@ final class ConnectionTests: XCTestCase {
         XCTAssertEqual(invite.credential, token)
     }
 
+    func testParsesTheNewCrewbotSchemeDuringTheMobileRollout() throws {
+        let token = "omb_pair_" + String(repeating: "b", count: 43)
+        let url = try XCTUnwrap(URL(string: "crewbot://pair?address=macbook.local%3A8810&token=\(token)"))
+        let invite = try XCTUnwrap(PairingInvite.parse(url))
+        XCTAssertEqual(invite.connection.host, "macbook.local")
+        XCTAssertEqual(invite.credential, token)
+    }
+
     func testRejectsAPresentButInvalidSecureEntryKey() throws {
         let token = "omb_pair_" + String(repeating: "a", count: 43)
         let invalid = try XCTUnwrap(URL(string:

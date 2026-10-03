@@ -9,12 +9,13 @@ import { applyStartupPreferences, formatSessions, pairingBlock, parseArgs, qrToS
 import { SetupCancelled } from "./cli-prompts.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { startControlPlaneStub } from "./testing/control-plane-stub.ts";
+import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
-const setup = vi.hoisted(() => ({ runSetup: vi.fn(), isSetupComplete: vi.fn(), readCliStartup: vi.fn(), saveCliStartup: vi.fn() }));
+const setup = vi.hoisted(() => ({ migrateLegacyDataDir: vi.fn(), runSetup: vi.fn(), isSetupComplete: vi.fn(), readCliStartup: vi.fn(), saveCliStartup: vi.fn() }));
 vi.mock("./cli-setup.ts", () => setup);
 
-describe("openmausbot command line", () => {
+describe("crewbot command line", () => {
   it("parses commands and flags, and explains mistakes", () => {
     const serve = parseArgs(["serve", "--port", "9001", "--data-dir", "/tmp/x", "--label", "cab mini", "--tailscale", "--no-pair"], {});
     // --data-dir is resolved against the platform: C:\tmp\x on Windows.
@@ -57,6 +58,7 @@ describe("openmausbot command line", () => {
     expect(parseArgs(["access", "add"], {})).toEqual({ error: "add needs a value" });
     expect(parseArgs(["service", "install", "--domain", "maus.example.com", "--port", "8799"], {})).toMatchObject({ command: "service", serviceAction: "install", domain: "maus.example.com", port: 8799 });
     expect(parseArgs(["service", "uninstall"], {})).toMatchObject({ command: "service", serviceAction: "uninstall" });
+    expect(parseArgs(["service", "rollback", "--data-dir", "/srv/legacy"], {})).toMatchObject({ command: "service", serviceAction: "rollback", dataDir: resolve("/srv/legacy") });
     expect(parseArgs(["service"], {})).toEqual({ error: expect.stringContaining("service needs one of") });
     expect(parseArgs(["serve", "--domain", "Maus.Example.com"], {})).toMatchObject({ command: "serve", domain: "maus.example.com" });
     expect(parseArgs(["serve", "--domain", "localhost"], {})).toEqual({ error: expect.stringContaining("bare hostname") });
@@ -92,7 +94,7 @@ describe("openmausbot command line", () => {
       const out = block({ phone: "android" });
       expect(out).toContain(qrToString(invite));
       expect(out).not.toContain(qrToString(url));
-      expect(out).toContain("Scan that in the OpenMausBot app");
+      expect(out).toContain("Scan that in the crewbot app");
       // The web link is still offered, but not as the thing to scan.
       expect(out).toContain(`web browser:   ${url}`);
       expect(out).not.toContain("open or scan:");
@@ -112,9 +114,9 @@ describe("openmausbot command line", () => {
       const out = block({ phone: "android", inviteUrl: null });
       expect(out).toContain(qrToString(url));
       expect(out).toContain("The Android app needs the phone-app link");
-      expect(out).toContain("OMB_PUBLIC_URL");
+      expect(out).toContain("CREWBOT_PUBLIC_URL (or OMB_PUBLIC_URL)");
       // It must not claim the QR is scannable in the app when it is not.
-      expect(out).not.toContain("Scan that in the OpenMausBot app");
+      expect(out).not.toContain("Scan that in the crewbot app");
     });
   });
 
@@ -140,7 +142,7 @@ describe("openmausbot command line", () => {
 
   it("serve: starts the server, prints the pairing link, and stops on SIGTERM", async () => {
     const home = mkdtempSync(join(tmpdir(), "omb-cli-serve-"));
-    const port = 21000 + Math.floor(Math.random() * 9000);
+    const port = await freePortBlock([0, 1]);
     const child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmausbot.ts"), "serve", "--port", String(port), "--data-dir", join(home, "data"), "--label", "cli test", "--public-url", "https://mini.example"], {
       cwd: join(SERVER_DIR, ".."),
       env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, OMB_WEBHOOK_PORT: String(port + 1), OMB_BROWSER_CONNECTION: join(home, "browser-connection.json") },
@@ -152,7 +154,7 @@ describe("openmausbot command line", () => {
     try {
       const deadline = Date.now() + 60_000;
       while (!out.includes("open or scan:") && Date.now() < deadline && child.exitCode === null) await new Promise((r) => setTimeout(r, 200));
-      expect(out).toContain(`OpenMausBot is running on http://127.0.0.1:${port}, reachable at https://mini.example`);
+      expect(out).toContain(`crewbot is running on http://127.0.0.1:${port}, reachable at https://mini.example`);
       expect(out).toMatch(/pairing code:  [A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}/);
       expect(out).toContain("open or scan:  https://mini.example/pair#code=");
       expect(out).toMatch(/[▀▄█]/);
@@ -214,10 +216,11 @@ describe("terminal onboarding commands", () => {
       return true;
     });
     expect(await runOnboardingCommand(options, output, serve, flow)).toBe(0);
+    expect(setup.migrateLegacyDataDir).toHaveBeenCalledWith(options.dataDir);
     expect(setup.runSetup).toHaveBeenCalledWith({ dataDir: options.dataDir, port: options.port });
     expect(setup.isSetupComplete).not.toHaveBeenCalled();
     expect(serve).not.toHaveBeenCalled();
-    expect(output.log).toHaveBeenCalledWith(expect.stringContaining("Start with: openmausbot"));
+    expect(output.log).toHaveBeenCalledWith(expect.stringContaining("Start with: crewbot"));
     expect(phoneSetup).toHaveBeenCalledOnce();
     expect(setup.saveCliStartup).toHaveBeenCalledWith(options.dataDir, { access: "local" });
   });
@@ -391,13 +394,13 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
 
   it("refuses without an account and says what to do; no local-only fallback", async () => {
     const home = mkdtempSync(join(tmpdir(), "omb-cli-tunnel-none-"));
-    const port = 21000 + Math.floor(Math.random() * 9000);
+    const port = await freePortBlock([0, 1]);
     const child = cli(["serve", "--tunnel", "--port", String(port), "--data-dir", join(home, "data")], { HOME: home, USERPROFILE: home });
     let err = "";
     child.stderr?.on("data", (chunk) => (err += String(chunk)));
     try {
       expect(await exited(child)).toBe(1);
-      expect(err).toContain("run `openmausbot login` first");
+      expect(err).toContain("run `crewbot login` first");
       let dead = false;
       try {
         await fetch(`http://127.0.0.1:${port}/api/health`);
@@ -417,8 +420,8 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
     const stub = await startControlPlaneStub();
     const fake = join(home, "cloudflared");
     writeFileSync(fake, "#!/bin/sh\nexec sleep 300\n", { mode: 0o755 });
-    const port = 21000 + Math.floor(Math.random() * 9000);
-    const originPort = 31000 + Math.floor(Math.random() * 9000);
+    const port = await freePortBlock([0, 1]);
+    const originPort = await freePortBlock([0], 31_000, 9_000);
     const fleetEnv = {
       HOME: home,
       USERPROFILE: home,
@@ -431,7 +434,7 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
     // a credential the control plane does not know stops the start; nothing serves
     const rejected = cli(["serve", "--tunnel", "--no-pair", "--port", String(port), "--data-dir", dataDir], {
       ...fleetEnv,
-      OMB_INSTALLATION_CREDENTIAL: `omb_install_${"x".repeat(22)}.${"y".repeat(43)}`,
+      CREWBOT_INSTALLATION_CREDENTIAL: `omb_install_${"x".repeat(22)}.${"y".repeat(43)}`,
     });
     let err = "";
     rejected.stderr?.on("data", (chunk) => (err += String(chunk)));
@@ -440,7 +443,7 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
 
     const child = cli(["serve", "--tunnel", "--no-pair", "--port", String(port), "--data-dir", dataDir], {
       ...fleetEnv,
-      OMB_INSTALLATION_CREDENTIAL: stub.seedInstallation("fleet box"),
+      CREWBOT_INSTALLATION_CREDENTIAL: stub.seedInstallation("fleet box"),
     });
     let out = "";
     child.stdout?.on("data", (chunk) => (out += String(chunk)));
@@ -448,8 +451,8 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
     const gateway = `http://127.0.0.1:${originPort}`;
     try {
       const deadline = Date.now() + 60_000;
-      while (!out.includes("OpenMausBot is running") && Date.now() < deadline && child.exitCode === null) await new Promise((r) => setTimeout(r, 200));
-      expect(out).toContain("using the installation credential from OMB_INSTALLATION_CREDENTIAL");
+      while (!out.includes("crewbot is running") && Date.now() < deadline && child.exitCode === null) await new Promise((r) => setTimeout(r, 200));
+      expect(out).toContain("using the installation credential from CREWBOT_INSTALLATION_CREDENTIAL");
       expect(out).toContain(`reachable at ${stub.endpointUrl}`);
       expect(existsSync(join(dataDir, "tunnel-account.json"))).toBe(false);
       let status = 0;
@@ -483,8 +486,8 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
     const quiet = { log: () => undefined, error: () => undefined, ask: async () => stub.otp };
     expect(await runLogin({ command: "login", port: 1, dataDir, tailscale: false, tunnel: false, client: false, pair: true, json: false, email: "cli@example.test" }, quiet)).toBe(0);
     vi.unstubAllEnvs();
-    const port = 21000 + Math.floor(Math.random() * 9000);
-    const originPort = 31000 + Math.floor(Math.random() * 9000);
+    const port = await freePortBlock([0, 1]);
+    const originPort = await freePortBlock([0], 31_000, 9_000);
     const child = cli(["serve", "--tunnel", "--port", String(port), "--data-dir", dataDir, "--label", "tunnel test"], {
       HOME: home,
       USERPROFILE: home,
@@ -501,7 +504,7 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
     try {
       const deadline = Date.now() + 60_000;
       while (!out.includes("open or scan:") && Date.now() < deadline && child.exitCode === null) await new Promise((r) => setTimeout(r, 200));
-      expect(out).toContain(`OpenMausBot is running on http://127.0.0.1:${port}, reachable at ${stub.endpointUrl}`);
+      expect(out).toContain(`crewbot is running on http://127.0.0.1:${port}, reachable at ${stub.endpointUrl}`);
       expect(out).toContain(`open or scan:  ${stub.endpointUrl}/pair#code=`);
       // a fresh connector token was fetched for this run
       expect(stub.calls).toContain("POST /v1/installations/self/endpoint");
@@ -555,7 +558,7 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
   }, 120_000);
 });
 
-describe("openmausbot access", () => {
+describe("crewbot access", () => {
   it("edits the sign-in allow-list in config.json without a running server", async () => {
     const home = mkdtempSync(join(tmpdir(), "omb-cli-access-"));
     const dataDir = join(home, "data");
@@ -575,12 +578,93 @@ describe("openmausbot access", () => {
       expect(await runAccess({ ...base, accessAction: "add", email: "her@example.test", chatOnly: true }, io)).toBe(0);
       expect(JSON.parse(readFileSync(join(dataDir, "config.json"), "utf8")).signIn).toEqual({ admins: [], members: ["@agentada.test", "her@example.test"] });
       out.length = 0;
+      process.env.CREWBOT_SIGNIN_EMAILS = "env@example.test";
+      try {
+        expect(await runAccess({ ...base, accessAction: "list" }, io)).toBe(0);
+        expect(out.at(-1)).toContain("CREWBOT_SIGNIN_EMAILS / CREWBOT_SIGNIN_MEMBER_EMAILS or OMB_SIGNIN_EMAILS / OMB_SIGNIN_MEMBER_EMAILS");
+        expect(await runAccess({ ...base, accessAction: "add", email: "her@example.test", chatOnly: true }, io)).toBe(0);
+        expect(out.at(-1)).toContain("CREWBOT_SIGNIN_EMAILS / CREWBOT_SIGNIN_MEMBER_EMAILS or OMB_SIGNIN_EMAILS / OMB_SIGNIN_MEMBER_EMAILS");
+      } finally {
+        delete process.env.CREWBOT_SIGNIN_EMAILS;
+      }
+      out.length = 0;
       expect(await runAccess({ ...base, accessAction: "list" }, io)).toBe(0);
       expect(out.join("\n")).toMatch(/@agentada.test\s+chat and approvals/);
       expect(await runAccess({ ...base, accessAction: "remove", email: "her@example.test" }, io)).toBe(0);
       expect(await runAccess({ ...base, accessAction: "remove", email: "her@example.test" }, io)).toBe(1);
       expect(JSON.parse(readFileSync(join(dataDir, "config.json"), "utf8")).signIn).toEqual({ admins: [], members: ["@agentada.test"] });
     } finally {
+      await removeTempDir(home);
+    }
+  });
+
+  it("leaves access list read-only, then imports the legacy config before the first edit", async () => {
+    const home = mkdtempSync(join(tmpdir(), "crewbot-access-legacy-"));
+    const previousHome = process.env.HOME;
+    const previousUserProfile = process.env.USERPROFILE;
+    const legacy = join(home, ".openmausbot");
+    const dataDir = join(home, ".crewbot");
+    mkdirSync(legacy);
+    writeFileSync(join(legacy, "config.json"), JSON.stringify({
+      profile: { name: "Legacy owner" },
+      signIn: { admins: ["existing@example.test"], members: [] },
+    }));
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    const base = { command: "access" as const, port: 1, dataDir, tailscale: false, tunnel: false, client: false, pair: true, json: false };
+    try {
+      expect(await runAccess({ ...base, accessAction: "list" }, { log: () => {}, error: () => {}, ask: async () => "" })).toBe(0);
+      expect(existsSync(legacy)).toBe(true);
+      expect(existsSync(dataDir)).toBe(false);
+
+      expect(await runAccess({ ...base, accessAction: "add", email: "new@example.test" }, { log: () => {}, error: () => {}, ask: async () => "" })).toBe(0);
+      expect(existsSync(legacy)).toBe(false);
+      expect(JSON.parse(readFileSync(join(dataDir, "config.json"), "utf8"))).toEqual({
+        profile: { name: "Legacy owner" },
+        signIn: { admins: ["existing@example.test", "new@example.test"], members: [] },
+      });
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousUserProfile;
+      await removeTempDir(home);
+    }
+  });
+});
+
+describe("legacy login migration", () => {
+  it("imports the legacy directory before login creates tunnel credentials", async () => {
+    const home = mkdtempSync(join(tmpdir(), "crewbot-login-legacy-"));
+    const previousHome = process.env.HOME;
+    const previousUserProfile = process.env.USERPROFILE;
+    const previousControlPlane = process.env.OMB_CONTROL_PLANE_URL;
+    const legacy = join(home, ".openmausbot");
+    const dataDir = join(home, ".crewbot");
+    mkdirSync(legacy);
+    writeFileSync(join(legacy, "fixture.txt"), "legacy account data");
+    const stub = await startControlPlaneStub();
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    process.env.OMB_CONTROL_PLANE_URL = stub.url;
+    try {
+      const options: CliOptions = {
+        command: "login", port: 1, dataDir, tailscale: false, tunnel: false, client: false, pair: true, json: false,
+        email: "login@example.test",
+      };
+      const io = { log: () => {}, error: () => {}, ask: async () => stub.otp };
+      expect(await runLogin(options, io)).toBe(0);
+      expect(existsSync(legacy)).toBe(false);
+      expect(readFileSync(join(dataDir, "fixture.txt"), "utf8")).toBe("legacy account data");
+      expect(existsSync(join(dataDir, "tunnel-account.json"))).toBe(true);
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousUserProfile;
+      if (previousControlPlane === undefined) delete process.env.OMB_CONTROL_PLANE_URL;
+      else process.env.OMB_CONTROL_PLANE_URL = previousControlPlane;
+      await stub.close();
       await removeTempDir(home);
     }
   });
@@ -593,7 +677,7 @@ describe.skipIf(process.platform === "win32")("serve --domain", () => {
     mkdirSync(dataDir, { recursive: true });
     const fake = join(home, "fake-caddy");
     writeFileSync(fake, `#!/bin/sh\necho "$@" > "${join(home, "caddy-args.txt")}"\necho $$ > "${join(home, "caddy.pid")}"\nexec sleep 300\n`, { mode: 0o755 });
-    const port = 21000 + Math.floor(Math.random() * 9000);
+    const port = await freePortBlock([0, 1]);
     const child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmausbot.ts"), "serve", "--domain", "omb.example.test", "--port", String(port), "--data-dir", dataDir], {
       cwd: join(SERVER_DIR, ".."),
       env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, OMB_WEBHOOK_PORT: String(port + 1), OMB_BROWSER_CONNECTION: join(home, "browser-connection.json"), OMB_CADDY_PATH: fake },
@@ -605,7 +689,7 @@ describe.skipIf(process.platform === "win32")("serve --domain", () => {
     try {
       const deadline = Date.now() + 60_000;
       while (!out.includes("open or scan:") && Date.now() < deadline && child.exitCode === null) await new Promise((r) => setTimeout(r, 200));
-      expect(out).toContain(`OpenMausBot is running on http://127.0.0.1:${port}, reachable at https://omb.example.test`);
+      expect(out).toContain(`crewbot is running on http://127.0.0.1:${port}, reachable at https://omb.example.test`);
       expect(out).toContain("https: Caddy serves https://omb.example.test");
       expect(out).toContain("open or scan:  https://omb.example.test/pair#code=");
       const args = readFileSync(join(home, "caddy-args.txt"), "utf8").trim();
@@ -618,8 +702,17 @@ describe.skipIf(process.platform === "win32")("serve --domain", () => {
       const caddyPid = Number(readFileSync(join(home, "caddy.pid"), "utf8").trim() || "0");
       child.kill("SIGTERM");
       await exited(child);
-      await new Promise((r) => setTimeout(r, 300));
-      if (caddyPid) expect(() => process.kill(caddyPid, 0)).toThrow();
+      if (caddyPid) {
+        await expect.poll(() => {
+          try {
+            process.kill(caddyPid, 0);
+            return true;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+            throw error;
+          }
+        }, { timeout: 5_000, interval: 25 }).toBe(false);
+      }
       await removeTempDir(home);
     }
   }, 120_000);

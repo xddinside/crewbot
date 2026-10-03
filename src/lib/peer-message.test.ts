@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { peerLine } from "./peer-message";
 
 const NOTE = (opening: string, name: string, rest: string) =>
-  `[${opening} @${name}, another bot in this OpenMausBot workspace${rest}]`;
+  `[${opening} @${name}, another bot in this crewbot workspace${rest}]`;
 
 describe("peerLine", () => {
   it("is null for the person's own line and for bot lines", () => {
@@ -31,6 +31,11 @@ describe("peerLine", () => {
     expect(peerLine({ role: "user", text: `${NOTE("Thread opened by", "Pam", " — x")}\n\nJob.` })?.delivery).toBe(
       "start_thread",
     );
+  });
+
+  it("still reads saved OpenMausBot provenance notes", () => {
+    const text = "[Message from @Chief, another bot in this OpenMausBot workspace — saved earlier]\n\nA question.";
+    expect(peerLine({ role: "user", text })).toMatchObject({ name: "Chief", body: "A question." });
   });
 
   it("keeps the field's author when the text has no note, and carries unattended", () => {

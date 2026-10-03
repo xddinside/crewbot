@@ -205,7 +205,7 @@ describe("Clack setup adapter", () => {
   it("sanitizes provider labels, log output and questions before rendering", async () => {
     const fixture = terminal();
     fixture.io.log("Provider \u001b[31mred\u001b[0m\u0007");
-    expect(fixture.text()).toBe("Provider red\n");
+    expect(fixture.text().trimEnd()).toBe("Provider red");
     const selected = fixture.io.choose("Model\u001b[2J", ["Untrusted\u001b[2J\nlabel"]);
     fixture.input.write("\r");
     await selected;

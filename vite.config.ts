@@ -29,6 +29,10 @@ export default defineConfig({
       "scripts/**/*.test.ts",
     ],
     setupFiles: ["server/testing/setup.ts"],
+    // Refuses to start if a live data dir is reachable through
+    // CREWBOT_DATA_DIR / OMB_DATA_DIR. Runs in the main process, so it holds
+    // even for a run that never loads setupFiles. See server/testing/global-setup.ts.
+    globalSetup: ["server/testing/global-setup.ts"],
     // the suite spawns fake provider CLIs and a real harness server;
     // parallel files introduce load-sensitive flakes for no win
     fileParallelism: false,
@@ -44,7 +48,9 @@ export default defineConfig({
     // IPv4 explicitly — a bare ::1 bind makes localhost a coin-flip for
     // clients that resolve IPv4 first
     host: "127.0.0.1",
-    port: Number(process.env.OMB_UI_PORT) || 5199,
+    // Portless sets PORT for this child and routes HTTPS traffic to it.
+    port: Number(process.env.PORT) || Number(process.env.OMB_UI_PORT) || 5199,
+    strictPort: Boolean(process.env.PORTLESS_URL),
     // packager output lands inside the repo — its HTML files must never
     // trigger dev full-page reloads
     watch: {

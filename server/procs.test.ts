@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   assertSafeCliArgv,
@@ -39,5 +42,45 @@ describe("Windows CLI argument safety", () => {
       setup: false,
     });
     expect(failure.message).not.toContain("private prompt contents");
+  });
+});
+
+// Node reports a missing executable and a missing working folder as the same
+// ENOENT, so the wording has to be decided from the folder, not the errno.
+describe("spawn failures that name a working folder", () => {
+  const enoent = Object.assign(new Error("spawn opencode ENOENT"), { code: "ENOENT" });
+
+  it("blames the deleted folder instead of the CLI", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "crewbot-deleted-cwd-"));
+    rmSync(cwd, { recursive: true });
+    const failure = describeSpawnFailure(enoent, "opencode", cwd);
+    expect(failure.message).toBe(`the working folder no longer exists: ${cwd}`);
+    expect(failure.message).not.toContain("opencode");
+    expect(failure.setup).toBe(false);
+  });
+
+  it("still reports a missing CLI when the folder is fine", () => {
+    const failure = describeSpawnFailure(enoent, "opencode", tmpdir());
+    expect(failure.message).toBe("`opencode` isn't installed, or isn't on this app's PATH");
+    expect(failure.setup).toBe(true);
+  });
+
+  it("keeps the folder wording when no folder was pinned", () => {
+    expect(describeSpawnFailure(enoent, "opencode").message).toContain("isn't installed");
+    expect(describeSpawnFailure(enoent, "opencode", null).message).toContain("isn't installed");
+  });
+
+  it("names the folder when the path is a file, not a directory", () => {
+    const dir = mkdtempSync(join(tmpdir(), "crewbot-cwd-"));
+    const file = join(dir, "not-a-folder");
+    writeFileSync(file, "");
+    try {
+      const notdir = Object.assign(new Error("spawn opencode ENOTDIR"), { code: "ENOTDIR" });
+      expect(describeSpawnFailure(notdir, "opencode", file).message).toBe(
+        `the working folder is not a folder: ${file}`,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

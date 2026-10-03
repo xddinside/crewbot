@@ -18,6 +18,14 @@ describe("readClaudeModelCatalog", () => {
       { id: "claude-fable-5-1", label: "Claude Fable 5.1" },
       { id: "claude-fable-5", label: "Claude Fable 5" },
     ]);
+    expect(STATIC_CLAUDE_MODELS.options.map((option) => option.id)).toEqual([
+      "claude-fable-5-1",
+      "claude-fable-5",
+      "claude-opus-5-5",
+      "claude-opus-5",
+      "claude-sonnet-5",
+      "claude-haiku-4-5",
+    ]);
   });
 
   it("lists ANTHROPIC_MODEL from the instance environment when settings are missing", () => {

@@ -4,8 +4,10 @@ import { modelContextWindow } from "./model-context-window.ts";
 describe("model context window fallback", () => {
   it("knows the common families and stays silent otherwise", () => {
     expect(modelContextWindow("claude-sonnet-5")).toBe(200_000);
+    expect(modelContextWindow("claude-opus-5-5")).toBe(1_000_000);
     expect(modelContextWindow("claude-opus-5[1m]")).toBe(1_000_000);
     expect(modelContextWindow("gpt-5.6-sol")).toBe(272_000);
+    expect(modelContextWindow("gpt-6.1-sol")).toBe(1_050_000);
     expect(modelContextWindow("gpt-4.1-mini")).toBe(1_000_000);
     expect(modelContextWindow("gemini-2.5-pro")).toBe(1_000_000);
     expect(modelContextWindow("grok-4")).toBe(256_000);

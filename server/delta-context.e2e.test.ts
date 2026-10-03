@@ -257,7 +257,28 @@ it("offers the results again when the person stops the return turn before the pr
   f.open(f.gate("return"));
 
   await f.send("What did Engineering find?");
-  await f.wait();
+  const waitResult = await f.cli("wait", "--bot", f.chief.id, "--task", f.thread, "--timeout", "40");
+  const recentMessages = (await f.messages()).slice(-5).map((message: any) => ({
+    role: message.role,
+    kind: message.kind,
+    text: String(message.text ?? "").slice(0, 240),
+    turnTerminal: message.turnTerminal,
+    tool: message.tool ? { name: message.tool.name, ok: message.tool.ok } : undefined,
+  }));
+  const recentProviderTurns = f.turns().slice(-5).map((turn: any) => ({
+    turnIndex: turn.turnIndex,
+    resumed: turn.resumed,
+    nativeSessionId: turn.nativeSessionId,
+    promptTail: f.prompt(turn).slice(-240),
+  }));
+  const task = f.task();
+  const failureDetails = {
+    wait: waitResult,
+    task: { busy: task.busy, activity: task.activity, turnStartedAt: task.turnStartedAt },
+    recentMessages,
+    recentProviderTurns,
+  };
+  expect(waitResult.status, `Return-turn retry diagnostics: ${JSON.stringify(failureDetails)}`).toBe("settled");
   expect(count(f.prompt(f.turns().at(-1)), "STOPPED_RETURN_RESULT")).toBe(1);
 }), 60_000);
 
@@ -540,11 +561,16 @@ it("gives a replacement session an earlier round's result that its rebuild could
   await expect.poll(() => f.turns().length, { timeout: 10_000 }).toBe(3);
   expect(count(f.prompt(f.turns()[2]), "ROUND_ONE_RESULT_TOKEN")).toBe(1);
   await expect.poll(() => f.launches(f.lead.id).length, { timeout: 15_000 }).toBe(2);
+  await expect.poll(async () => (await f.messages()).some(
+    (m: any) => m.text === "Round two sent" && m.turnTerminal === true,
+  ), { timeout: 10_000 }).toBe(true);
   for (let i = 0; i < chat; i++) {
     // Teammate work stays outstanding, so wait for this turn's own reply.
-    expect((await f.send(`chat ${i}`)).steered).toBeUndefined();
+    expect((await f.send(`chat ${i}`)).steered, `chat send ${i}`).toBeUndefined();
     await expect.poll(() => f.turns().length, { timeout: 20_000 }).toBe(4 + i);
-    await expect.poll(async () => (await f.messages()).some((m: any) => m.text === `chat reply ${i}`), { timeout: 10_000 }).toBe(true);
+    await expect.poll(async () => (await f.messages()).some(
+      (m: any) => m.text === `chat reply ${i}` && m.turnTerminal === true,
+    ), { timeout: 10_000 }).toBe(true);
   }
   const history = async () => (await f.api(`/api/threads/${f.thread}/messages?limit=200`)).messages.map((m: any) => m.id);
   // round one's result: the first result on the branch

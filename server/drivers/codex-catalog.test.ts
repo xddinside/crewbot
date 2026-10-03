@@ -186,7 +186,8 @@ name = "oMLX"
 `,
     });
     const catalog = await readCodexModelCatalog({ HOME: home });
-    expect(catalog.default).toBe("gpt-5.6-sol");
+    expect(catalog.default).toBe("gpt-6.1-sol");
+    expect(catalog.options[0]).toEqual({ id: "gpt-6.1-sol", label: "GPT-6.1 Sol", contextWindow: 1_050_000 });
     expect(catalog.options.every((option) => !option.custom)).toBe(true);
   });
 });

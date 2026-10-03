@@ -3,7 +3,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { validateBotCwd } from "./bot-cwd.ts";
+import { describeCwdStatFailure, validateBotCwd } from "./bot-cwd.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "omb-cwd-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -32,5 +32,24 @@ describe("validateBotCwd", () => {
     expect(validateBotCwd(file)).toEqual({ ok: false, error: expect.stringMatching(/not a folder/) });
     expect(validateBotCwd(join(dir, "nope"))).toEqual({ ok: false, error: expect.stringMatching(/doesn't exist/) });
     expect(validateBotCwd(42)).toEqual({ ok: false, error: expect.stringMatching(/path/) });
+  });
+});
+
+describe("working-folder stat failures", () => {
+  const cwd = "/workspace/project";
+  const error = (code: string) => Object.assign(new Error("stat failed"), { code });
+
+  it("distinguishes missing paths from non-folder path components", () => {
+    expect(describeCwdStatFailure(error("ENOENT"), cwd, true)).toBe(`the working folder no longer exists: ${cwd}`);
+    expect(describeCwdStatFailure(error("ENOTDIR"), cwd, true)).toBe(
+      `the working folder path contains a component that isn't a folder: ${cwd}`,
+    );
+  });
+
+  it("reports denied access and unexpected filesystem errors accurately", () => {
+    expect(describeCwdStatFailure(error("EACCES"), cwd, true)).toContain("permission was denied");
+    expect(describeCwdStatFailure(error("EPERM"), cwd, false)).toContain("permission was denied");
+    expect(describeCwdStatFailure(error("EIO"), cwd, true)).toContain("couldn't be checked (EIO)");
+    expect(describeCwdStatFailure(new Error("unexpected"), cwd, false)).toContain("couldn't be checked (I/O error)");
   });
 });

@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
-  DATA_DIR, instanceConfigs, loadConfig, parseStoredConfig, saveConfig,
+  DATA_DIR, instanceConfigs, loadConfig, migrateLegacyDataDir, parseStoredConfig, saveConfig,
   stripWorkspaceCredentialEnv, PROVIDER_CREDENTIAL_ENV, type AppConfig,
 } from "./config.ts";
 import type { InstanceConfig, ModelCatalog, ProviderSnapshot } from "./contracts.ts";
@@ -16,6 +16,8 @@ import { ProviderRegistry } from "./harness/registry.ts";
 import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
 import { defaultSetupIo, SetupCancelled, type SetupIo } from "./cli-prompts.ts";
 import { API_ENDPOINTS, fetchSetupModels, normalizeApiUrl, verifySetupCompletion } from "./cli-api-setup.ts";
+
+export { migrateLegacyDataDir };
 
 type Inspection = { snapshot: ProviderSnapshot; models: ModelCatalog };
 interface SetupDependencies {
@@ -92,6 +94,7 @@ export function readCliStartup(dataDir: string): AppConfig["cliStartup"] {
 
 export function saveCliStartup(dataDir: string, settings: NonNullable<AppConfig["cliStartup"]>): void {
   assertDataDir(dataDir);
+  migrateLegacyDataDir(dataDir);
   const lease = acquireDataDirLease(dataDir);
   try {
     checkStoredConfig(dataDir);
@@ -169,6 +172,9 @@ export async function runSetup(
   deps: SetupDependencies = dependencies,
 ): Promise<boolean> {
   assertDataDir(options.dataDir);
+  // Move a default legacy home before leasing: acquiring first creates
+  // ~/.crewbot and would make the safe target-exists rule leave old data behind.
+  migrateLegacyDataDir(options.dataDir);
   const lease = acquireDataDirLease(options.dataDir);
   try {
     checkStoredConfig(options.dataDir);
@@ -176,7 +182,7 @@ export async function runSetup(
     const runtime = instanceConfigs(cfg);
     const existing = Object.entries(runtime).filter(([id, entry]) =>
       !!cfg.instances?.[id] && ["codex", "claudeAgent", "openai-compat"].includes(entry.driver) && entry.enabled !== false);
-    io.log("\nWelcome to OpenMausBot\n");
+    io.log("\nWelcome to crewbot\n");
     io.log("Let's connect your AI. Choose a provider, then a model.");
     io.log("Existing bots and conversations stay untouched. Ctrl-C cancels.");
     io.log("You can add integrations and change settings later.\n");

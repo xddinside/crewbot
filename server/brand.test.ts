@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -42,6 +42,31 @@ describe("brand.json", () => {
     expect(status.brand.accent).toBe("#1D4ED8");
     expect(status.notice).toBeUndefined();
     expect(describeBrand(status)).toBe(`brand: Reliable Platform (from ${file})`);
+  });
+
+  it.each([["OpenMausBot", "crewbot"], ["crewbot", "crewbot"]])(
+    "keeps the configured brand name %s compatible at read time",
+    (storedName, displayName) => {
+      const contents = JSON.stringify({ name: storedName, tagline: "Local and private", accent: "#1D4ED8" });
+      const file = brandFile(contents);
+
+      const status = loadBrand({ file, isEntitled: licensed });
+
+      expect(status.brand).toEqual({ name: displayName, tagline: "Local and private", accent: "#1D4ED8" });
+      expect(readFileSync(file, "utf8")).toBe(contents);
+    },
+  );
+
+  it("notices when a stored OpenMausBot name is displayed as crewbot without rewriting the file", () => {
+    const contents = JSON.stringify({ name: "OpenMausBot", tagline: "Local and private" });
+    const file = brandFile(contents);
+    const status = loadBrand({ file, isEntitled: licensed });
+
+    expect(status.brand.name).toBe("crewbot");
+    expect(status.source).toBe("file");
+    expect(status.notice).toContain('stored brand name "OpenMausBot" is shown as "crewbot"');
+    expect(describeBrand(status)).toContain('stored brand name "OpenMausBot" is shown as "crewbot"');
+    expect(readFileSync(file, "utf8")).toBe(contents);
   });
 
   it("keeps the default brand on an unlicensed server and says so", () => {

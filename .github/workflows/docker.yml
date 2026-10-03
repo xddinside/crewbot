@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    tags: ["v*"]
+    tags: ["crewbot-v*"]
     paths:
       - Dockerfile
       - .dockerignore
@@ -34,26 +34,26 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build image
-        run: docker build -t openmausbot:ci .
+        run: docker build -t crewbot:ci .
       - name: Boot the container and prove the server + UI answer
         run: |
           set -euo pipefail
-          docker run -d --name omb openmausbot:ci
+          docker run -d --name crewbot crewbot:ci
           for i in $(seq 1 40); do
-            if docker exec omb curl -sf http://127.0.0.1:8799/api/health | grep -q openmausbot; then break; fi
+            if docker exec crewbot curl -sf http://127.0.0.1:8799/api/health | grep -q openmausbot; then break; fi
             sleep 2
-            if [ "$i" = "40" ]; then docker logs omb; echo "server never became healthy"; exit 1; fi
+            if [ "$i" = "40" ]; then docker logs crewbot; echo "server never became healthy"; exit 1; fi
           done
           # the renderer is served by the server itself (OMB_STATIC_DIR)
-          docker exec omb curl -sf http://127.0.0.1:8799/ | grep -qi "<html" || { docker logs omb; echo "UI not served"; exit 1; }
-          docker logs omb | tail -5
+          docker exec crewbot curl -sf http://127.0.0.1:8799/ | grep -qi "<html" || { docker logs crewbot; echo "UI not served"; exit 1; }
+          docker logs crewbot | tail -5
       - name: Prove the non-root user can browse with the baked-in Chrome
         run: |
           set -euo pipefail
-          test "$(docker exec omb id -un)" = maus
-          timeout 45 docker exec omb agent-browser --session ci-browser open 'data:text/html,<title>OMB browser smoke</title><h1>Browser ready</h1>'
-          timeout 15 docker exec omb agent-browser --session ci-browser get title | grep -Fx 'OMB browser smoke'
-          timeout 15 docker exec omb agent-browser --session ci-browser close
+          test "$(docker exec crewbot id -un)" = maus
+          timeout 45 docker exec crewbot agent-browser --session ci-browser open 'data:text/html,<title>CrewBot browser smoke</title><h1>Browser ready</h1>'
+          timeout 15 docker exec crewbot agent-browser --session ci-browser get title | grep -Fx 'CrewBot browser smoke'
+          timeout 15 docker exec crewbot agent-browser --session ci-browser close
       - name: Prove the server never binds a public interface
         # The loopback-trust model is the auth model, so the image must keep
         # the server unreachable from the container's own network. Probe from a
@@ -62,13 +62,13 @@ jobs:
         run: |
           set -euo pipefail
           probe() { docker run --rm --network bridge curlimages/curl:8.14.1 -s --max-time 3 "http://$1:$2/" >/dev/null; }
-          docker run -d --name leaky --entrypoint node openmausbot:ci -e "require('http').createServer((q,s)=>s.end('leak')).listen(8799,'0.0.0.0')"
+          docker run -d --name leaky --entrypoint node crewbot:ci -e "require('http').createServer((q,s)=>s.end('leak')).listen(8799,'0.0.0.0')"
           sleep 2
           leaky_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' leaky)
           test -n "$leaky_ip"
           probe "$leaky_ip" 8799 || { echo "probe cannot see a 0.0.0.0 listener; the check would be vacuous"; exit 1; }
           docker rm -f leaky >/dev/null
-          ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' omb)
+          ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' crewbot)
           test -n "$ip"
           if probe "$ip" 8799 || probe "$ip" 8800; then
             echo "server answered on $ip — it must only bind 127.0.0.1"; exit 1
@@ -82,8 +82,8 @@ jobs:
         # unbuffered, and that hooks stay reachable without a session.
         run: |
           set -euo pipefail
-          docker rm -f omb >/dev/null
-          docker tag openmausbot:ci ghcr.io/milind-soni/openmausbot:latest
+          docker rm -f crewbot >/dev/null
+          docker tag crewbot:ci ghcr.io/xddinside/crewbot:latest
           printf 'DOMAIN=localhost\nENGINES=\n' > deploy/.env
           docker compose -f deploy/docker-compose.yml up -d --no-build
           for i in $(seq 1 45); do
@@ -100,7 +100,7 @@ jobs:
           grep -q 'pair this device' <<<"$(body $H/api/bots)"
           grep -qi '<html' <<<"$(body $H/pair)"                                    # the UI shell is served so /pair can load
           test "$(code http://localhost/)" = 308                                   # HTTP redirects to HTTPS
-          pairing=$(docker compose -f deploy/docker-compose.yml exec -T omb node dist-server/pair-cli.js --label ci)
+          pairing=$(docker compose -f deploy/docker-compose.yml exec -T crewbot node dist-server/pair-cli.js --label ci)
           echo "$pairing"
           pcode=$(grep -o 'code=[A-Z2-9-]*' <<<"$pairing" | head -1 | cut -d= -f2)
           test -n "$pcode"
@@ -129,7 +129,7 @@ jobs:
     needs: build-and-smoke
     # Release dispatches on its published tag because GITHUB_TOKEN-created
     # tags do not start another workflow. A manual branch run is smoke-only.
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/crewbot-v'))
     runs-on: ubuntu-latest
     permissions:
       contents: read

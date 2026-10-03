@@ -21,6 +21,7 @@ import {
 import type { Readable, Writable } from "node:stream";
 import { join } from "node:path";
 import { resolveCliSpawn, type ResolvedSpawn } from "./env-path.ts";
+import { missingCwdReason } from "./bot-cwd.ts";
 
 export function resolveCli(cli: string, args: string[] = [], env?: NodeJS.ProcessEnv): ResolvedSpawn {
   return resolveCliSpawn(cli, args, env);
@@ -106,16 +107,16 @@ export function execCli(
   );
 }
 
-/** Human wording for a failed CLI spawn.
- *
- * Node reports these as bare errno strings — "spawn grok ENOENT" — which
- * reads as a crash. On a CLI spawn the common codes mean exactly one thing
- * each, and both are setup problems the user can fix, so say which. The
- * `setup` flag lets the UI offer "Install" instead of a "Retry" that is
- * guaranteed to fail the same way. */
+/** Human wording for a failed CLI spawn. `setup` offers engine installation
+ * and marks the bot dead, so a missing working folder must leave it false. */
 type SpawnFailure = { message: string; setup: boolean };
 
-export function describeSpawnFailure(err: NodeJS.ErrnoException, cli: string): SpawnFailure {
+export function describeSpawnFailure(err: NodeJS.ErrnoException, cli: string, cwd?: string | null): SpawnFailure {
+  // A failed launch can mean the executable is missing, or that the working
+  // folder is gone or inaccessible. Check the folder first so an unrelated
+  // CLI setup action cannot hide the actual problem.
+  const cwdProblem = missingCwdReason(cwd);
+  if (cwdProblem) return { message: cwdProblem, setup: false };
   if (err.code === "ENOENT")
     return { message: `\`${cli}\` isn't installed, or isn't on this app's PATH`, setup: true };
   if (err.code === "EACCES" || err.code === "EPERM")

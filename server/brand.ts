@@ -41,7 +41,7 @@ export const brandSchema = z
 
 export type Brand = z.infer<typeof brandSchema>;
 
-export const DEFAULT_BRAND: Brand = { name: "OpenMausBot" };
+export const DEFAULT_BRAND: Brand = { name: "crewbot" };
 
 export interface BrandStatus {
   brand: Brand;
@@ -49,12 +49,12 @@ export interface BrandStatus {
   source: "default" | "file";
   /** The path consulted, so an operator knows where to put the file. */
   file: string;
-  /** Why the file was not applied, in terms of what to change. */
+  /** Why the brand was not applied exactly as written, or how it was adjusted. */
   notice?: string;
 }
 
 export function brandFile(): string {
-  return process.env.OMB_BRAND_FILE || join(DATA_DIR, "brand.json");
+  return process.env.CREWBOT_BRAND_FILE || process.env.OMB_BRAND_FILE || join(DATA_DIR, "brand.json");
 }
 
 /** Resolve the brand for this server right now. Never throws. */
@@ -79,11 +79,24 @@ export function loadBrand(options: { file?: string; isEntitled?: (feature: strin
   if (!isEntitled("whitelabel")) {
     return fallback(`${file} found but this server is not licensed for whitelabel; using the default brand`);
   }
-  return { brand: parsed.data, source: "file", file };
+  // Renamed installations keep the customer-owned file as-is; normalize the
+  // former product default only in the value served to the application.
+  const hasLegacyName = parsed.data.name === "OpenMausBot";
+  const brand = hasLegacyName
+    ? { ...parsed.data, name: DEFAULT_BRAND.name }
+    : parsed.data;
+  return {
+    brand,
+    source: "file",
+    file,
+    ...(hasLegacyName ? { notice: 'stored brand name "OpenMausBot" is shown as "crewbot"; file was not changed' } : {}),
+  };
 }
 
 /** One line for the startup log. */
 export function describeBrand(status: BrandStatus): string {
-  if (status.source === "file") return `brand: ${status.brand.name} (from ${status.file})`;
+  if (status.source === "file") {
+    return `brand: ${status.brand.name} (from ${status.file}${status.notice ? `; ${status.notice}` : ""})`;
+  }
   return `brand: default${status.notice ? ` (${status.notice})` : ""}`;
 }

@@ -11,9 +11,8 @@ import { homedir } from "node:os";
 import { backup, DatabaseSync } from "node:sqlite";
 import { pipeline } from "node:stream/promises";
 import * as tar from "tar";
-import { fromMarkdown } from "mdast-util-from-markdown";
 import { writeFileAtomic } from "./atomic.ts";
-import { escapeAttribute, splitTranscriptAttachments } from "../src/lib/composer-attachments.ts";
+import { rebasePersistedFields, rebasePersistedMessage } from "../electron/rebase-data-paths.mjs";
 import { WORKSPACE_BACKUP_CLIENT_KEYS } from "../shared/workspace-backup-client.ts";
 import { excludedWorkspaceAuthPath, portableWorkspaceConfig, restoredWorkspaceConfig } from "./workspace-backup-policy.ts";
 import type { WorkspaceBackupClientState, WorkspaceBackupPrivateMetadata, WorkspaceBackupSummary } from "../shared/workspace-backup.ts";
@@ -28,10 +27,10 @@ const HEADER_BYTES = MAGIC.length + 16 + 12;
 const TAG_BYTES = 16;
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const EXCLUDED = new Set([
-  ".backups", "tools", "cache", ".cache", "tmp", ".tmp", "dist-native", "tunnel-runtime",
-  ".openmausbot-server-child", "environment-id", "sessions.json", "tunnel-account.json",
+  ".backups", ".crewbot-migration", "tools", "cache", ".cache", "tmp", ".tmp", "dist-native", "tunnel-runtime",
+  ".crewbot-server-child", ".openmausbot-server-child", "environment-id", "sessions.json", "tunnel-account.json",
   "team-computers.json", "room-continuations.json", "acp-instructions",
-  "openmausbot-server.lease", "box-create-requests.lock", "messages.db-wal", "messages.db-shm",
+  "crewbot-server.lease", "openmausbot-server.lease", "box-create-requests.lock", "messages.db-wal", "messages.db-shm",
 ]);
 const EXCLUSION_NOTES = [
   "Device pairing, server identity, live leases and runtime files (existing destination identities are preserved).",
@@ -69,7 +68,7 @@ export interface WorkspaceRestoreResult {
 export type LastWorkspaceRestore = WorkspaceRestoreResult & { restored: true; id: string };
 
 function excluded(name: string): boolean {
-  return EXCLUDED.has(name) || excludedWorkspaceAuthPath(name) || name.startsWith("openmausbot-server.lease.") || name.startsWith("box-create-requests.lock.") || /^perm-[A-Za-z0-9_-]+\.sock$/.test(name);
+  return EXCLUDED.has(name) || excludedWorkspaceAuthPath(name) || name.startsWith("crewbot-server.lease.") || name.startsWith("openmausbot-server.lease.") || name.startsWith("box-create-requests.lock.") || /^perm-[A-Za-z0-9_-]+\.sock$/.test(name);
 }
 function forbiddenArchivePath(path: string): boolean {
   const folded = path.toLowerCase();
@@ -530,7 +529,7 @@ export async function stageWorkspaceBackup(dataDir: string, archivePath: string,
     const versions = [manifest.summary.appVersion, options.currentAppVersion ?? ""].map((version) => /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(version)?.slice(1).map(Number));
     if (versions[0] && versions[1]) {
       for (let i = 0; i < 3; i++) {
-        if (versions[0][i] > versions[1][i]) throw new Error("This backup was made by a newer OpenMausBot version. Update the app before restoring it.");
+        if (versions[0][i] > versions[1][i]) throw new Error("This backup was made by a newer crewbot version. Update the app before restoring it.");
         if (versions[0][i] < versions[1][i]) break;
       }
     }
@@ -609,55 +608,6 @@ function rollback(dataDir: string, journal: RestoreJournal): void {
   }
 }
 
-function rebasePath(value: string, source: string, destination: string): string {
-  // Explicit old-root prefix, not a free-form text replacement. Normalize
-  // Windows separators without interpreting unrelated external paths.
-  const normalized = value.replaceAll("\\", "/");
-  const original = source.replaceAll("\\", "/").replace(/\/$/, "");
-  if (normalized !== original && !normalized.startsWith(`${original}/`)) return value;
-  const suffix = normalized.slice(original.length).replace(/^\//, "");
-  if (suffix && !validRelative(suffix)) return value;
-  return suffix ? join(destination, suffix) : destination;
-}
-const PATH_KEYS = new Set(["cwd", "pinnedCwd", "workspace", "configDir", "profileDirectory", "agentDir", "dataDir", "home", "cli", "path", "filePath", "localPath"]);
-function rebaseFields(value: unknown, source: string, destination: string): void {
-  if (Array.isArray(value)) { for (const item of value) rebaseFields(item, source, destination); }
-  else if (record(value)) {
-    for (const [key, item] of Object.entries(value)) {
-      if (PATH_KEYS.has(key) && typeof item === "string") value[key] = rebasePath(item, source, destination);
-      else if (typeof item === "object") rebaseFields(item, source, destination);
-    }
-  }
-}
-function rebaseMessage(message: unknown, source: string, destination: string): void {
-  if (!record(message)) return;
-  for (const field of ["attachments", "images", "fileAttachments", "file", "card"]) rebaseFields(message[field], source, destination);
-  if (typeof message.text !== "string") return;
-  // Only actual top-level attachment markup is rewritten. Quoted prose,
-  // code fences, pasted text and arbitrary mentions of the old path stay exact.
-  const text = message.text;
-  const edits: Array<{ from: number; to: number; text: string }> = [];
-  // A tag after a single newline remains inline HTML within a Markdown
-  // paragraph, even though the app's attachment parser treats its whole line
-  // as a card. Do not descend into quotes/lists/code or arbitrary HTML blocks.
-  const candidates = fromMarkdown(text).children.flatMap((node) => node.type === "html" ? [node] :
-    node.type === "paragraph" ? node.children.filter((child) => child.type === "html") : []);
-  for (const node of candidates) {
-    if (node.position?.start.offset === undefined || node.position.end.offset === undefined || node.position.start.column !== 1) continue;
-    const lineEnd = text.indexOf("\n", node.position.end.offset);
-    if (text.slice(node.position.end.offset, lineEnd < 0 ? text.length : lineEnd).trim()) continue;
-    const parsed = splitTranscriptAttachments(node.value, false);
-    if (parsed.display.trim() || !parsed.images.length && !parsed.files.length) continue;
-    const next = node.value.replace(/(<attached-(?:image|file)[\t ]+path=")([^"\r\n]*)(")/g, (whole, before: string, encoded: string, after: string) => {
-      const attachment = [...parsed.images, ...parsed.files].find((item) => escapeAttribute(item.path) === encoded);
-      return attachment ? `${before}${escapeAttribute(rebasePath(attachment.path, source, destination))}${after}` : whole;
-    });
-    if (next !== node.value) edits.push({ from: node.position.start.offset, to: node.position.end.offset, text: next });
-  }
-  let next = text;
-  for (const edit of edits.reverse()) next = next.slice(0, edit.from) + edit.text + next.slice(edit.to);
-  message.text = next;
-}
 function prepareRestore(dataDir: string, id: string, manifest: Manifest): string {
   assertLocalAuthOutsideSnapshot(dataDir);
   const job = jobPath(dataDir, id);
@@ -679,7 +629,7 @@ function prepareRestore(dataDir: string, id: string, manifest: Manifest): string
     writeJson(path, value);
   };
   for (const name of ["bots.json", "groups.json", "config.json", "routines.json", "calendar-calls.json"]) {
-    changeJson(name, (value) => rebaseFields(value, manifest.sourceDataDir, resolve(dataDir)));
+    changeJson(name, (value) => rebasePersistedFields(value, manifest.sourceDataDir, resolve(dataDir)));
   }
   // Voice provider configuration and credentials deliberately stay with the
   // destination installation. Imported per-agent ids belong to the source
@@ -747,8 +697,8 @@ function prepareRestore(dataDir: string, id: string, manifest: Manifest): string
   if (existsSync(join(prepared, "browser-cleanups.json"))) writeJson(join(prepared, "browser-cleanups.json"), []);
   for (const entry of manifest.entries) {
     if (/^messages-[^/]+\.json$/.test(entry.path)) changeJson(entry.path, (value) => {
-      if (Array.isArray(value)) for (const message of value) rebaseMessage(message, manifest.sourceDataDir, resolve(dataDir));
-      else if (record(value) && Array.isArray(value.messages)) for (const message of value.messages) rebaseMessage(message, manifest.sourceDataDir, resolve(dataDir));
+      if (Array.isArray(value)) for (const message of value) rebasePersistedMessage(message, manifest.sourceDataDir, resolve(dataDir));
+      else if (record(value) && Array.isArray(value.messages)) for (const message of value.messages) rebasePersistedMessage(message, manifest.sourceDataDir, resolve(dataDir));
     });
   }
   const dbPath = join(prepared, "messages.db");
@@ -760,7 +710,7 @@ function prepareRestore(dataDir: string, id: string, manifest: Manifest): string
         const update = db.prepare("UPDATE messages SET json = ?, text = ? WHERE thread_id = ? AND id = ?");
         for (const row of db.prepare("SELECT thread_id, id, json FROM messages").iterate()) {
           const message: unknown = JSON.parse(String(row.json));
-          rebaseMessage(message, manifest.sourceDataDir, resolve(dataDir));
+          rebasePersistedMessage(message, manifest.sourceDataDir, resolve(dataDir));
           const json = JSON.stringify(message);
           if (json !== row.json) update.run(json, record(message) && typeof message.text === "string" ? message.text : null, row.thread_id, row.id);
         }
@@ -772,7 +722,7 @@ function prepareRestore(dataDir: string, id: string, manifest: Manifest): string
         const pause = db.prepare("UPDATE chat_followups SET status = 'interrupted', payload = ? WHERE id = ?");
         for (const row of db.prepare("SELECT id, payload FROM chat_followups WHERE status IN ('pending', 'dispatching', 'interrupted')").iterate()) {
           const payload: unknown = JSON.parse(String(row.payload));
-          rebaseMessage(payload, manifest.sourceDataDir, resolve(dataDir));
+          rebasePersistedMessage(payload, manifest.sourceDataDir, resolve(dataDir));
           if (record(payload)) delete payload.prompt;
           pause.run(JSON.stringify(payload), row.id);
         }
@@ -799,7 +749,7 @@ function finishRestore(dataDir: string, id: string, consumePending = true): Last
     try {
       const value: unknown = JSON.parse(draftAttachments);
       const manifest = validateManifest(privateJson(join(jobPath(dataDir, id), "staged", "manifest.json")));
-      rebaseFields(value, manifest.sourceDataDir, resolve(dataDir));
+      rebasePersistedFields(value, manifest.sourceDataDir, resolve(dataDir));
       clientState["omb-draft-attachments"] = JSON.stringify(value);
     } catch { /* A malformed client draft must not jeopardize durable server data. */ }
   }

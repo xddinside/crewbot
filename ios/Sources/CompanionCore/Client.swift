@@ -240,7 +240,7 @@ public struct PairingInvite: Equatable, Sendable {
 
     public static func parse(_ url: URL) -> PairingInvite? {
         if let server = parseServerLink(url) { return server }
-        guard url.scheme?.lowercased() == "openmausbot",
+        guard ["openmausbot", "crewbot"].contains(url.scheme?.lowercased() ?? ""),
               url.host?.lowercased() == "pair",
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else { return nil }

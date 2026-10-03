@@ -332,6 +332,9 @@ export function companionPairingLink({
     return null;
   const dialableHost = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 
+  // Keep emitting the scheme understood by already-installed iOS companions.
+  // New companions also accept crewbot://pair; switch the issuer after the
+  // dual-scheme parser has shipped through the app-store rollout.
   const url = new URL("openmausbot://pair");
   url.searchParams.set("address", `${dialableHost}:${port}`);
   // The scanner uses the high-entropy token. The code remains in the link so

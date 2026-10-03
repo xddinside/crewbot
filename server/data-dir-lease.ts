@@ -3,6 +3,7 @@
 export {
   acquireDataDirLease,
   acquireDataDirLeaseForProcess,
+  assertLegacyDataDirIsNotInUse,
   DataDirLeaseError,
 } from "../electron/data-dir-lease.mjs";
 

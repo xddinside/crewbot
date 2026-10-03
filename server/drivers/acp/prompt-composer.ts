@@ -1,5 +1,5 @@
 // ACP is the one native-session family whose prompt is assembled by
-// OpenMausBot itself. Keep session-aware instruction composition here so each
+// crewbot itself. Keep session-aware instruction composition here so each
 // harness receives the same fresh/resume/recovery behavior.
 import type { SendTurnInput } from "../../contracts.ts";
 import type { PromptSection } from "../../system-prompt.ts";
@@ -43,11 +43,11 @@ export type AcpPromptComposition = {
 };
 
 const replacementNotice =
-  "OpenMausBot instruction replacement: the complete block below replaces any prior OpenMausBot instruction block. "
+  "crewbot instruction replacement: the complete block below replaces any prior crewbot instruction block. "
   + "The current approval policy and mounted tools remain enforced outside the model prompt.";
 
 const updateNotice =
-  "OpenMausBot instruction update: the following OpenMausBot sections replace their prior values. "
+  "crewbot instruction update: the following crewbot sections replace their prior values. "
   + "The current approval policy and mounted tools remain enforced outside the model prompt.";
 
 function systemText(turn: SendTurnInput, sections: readonly PromptSection[]): string {

@@ -1,7 +1,8 @@
 import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterAll, describe, expect, it, vi } from "vitest";
-import type { Bot, InstanceInfo } from "@/state/store";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { t } from "@/lib/i18n";
+import type { Bot, InstanceInfo, Message } from "@/state/store";
 import type { ApprovalModeSelector } from "./ApprovalModeSelector";
 import type { ModelPicker } from "./ModelPicker";
 
@@ -34,8 +35,12 @@ vi.mock("./ApprovalModeSelector", () => ({ ApprovalModeSelector: (props: Compone
   return createElement("span", { "data-test-approval-control": true });
 } }));
 
-const { ChatView, ErrorRow } = await import("./ChatView");
+const { ChatView, ErrorRow, canRestartWorkingFolderForFailure, latestWorkingFolderFailure } = await import("./ChatView");
 afterAll(() => vi.unstubAllGlobals());
+afterEach(() => {
+  fixture.dispatch.mockClear();
+  delete window.ogb;
+});
 
 const bot: Bot = {
   id: "bot", threadId: "selected", name: "Pepper", title: "", description: "", color: "green",
@@ -44,6 +49,11 @@ const bot: Bot = {
   tasks: [{ threadId: "selected", title: "Selected", createdAt: 1, busy: false, activity: "idle",
     modelSelection: { instanceId: "test", model: "thread-model" }, approvalMode: "ask" }],
 };
+const userMessage = (id: string, text: string): Message => ({ id, role: "user", kind: "text", at: 1, text });
+const folderError = (id: string, folder: string): Message => ({
+  id, role: "bot", kind: "activity", at: 2,
+  tool: { name: `error: the working folder ${folder} is unavailable`, ok: false },
+});
 
 describe("thread control placement", () => {
   it("keeps the composer inert until the deleted thread's replacement transcript arrives", () => {
@@ -68,6 +78,75 @@ describe("thread control placement", () => {
     expect(markup).toContain("Full access controls tool approvals, not provider safety checks");
     expect(markup).not.toContain("<button");
     expect(renderToStaticMarkup(createElement(ErrorRow, { message: "Network timeout", onRetry: () => {} }))).toContain("<button");
+  });
+  it("keeps folder recovery off an old error after a later turn settles", () => {
+    window.ogb = { pickFolder: vi.fn() } as unknown as NonNullable<Window["ogb"]>;
+    const messages = [
+      userMessage("old-user", "run in the removed folder"),
+      folderError("old-folder-error", "/gone"),
+      userMessage("later-user", "show the current status"),
+      { id: "later-answer", role: "bot", kind: "text", at: 3, text: "Everything is running." } satisfies Message,
+    ];
+    const markup = renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, busy: false, messages } }));
+
+    expect(markup).toContain("the working folder /gone is unavailable");
+    expect(markup).not.toContain(t("chat.chooseFolderAndRetry"));
+    expect(latestWorkingFolderFailure(messages)).toBeNull();
+  });
+  it("offers recovery only for the terminal folder failure and binds it to that user turn", () => {
+    window.ogb = { pickFolder: vi.fn() } as unknown as NonNullable<Window["ogb"]>;
+    const messages = [
+      userMessage("prior-user", "a completed request"),
+      { id: "prior-answer", role: "bot", kind: "text", at: 2, text: "Done." } satisfies Message,
+      userMessage("failed-user", "run the current request"),
+      folderError("current-folder-error", "/current-missing"),
+    ];
+    const markup = renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, busy: false, messages } }));
+
+    const target = latestWorkingFolderFailure(messages);
+    expect(target).toEqual({
+      errorMessageId: "current-folder-error",
+      userMessageId: "failed-user",
+      userMessageText: "run the current request",
+    });
+    expect(markup).toContain(t("chat.chooseFolderAndRetry"));
+    expect(markup.indexOf('data-mid="current-folder-error"')).toBeLessThan(markup.indexOf(t("chat.chooseFolderAndRetry")));
+    expect(canRestartWorkingFolderForFailure({
+      botId: "bot", threadId: "t1", busy: false, target,
+    }, "bot", "t1", target!)).toBe(true);
+    // A successful turn, a new busy turn, or a thread switch while the
+    // native picker is open invalidates the captured action.
+    expect(canRestartWorkingFolderForFailure({
+      botId: "bot", threadId: "t1", busy: false, target: null,
+    }, "bot", "t1", target!)).toBe(false);
+    expect(canRestartWorkingFolderForFailure({
+      botId: "bot", threadId: "t1", busy: true, target,
+    }, "bot", "t1", target!)).toBe(false);
+    expect(canRestartWorkingFolderForFailure({
+      botId: "bot", threadId: "other-thread", busy: false, target,
+    }, "bot", "t1", target!)).toBe(false);
+  });
+
+  it("replaces Retry with folder recovery for a broken working folder", () => {
+    const markup = renderToStaticMarkup(createElement(ErrorRow, {
+      message: "the working folder no longer exists: /missing/project",
+      onRetry: () => {},
+      onRestartWorkingFolder: () => {},
+    }));
+    expect(markup).toContain("Choose a valid folder to retry");
+    expect(markup).toContain("Folder path");
+    expect(markup).toContain("Use folder and retry");
+    expect(markup).not.toContain(">Retry</button>");
+  });
+
+  it("offers the native folder picker as the recovery action when available", () => {
+    const markup = renderToStaticMarkup(createElement(ErrorRow, {
+      message: "the working folder can't be accessed because permission was denied: /private/project",
+      onRetry: () => {},
+      onChooseWorkingFolder: () => {},
+    }));
+    expect(markup).toContain("Choose folder and retry");
+    expect(markup).not.toContain(">Retry</button>");
   });
   it.each([
     "شغّل الاختبارات\nThen run typecheck\nوبعدها ارفع الفرع",

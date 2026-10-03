@@ -58,14 +58,14 @@ class PairingLinkManifestTest {
         error("no <activity android:name=\"$name\"> in the manifest")
     }
 
-    private fun Element.hasPairingFilter(): Boolean {
+    private fun Element.hasPairingFilter(scheme: String = PairingLink.SCHEME): Boolean {
         val filters = getElementsByTagName("intent-filter")
         for (index in 0 until filters.length) {
             val filter = filters.item(index) as Element
             val data = filter.getElementsByTagName("data")
             for (dataIndex in 0 until data.length) {
                 val element = data.item(dataIndex) as Element
-                if (element.getAttributeNS(android, "scheme") == PairingLink.SCHEME &&
+                if (element.getAttributeNS(android, "scheme") == scheme &&
                     element.getAttributeNS(android, "host") == PairingLink.HOST
                 ) {
                     return true
@@ -79,8 +79,9 @@ class PairingLinkManifestTest {
     fun `the pairing deep link is handled only by the trampoline`() {
         assertTrue(
             activity(".PairingLinkActivity").hasPairingFilter(),
-            "PairingLinkActivity must own the openmausbot://pair filter",
+            "PairingLinkActivity must own the crewbot://pair filter",
         )
+        assertTrue(activity(".PairingLinkActivity").hasPairingFilter(PairingLink.LEGACY_SCHEME))
         assertFalse(
             activity(".MainActivity").hasPairingFilter(),
             "MainActivity must not receive credential-carrying pairing URLs: " +
@@ -188,6 +189,8 @@ class ShareReceiveManifestTest {
 class PairingLinkTest {
     @Test
     fun `only the pairing scheme and host are an invite`() {
+        assertTrue(PairingLink.isInvite("crewbot", "pair"))
+        assertTrue(PairingLink.isInvite("CrewBot", "PAIR"))
         assertTrue(PairingLink.isInvite("openmausbot", "pair"))
         assertTrue(PairingLink.isInvite("OpenMausBot", "PAIR"))
         assertFalse(PairingLink.isInvite("https", "pair"))

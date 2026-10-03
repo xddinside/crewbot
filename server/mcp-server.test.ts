@@ -5,7 +5,6 @@ import {
   probeBaseUrls,
   processMcpMessage,
   request,
-  resolveBaseUrl,
   TOOLS,
   validateBaseUrl,
   validateToolArguments,
@@ -24,10 +23,9 @@ function jsonResponse(body: unknown, options: { ok?: boolean; status?: number; s
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
   globalThis.fetch = ORIGINAL_FETCH;
-  delete process.env.OPENMAUSBOT_TOKEN;
-  delete process.env.ALLOW_INSECURE_HTTP;
 });
 
 describe("MCP JSON-RPC protocol", () => {
@@ -311,16 +309,16 @@ describe("MCP tool execution", () => {
 
     await expect(handleToolCall("update_bot_profile", {
       bot_id: "bot-1", name: "Mira",
-    }, fetcher)).rejects.toThrow("OpenMausBot did not return the updated bot");
+    }, fetcher)).rejects.toThrow("crewbot did not return the updated bot");
     await expect(handleToolCall("update_channel", {
       channel_id: "channel-1", name: "Launch",
-    }, fetcher)).rejects.toThrow("OpenMausBot did not return the updated channel");
+    }, fetcher)).rejects.toThrow("crewbot did not return the updated channel");
     await expect(handleToolCall("create_task", {
       target_type: "bot", target_id: "bot-1", title: "Fresh",
-    }, fetcher)).rejects.toThrow("OpenMausBot did not return the created task");
+    }, fetcher)).rejects.toThrow("crewbot did not return the created task");
     await expect(handleToolCall("rename_task", {
       target_type: "bot", target_id: "bot-1", task_id: "task-1", title: "Renamed",
-    }, fetcher)).rejects.toThrow("OpenMausBot did not return the renamed task");
+    }, fetcher)).rejects.toThrow("crewbot did not return the renamed task");
   });
 
   it("searches with encoded, bounded parameters", async () => {
@@ -717,6 +715,7 @@ describe("MCP tool execution", () => {
 
 describe("connection security and discovery", () => {
   it("accepts loopback HTTP and HTTPS origins, but rejects unsafe URL shapes", () => {
+    vi.stubEnv("ALLOW_INSECURE_HTTP", "");
     expect(validateBaseUrl("http://127.0.0.1:8799/")).toBe("http://127.0.0.1:8799");
     expect(validateBaseUrl("http://[::1]:8799")).toBe("http://[::1]:8799");
     expect(validateBaseUrl("https://maus.example.com")).toBe("https://maus.example.com");
@@ -724,6 +723,14 @@ describe("connection security and discovery", () => {
     expect(() => validateBaseUrl("https://maus.example.com/api")).toThrow("origin without a path");
     expect(() => validateBaseUrl("https://user:pass@maus.example.com")).toThrow("must not contain credentials");
     expect(() => validateBaseUrl("http://0.0.0.0:8799")).toThrow("Insecure cleartext HTTP");
+  });
+
+  it.each(["openmausbot", "crewbot"])("accepts the %s health identity for discovery and direct health", async (app) => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ app, static: true })) as any;
+    await expect(probeBaseUrls(["http://127.0.0.1:8799"])).resolves.toBe("http://127.0.0.1:8799");
+    await expect(handleToolCall("get_system_health", {}, async () => ({ app, static: true }))).resolves.toMatchObject({
+      status: "connected", app, packaged: true,
+    });
   });
 
   it("skips a foreign process and discovers the real fallback port", async () => {
@@ -736,7 +743,7 @@ describe("connection security and discovery", () => {
   });
 
   it("rejects successful non-JSON responses and sends an optional bearer token", async () => {
-    process.env.OPENMAUSBOT_TOKEN = "proxy-token";
+    vi.stubEnv("OPENMAUSBOT_TOKEN", "proxy-token");
     globalThis.fetch = vi.fn(async (_url: any, options: any) => {
       expect(new Headers(options.headers).get("Authorization")).toBe("Bearer proxy-token");
       return { ...jsonResponse({}), json: vi.fn(async () => { throw new Error("not json"); }) };
@@ -756,8 +763,15 @@ describe("connection security and discovery", () => {
   });
 
   it("requires an explicit destination before sending a bearer token", async () => {
-    process.env.OPENMAUSBOT_TOKEN = "proxy-token";
-    await expect(resolveBaseUrl()).rejects.toThrow("OPENMAUSBOT_URL or OMB_PORT");
+    vi.stubEnv("CREWBOT_URL", "");
+    vi.stubEnv("OPENMAUSBOT_URL", "");
+    vi.stubEnv("CREWBOT_PORT", "");
+    vi.stubEnv("OMB_PORT", "");
+    vi.stubEnv("CREWBOT_TOKEN", "proxy-token");
+    vi.stubEnv("OPENMAUSBOT_TOKEN", "");
+    vi.resetModules();
+    const { resolveBaseUrl: resolveIsolatedBaseUrl } = await import("../scripts/mcp-server.ts");
+    await expect(resolveIsolatedBaseUrl()).rejects.toThrow("Set CREWBOT_URL or CREWBOT_PORT when using CREWBOT_TOKEN");
   });
 
   it("validates direct tool arguments", () => {

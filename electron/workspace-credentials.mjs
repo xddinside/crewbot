@@ -66,7 +66,10 @@ export function workspaceCredentialEnv(credentials) {
   const env = {};
   for (const { name, env: envName } of WORKSPACE_CREDENTIALS) {
     const value = credentials?.[name];
-    if (typeof value === "string" && value) env[envName] = value;
+    if (typeof value === "string" && value) {
+      env[envName] = value;
+      if (envName.startsWith("OMB_")) env[`CREWBOT_${envName.slice(4)}`] = value;
+    }
   }
   return env;
 }

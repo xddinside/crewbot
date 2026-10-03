@@ -29,11 +29,11 @@ if (appImages.length !== 1) {
 const [appImage] = appImages;
 
 const executables = [
-  path.join(root, "release", "linux-unpacked", "openmausbot"),
+  path.join(root, "release", "linux-unpacked", "crewbot"),
   path.join(root, "release", appImage),
 ];
 if (process.env.OMB_SMOKE_INSTALLED_DEB === "1") {
-  executables.push("/opt/OpenMausBot/openmausbot");
+  executables.push("/opt/crewbot/crewbot");
 }
 
 for (const executable of executables) {
@@ -48,7 +48,7 @@ for (const executable of executables) {
         ...process.env,
         XDG_RUNTIME_DIR: runtimeDirectory,
         OMB_SMOKE_BUNDLED_CUA: "1",
-        OMB_SMOKE_EXECUTABLE: executable,
+        CREWBOT_SMOKE_EXECUTABLE: executable,
       },
       stdio: "inherit",
     },
@@ -78,7 +78,7 @@ if (process.exitCode === undefined) {
         XDG_RUNTIME_DIR: runtimeDirectory,
         OMB_SMOKE_BUNDLED_CUA: "1",
         OMB_SMOKE_SIGNAL_SHUTDOWN: "1",
-        OMB_SMOKE_EXECUTABLE: path.join(root, "release", appImage),
+        CREWBOT_SMOKE_EXECUTABLE: path.join(root, "release", appImage),
       },
       stdio: "inherit",
     },
@@ -106,7 +106,7 @@ if (process.exitCode === undefined) {
         ...process.env,
         XDG_RUNTIME_DIR: runtimeDirectory,
         OMB_SMOKE_HARD_DEATH: "1",
-        OMB_SMOKE_EXECUTABLE: path.join(root, "release", "linux-unpacked", "openmausbot"),
+        CREWBOT_SMOKE_EXECUTABLE: path.join(root, "release", "linux-unpacked", "crewbot"),
       },
       stdio: "inherit",
     },
