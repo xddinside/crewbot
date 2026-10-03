@@ -24,6 +24,16 @@ function quotedSystemdEnvironment(name: string, value: string): string {
   return `Environment=${quoteSystemd(`${name}=${value}`)}\n`;
 }
 
+/** Rollback with an explicit "crewbot.service is installed" load state.
+ *
+ * Without it these tests would ask the developer's own systemd, so a machine
+ * without a Crewbot service would silently take the never-installed branch.
+ */
+function rollback(...args: Parameters<typeof runServiceRollback>): number {
+  const [input, io] = args;
+  return runServiceRollback({ unitLoadState: () => "loaded", ...input }, io);
+}
+
 describe("service rollback", () => {
   const roots: string[] = [];
   // Successful publication renames a staged directory over the reserved
@@ -51,7 +61,7 @@ describe("service rollback", () => {
     const calls: string[] = [];
     const out: string[] = [];
     const err: string[] = [];
-    const code = runServiceRollback({
+    const code = rollback({
       dataDir,
       platform: "linux",
       home,
@@ -74,7 +84,8 @@ describe("service rollback", () => {
       "sudo systemctl disable --now crewbot.service",
       `sudo cp --no-clobber --preserve=all ${legacyBackup} ${legacyUnit}`,
       "sudo systemctl daemon-reload",
-      "sudo systemctl enable --now openmausbot.service",
+      "sudo systemctl enable openmausbot.service",
+      "sudo systemctl restart openmausbot.service",
       "sudo systemctl is-active --quiet openmausbot.service",
     ]);
     expect(JSON.parse(readFileSync(join(source, "bots.json"), "utf8"))[0].cwd).toBe(join(source, "workspace"));
@@ -83,6 +94,126 @@ describe("service rollback", () => {
     expect(existsSync(join(dataDir, "bots.json"))).toBe(true);
     expect(out.join("\n")).toContain("legacy service is active");
     expect(err).toEqual([]);
+  });
+
+  it.skipIf(!supportsServiceDirectoryPublish)("recovers the legacy root when Crewbot's unit was never installed", () => {
+    // A cutover that never reached activation has no crewbot.service for
+    // systemd to disable, and `systemctl disable` fails outright for a unit
+    // file systemd does not have. The advertised recovery still has to publish
+    // the legacy root and start the legacy service.
+    const home = mkdtempSync(join(tmpdir(), "crewbot-service-rollback-uninstalled-"));
+    roots.push(home);
+    const source = join(home, ".openmausbot");
+    const dataDir = join(home, ".crewbot");
+    const units = join(home, "systemd");
+    const legacyUnit = join(units, "openmausbot.service");
+    const legacyBackup = `${legacyUnit}.crewbot-backup`;
+    mkdirSync(source);
+    mkdirSync(units);
+    writeFileSync(join(source, "bots.json"), JSON.stringify([{ cwd: join(source, "workspace") }]));
+    writeFileSync(legacyBackup, systemdEnvironment("OMB_DATA_DIR", source));
+    migrateLegacyDataDir(dataDir, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
+
+    const plan = servicePlan("linux", dataDir, home)!;
+    const calls: string[] = [];
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = runServiceRollback({
+      dataDir,
+      platform: "linux",
+      home,
+      plan: { ...plan, legacyUnit, legacyBackup },
+      unitLoadState: (unit) => (unit === "crewbot.service" ? "not-found" : "loaded"),
+      runCommand: (command, args) => {
+        calls.push(`${command} ${args.join(" ")}`);
+        if (args[0] === "cp") copyFileSync(legacyBackup, legacyUnit);
+      },
+    }, { log: (line) => out.push(line), error: (line) => err.push(line) });
+
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    expect(calls).toEqual([
+      `sudo cp --no-clobber --preserve=all ${legacyBackup} ${legacyUnit}`,
+      "sudo systemctl daemon-reload",
+      "sudo systemctl enable openmausbot.service",
+      "sudo systemctl restart openmausbot.service",
+      "sudo systemctl is-active --quiet openmausbot.service",
+    ]);
+    expect(calls.some((call) => call.includes("disable"))).toBe(false);
+    expect(out.join("\n")).toContain("crewbot.service was never installed");
+    expect(JSON.parse(readFileSync(join(source, "bots.json"), "utf8"))[0].cwd).toBe(join(source, "workspace"));
+    expect(existsSync(join(dataDir, "bots.json"))).toBe(true);
+  });
+
+  it("still tries to stop Crewbot when systemd's load state cannot be read", () => {
+    // A probe that cannot answer must not be read as "not installed": the stop
+    // is the one step that protects the data root from a running writer.
+    const home = mkdtempSync(join(tmpdir(), "crewbot-service-rollback-unknown-"));
+    roots.push(home);
+    const dataDir = join(home, "custom-data");
+    const legacyDataDir = join(home, "custom openmausbot data");
+    const units = join(home, "systemd");
+    const legacyUnit = join(units, "openmausbot.service");
+    const legacyBackup = `${legacyUnit}.crewbot-backup`;
+    mkdirSync(dataDir);
+    mkdirSync(legacyDataDir);
+    mkdirSync(units);
+    writeFileSync(legacyUnit, quotedSystemdEnvironment("OMB_DATA_DIR", legacyDataDir));
+    writeFileSync(legacyBackup, quotedSystemdEnvironment("OMB_DATA_DIR", legacyDataDir));
+
+    const calls: string[] = [];
+    const err: string[] = [];
+    const plan = servicePlan("linux", dataDir, home)!;
+    const code = runServiceRollback({
+      dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup },
+      unitLoadState: () => null,
+      runCommand: (_command, args) => calls.push(args.join(" ")),
+    }, { log: () => {}, error: (line) => err.push(line) });
+
+    expect(code).toBe(0);
+    expect(calls).toEqual([
+      "systemctl disable --now crewbot.service",
+      "systemctl daemon-reload",
+      "systemctl enable openmausbot.service",
+      "systemctl restart openmausbot.service",
+      "systemctl is-active --quiet openmausbot.service",
+    ]);
+    expect(err).toEqual([]);
+  });
+
+  it("restarts the legacy service instead of leaving a running one on the migrated tree", () => {
+    // A legacy stop that failed leaves the old process alive with its database
+    // and attachment handles open on the migrated tree. `enable --now` would
+    // then report `is-active` for a server that is not reading the root this
+    // recovery just republished, so the sequence has to restart it.
+    const home = mkdtempSync(join(tmpdir(), "crewbot-service-rollback-restart-"));
+    roots.push(home);
+    const dataDir = join(home, "new-data");
+    const legacyDataDir = join(home, "legacy data");
+    const units = join(home, "systemd");
+    const legacyUnit = join(units, "openmausbot.service");
+    const legacyBackup = `${legacyUnit}.crewbot-backup`;
+    const unit = `${quotedSystemdEnvironment("OMB_DATA_DIR", legacyDataDir)}\n`;
+    mkdirSync(dataDir);
+    mkdirSync(legacyDataDir);
+    mkdirSync(units);
+    writeFileSync(join(legacyDataDir, "old.txt"), "legacy workspace");
+    writeFileSync(legacyUnit, unit);
+    writeFileSync(legacyBackup, unit);
+
+    const calls: string[] = [];
+    const err: string[] = [];
+    const plan = servicePlan("linux", dataDir, home)!;
+    const code = rollback({
+      dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup },
+      runCommand: (_command, args) => calls.push(args.join(" ")),
+    }, { log: () => {}, error: (line) => err.push(line) });
+
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    expect(calls.some((call) => call === "systemctl restart openmausbot.service")).toBe(true);
+    expect(calls.some((call) => call.includes("enable --now openmausbot.service"))).toBe(false);
+    expect(readFileSync(join(legacyDataDir, "old.txt"), "utf8")).toBe("legacy workspace");
   });
 
   it("refuses a conflicting original path before stopping Crewbot", () => {
@@ -104,7 +235,7 @@ describe("service rollback", () => {
     const calls: string[] = [];
     const err: string[] = [];
     const plan = servicePlan("linux", dataDir, home)!;
-    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
+    const code = rollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
       log: () => {}, error: (line) => err.push(line),
     });
 
@@ -136,7 +267,7 @@ describe("service rollback", () => {
     const calls: string[] = [];
     const err: string[] = [];
     const plan = servicePlan("linux", dataDir, home)!;
-    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
+    const code = rollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
       log: () => {}, error: (line) => err.push(line),
     });
 
@@ -166,7 +297,7 @@ describe("service rollback", () => {
     const calls: string[] = [];
     const err: string[] = [];
     const plan = servicePlan("linux", dataDir, home)!;
-    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
+    const code = rollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
       log: () => {}, error: (line) => err.push(line),
     });
 
@@ -194,7 +325,7 @@ describe("service rollback", () => {
     const calls: string[] = [];
     const err: string[] = [];
     const plan = servicePlan("linux", dataDir, home)!;
-    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
+    const code = rollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
       log: () => {}, error: (line) => err.push(line),
     });
 
@@ -225,7 +356,7 @@ describe("service rollback", () => {
     const calls: string[] = [];
     const err: string[] = [];
     const plan = servicePlan("linux", dataDir, home)!;
-    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
+    const code = rollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
       log: () => {}, error: (line) => err.push(line),
     });
 
@@ -233,7 +364,8 @@ describe("service rollback", () => {
     expect(calls).toEqual([
       "systemctl disable --now crewbot.service",
       "systemctl daemon-reload",
-      "systemctl enable --now openmausbot.service",
+      "systemctl enable openmausbot.service",
+      "systemctl restart openmausbot.service",
       "systemctl is-active --quiet openmausbot.service",
     ]);
     expect(readFileSync(join(legacyDataDir, "old.txt"), "utf8")).toBe("legacy workspace");
@@ -256,7 +388,7 @@ describe("service rollback", () => {
     migrateLegacyDataDir(dataDir, { home, legacyDataDirs: [source], assertLegacyDataDirIsNotInUse: () => {} });
     const plan = servicePlan("linux", dataDir, home)!;
     const messages = { log: (_line: string) => {}, error: (_line: string) => {} };
-    const first = runServiceRollback({
+    const first = rollback({
       dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup },
       runCommand: (_command, args) => {
         if (args.includes("daemon-reload")) throw new Error("synthetic daemon-reload failure");
@@ -268,7 +400,7 @@ describe("service rollback", () => {
     expect(existsSync(join(source, ".crewbot-migration", "recovery"))).toBe(true);
 
     const calls: string[] = [];
-    const second = runServiceRollback({
+    const second = rollback({
       dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup },
       runCommand: (_command, args) => calls.push(args.join(" ")),
     }, messages);
@@ -276,7 +408,8 @@ describe("service rollback", () => {
     expect(calls).toEqual([
       "systemctl disable --now crewbot.service",
       "systemctl daemon-reload",
-      "systemctl enable --now openmausbot.service",
+      "systemctl enable openmausbot.service",
+      "systemctl restart openmausbot.service",
       "systemctl is-active --quiet openmausbot.service",
     ]);
     expect(JSON.parse(readFileSync(join(source, "bots.json"), "utf8"))[0].cwd).toBe(join(source, "workspace"));
@@ -297,7 +430,7 @@ describe("service rollback", () => {
     const calls: string[] = [];
     const err: string[] = [];
     const plan = servicePlan("linux", dataDir, home)!;
-    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
+    const code = rollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
       log: () => {}, error: (line) => err.push(line),
     });
 
@@ -323,7 +456,7 @@ describe("service rollback", () => {
     const calls: string[] = [];
     const err: string[] = [];
     const plan = servicePlan("linux", dataDir, home)!;
-    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
+    const code = rollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
       log: () => {}, error: (line) => err.push(line),
     });
 
@@ -355,7 +488,7 @@ describe("service rollback", () => {
       const out: string[] = [];
       const err: string[] = [];
       const plan = servicePlan("linux", dataDir, home)!;
-      const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: () => {} }, {
+      const code = rollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: () => {} }, {
         log: (line) => out.push(line), error: (line) => err.push(line),
       });
       return { code, out, err };
@@ -388,7 +521,7 @@ describe("service rollback", () => {
     const logs: string[] = [];
     const errors: string[] = [];
     const plan = servicePlan("linux", dataDir, home)!;
-    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => {
+    const code = rollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => {
       if (args[0] === "cp") copyFileSync(legacyBackup, legacyUnit);
     } }, {
       log: (line) => logs.push(line), error: (line) => errors.push(line),
@@ -415,7 +548,7 @@ describe("service rollback", () => {
     const calls: string[] = [];
     const errors: string[] = [];
     const plan = servicePlan("linux", dataDir, home)!;
-    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
+    const code = rollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
       log: () => {}, error: (line) => errors.push(line),
     });
 
@@ -440,7 +573,7 @@ describe("service rollback", () => {
     const logs: string[] = [];
     const errors: string[] = [];
     const plan = servicePlan("linux", dataDir, home)!;
-    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => {
+    const code = rollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => {
       if (args[0] === "cp") copyFileSync(legacyBackup, legacyUnit);
     } }, {
       log: (line) => logs.push(line), error: (line) => errors.push(line),
@@ -468,7 +601,7 @@ describe("service rollback", () => {
     const calls: string[] = [];
     const err: string[] = [];
     const plan = servicePlan("linux", dataDir, home)!;
-    const code = runServiceRollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
+    const code = rollback({ dataDir, platform: "linux", home, plan: { ...plan, legacyUnit, legacyBackup }, runCommand: (_command, args) => calls.push(args.join(" ")) }, {
       log: () => {}, error: (line) => err.push(line),
     });
 

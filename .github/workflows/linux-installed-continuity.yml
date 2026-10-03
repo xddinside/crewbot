@@ -1,0 +1,185 @@
+name: Linux installed continuity
+
+# The installed old-to-new upgrade cannot be proven anywhere else: it needs
+# `dpkg`, a synthetic X server, an owned DBus session and an owned unlocked
+# keyring, and it mutates real packages. `pull_request` is the trigger that lets
+# this proof run before the workflow file reaches the default branch; a
+# workflow_dispatch-only file could never do that.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  # The candidate package comes from one already-finished packaging run in this
+  # repository rather than a second packaging job, so the fixture is provable
+  # against exact reviewed bytes at low cost.
+  actions: read
+
+concurrency:
+  group: linux-installed-continuity-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The genuine released predecessor, verified against the digest recorded when
+  # it was first fetched. The fixture re-verifies it after download and fails
+  # closed; these are the expected values, not a substitute for that check.
+  OLD_PACKAGE_URL: https://github.com/milind-soni/OpenMausBot/releases/download/v0.1.83/OpenMausBot-0.1.83-amd64.deb
+  OLD_PACKAGE_SHA256: c34b4d95c26b6edb4992ec6766ebfa9e47b0a740d172ea8aec5df1d14968d017
+  OLD_PACKAGE_BYTES: "231300320"
+  # One artifact handover, reused rather than a second packaging system. Both
+  # values point at run 36982252699, whose source SHA is the pinned candidate.
+  CANDIDATE_RUN_ID: "36982252699"
+  CANDIDATE_ARTIFACT: crewbot-ubuntu-0.1.84-x64
+  # A run id proves nothing by itself. The fixture also holds every candidate
+  # file to this SHA-256, so a repacked or repinned artifact fails closed.
+  CANDIDATE_SOURCE_SHA: 7fb1e45327d7e204cdcec681d96012f851976e13
+
+jobs:
+  installed-continuity:
+    # Ubuntu 24.04 x64 is the packaging and CI reference for Linux. Every value
+    # that would attach this run to a desktop, a login keyring or a service
+    # session is cleared here and re-checked inside the fixture.
+    name: installed old-to-new continuity (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      DISPLAY: ""
+      WAYLAND_DISPLAY: ""
+      WAYLAND_SOCKET: ""
+      XDG_SESSION_TYPE: ""
+      XDG_SESSION_ID: ""
+      XDG_SEAT: ""
+      XDG_RUNTIME_DIR: ""
+      DBUS_SESSION_BUS_ADDRESS: ""
+      DBUS_SYSTEM_BUS_ADDRESS: ""
+      GNOME_KEYRING_CONTROL: ""
+      SSH_AUTH_SOCK: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install the owned session, package and keyring tools
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          dbus dbus-x11 gnome-keyring libglib2.0-bin libsecret-tools x11-utils xvfb
+          libnotify4 libsecret-1-0 libnss3 libasound2t64 libgbm1 libgtk-3-0 libxss1
+          libxtst6 xdg-utils libdrm2
+      # The package's own post-install refuses to run unless /opt is a real
+      # root-owned 0755 directory: it treats anything else as an unsafe ancestor
+      # for a root-owned install root. GitHub's runner image ships /opt as 0775,
+      # so install on a parent that matches a normal Ubuntu machine. Same recipe
+      # `ci.yml` and `package-linux.yml` already use; the product check stands.
+      - name: Match a normal Ubuntu package parent on the ephemeral runner
+        run: |
+          set -euo pipefail
+          test ! -L /opt
+          test "$(stat -c '%F %U:%G' /opt)" = "directory root:root"
+          case "$(stat -c '%a' /opt)" in
+            755) ;;
+            775|777) sudo chmod 0755 /opt ;;
+            *) echo "Unexpected /opt mode: $(stat -c '%a' /opt)" >&2; exit 1 ;;
+          esac
+          test "$(stat -c '%U:%G %a' /opt)" = "root:root 755"
+
+      # The workflow clears every session variable, so this process inherits no
+      # display, no session bus and no keyring. The fixture starts its own Xvfb
+      # and its own dbus-daemon with a socket inside its own root, then its own
+      # unlocked keyring on that bus. Nothing here can reach the runner's login
+      # session.
+      - name: Download and verify the pinned old package
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/inputs"
+          curl --fail --location --silent --show-error \
+            --output "$RUNNER_TEMP/inputs/OpenMausBot-0.1.83-amd64.deb" \
+            "$OLD_PACKAGE_URL"
+          cd "$RUNNER_TEMP/inputs"
+          echo "${OLD_PACKAGE_SHA256}  OpenMausBot-0.1.83-amd64.deb" | sha256sum -c -
+          test "$(stat -c '%s' OpenMausBot-0.1.83-amd64.deb)" = "$OLD_PACKAGE_BYTES"
+
+      - name: Fetch the pinned candidate artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_SHA" = "$CANDIDATE_SOURCE_SHA" || \
+            echo "note: this run checks out $GITHUB_SHA; the candidate bytes come from the pinned packaging run and are digest-checked below"
+          mkdir -p "$RUNNER_TEMP/inputs/candidate"
+          gh run download "$CANDIDATE_RUN_ID" -R xddinside/crewbot \
+            --name "$CANDIDATE_ARTIFACT" --dir "$RUNNER_TEMP/inputs/candidate"
+          # The artifact may carry one directory level. Flatten it so the driver
+          # sees exactly the six supported files and nothing else.
+          if [ ! -f "$RUNNER_TEMP/inputs/candidate/SHA256SUMS-ubuntu-x64.txt" ]; then
+            inner="$(dirname "$(find "$RUNNER_TEMP/inputs/candidate" -maxdepth 3 -name SHA256SUMS-ubuntu-x64.txt -print -quit)")"
+            test -n "$inner"
+            mv "$inner"/* "$RUNNER_TEMP/inputs/candidate/"
+          fi
+          ls -1 "$RUNNER_TEMP/inputs/candidate"
+
+      - name: Write the pinned candidate manifest
+        # Inlined rather than fetched: the handover values are the contract, and
+        # this keeps the run independent of any scratch path on any branch.
+        run: |
+          cat > "$RUNNER_TEMP/inputs/candidate-hashes.json" <<'JSON'
+          {
+            "sha": "7fb1e45327d7e204cdcec681d96012f851976e13",
+            "tree": "ea869419a454c6e01e38e64662de245c6653505a",
+            "run": 36982252699,
+            "artifactId": 11215642565,
+            "artifactName": "crewbot-ubuntu-0.1.84-x64",
+            "apiArtifactDigest": "sha256:6a3384753c37b5a7eab3d717b48763c7eb9f69b540c61b3b9689d5ae2582ae8f",
+            "files": [
+              { "name": "SHA256SUMS-ubuntu-x64.txt", "bytes": 355, "sha256": "f0fc1baca3729d169ea1b4acd83cfaeb6ba749ce26147806735488f5baafb84c" },
+              { "name": "crewbot-0.1.84-amd64.deb", "bytes": 231693316, "sha256": "65552b3c0b3da81efa394025155cbcab7286f082a8c5bf43671b1df43e08e410" },
+              { "name": "crewbot-0.1.84-x86_64.AppImage", "bytes": 273351218, "sha256": "fa597b4bd8b57b710b1f3cb47b42b4202c8522caf0547abe4b333d7a6c23d432" },
+              { "name": "crewbot-amd64.deb", "bytes": 231693316, "sha256": "65552b3c0b3da81efa394025155cbcab7286f082a8c5bf43671b1df43e08e410" },
+              { "name": "crewbot.AppImage", "bytes": 273351218, "sha256": "fa597b4bd8b57b710b1f3cb47b42b4202c8522caf0547abe4b333d7a6c23d432" },
+              { "name": "latest-linux.yml", "bytes": 538, "sha256": "c2a49f8db8da943268165c6e357d88f6e0ec9e3dc3364013065a8f5d0c1abf7c" }
+            ]
+          }
+          JSON
+          node -e '
+            const fs = require("node:fs");
+            const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (manifest.sha !== process.argv[2]) throw new Error(`manifest ${manifest.sha} is not the pinned ${process.argv[2]}`);
+            console.log(`[continuity] pinned manifest for ${manifest.sha}, artifact ${manifest.artifactId} of run ${manifest.run}`);
+          ' "$RUNNER_TEMP/inputs/candidate-hashes.json" "$CANDIDATE_SOURCE_SHA"
+
+      - name: Drive the installed old-to-new upgrade
+        env:
+          OMB_CONTINUITY_OLD_DEB: ${{ runner.temp }}/inputs/OpenMausBot-0.1.83-amd64.deb
+          OMB_CONTINUITY_CANDIDATE_DIR: ${{ runner.temp }}/inputs/candidate
+          OMB_CONTINUITY_CANDIDATE_MANIFEST: ${{ runner.temp }}/inputs/candidate-hashes.json
+          OMB_CONTINUITY_CANDIDATE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
+          OMB_KEEP_CONTINUITY_FIXTURE: "1"
+        run: node scripts/verify-linux-installed-continuity.mjs
+
+      - name: Upload the continuity evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-installed-continuity-evidence
+          path: |
+            ${{ runner.temp }}/omb-installed-continuity-*/
+            ${{ runner.temp }}/inputs/candidate-hashes.json
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 14
+
+      - name: Remove the installed packages
+        if: always()
+        run: |
+          sudo dpkg --purge crewbot || true
+          sudo dpkg --purge openmausbot || true
+          sudo rm -rf /opt/crewbot /opt/OpenMausBot
+          rm -rf "$RUNNER_TEMP"/omb-installed-continuity-*

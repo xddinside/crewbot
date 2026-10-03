@@ -1,0 +1,206 @@
+name: Linux desktop recovery
+
+# The installed native folder picker cannot be proven anywhere else: it needs
+# `dpkg`, a synthetic X server, an owned DBus session, and the real GTK chooser
+# that only a real package under a real display can open. `pull_request` is the
+# trigger that lets this proof run before the workflow file reaches the default
+# branch; a workflow_dispatch-only file could never do that.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  # The candidate package comes from one already-finished packaging run in this
+  # repository rather than a second packaging job, so the fixture is provable
+  # against exact reviewed bytes at low cost.
+  actions: read
+
+concurrency:
+  group: linux-desktop-recovery-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # One artifact handover, reused rather than a second packaging system. Both
+  # values point at run 36982252699, whose source SHA is the pinned candidate.
+  CANDIDATE_RUN_ID: "36982252699"
+  CANDIDATE_ARTIFACT: crewbot-ubuntu-0.1.84-x64
+  # A run id proves nothing by itself. The fixture also holds every candidate
+  # file to this SHA-256, so a repacked or repinned artifact fails closed.
+  CANDIDATE_SOURCE_SHA: 7fb1e45327d7e204cdcec681d96012f851976e13
+
+jobs:
+  installed-desktop-recovery:
+    # Ubuntu 24.04 x64 is the packaging and CI reference for Linux. Every value
+    # that would attach this run to a desktop or a login session is cleared here,
+    # and the fixture refuses to create a directory until it has proved the
+    # clearing took effect.
+    name: installed native picker recovery (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      DISPLAY: ""
+      WAYLAND_DISPLAY: ""
+      WAYLAND_SOCKET: ""
+      XDG_SESSION_TYPE: ""
+      XDG_SESSION_ID: ""
+      XDG_CURRENT_DESKTOP: ""
+      DESKTOP_SESSION: ""
+      XDG_SEAT: ""
+      XDG_RUNTIME_DIR: ""
+      DBUS_SESSION_BUS_ADDRESS: ""
+      DBUS_SYSTEM_BUS_ADDRESS: ""
+      GNOME_KEYRING_CONTROL: ""
+      SSH_AUTH_SOCK: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No `pnpm install`: the fixture drives the installed package and the
+      # repository's own fake engine, and both run on bare Node with no
+      # dependencies. Only Node itself is needed, at the version the app and its
+      # fake engine target.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      # `dbus-x11` starts the fixture's own session bus, `xvfb`/`x11-utils` its
+      # own X server, `xdotool` drives the real GTK chooser, `openbox` gives that
+      # chooser a window manager so `_NET_ACTIVE_WINDOW` works, and
+      # `imagemagick` captures the chooser's own window as evidence. Nothing here
+      # installs or configures a portal, a compositor or a keyring: this journey
+      # is proven against the native X11 chooser the installed package actually
+      # opens, and it is never the runner's own display.
+      - name: Install the owned display and picker tools
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          dbus dbus-x11 imagemagick openbox x11-utils xdotool xvfb
+          libnotify4 libsecret-1-0 libnss3 libasound2t64 libgbm1 libgtk-3-0 libxss1
+          libxtst6 xdg-utils libdrm2
+      # The package's own post-install refuses to run unless /opt is a real
+      # root-owned 0755 directory: it treats anything else as an unsafe ancestor
+      # for a root-owned /opt/crewbot. GitHub's runner image ships /opt as 0775,
+      # so install the package on a parent that matches a normal Ubuntu machine.
+      # This is the same recipe `ci.yml` and `package-linux.yml` already use; the
+      # product check is left intact rather than weakened for the fixture.
+      - name: Match a normal Ubuntu package parent on the ephemeral runner
+        run: |
+          set -euo pipefail
+          test ! -L /opt
+          test "$(stat -c '%F %U:%G' /opt)" = "directory root:root"
+          case "$(stat -c '%a' /opt)" in
+            755) ;;
+            775|777) sudo chmod 0755 /opt ;;
+            *) echo "Unexpected /opt mode: $(stat -c '%a' /opt)" >&2; exit 1 ;;
+          esac
+          test "$(stat -c '%U:%G %a' /opt)" = "root:root 755"
+      - name: Prove the job carries no desktop or login session
+        run: |
+          set -euo pipefail
+          for key in DISPLAY WAYLAND_DISPLAY WAYLAND_SOCKET XDG_SESSION_TYPE XDG_SESSION_ID \
+                    XDG_CURRENT_DESKTOP DESKTOP_SESSION XDG_SEAT XDG_RUNTIME_DIR \
+                    DBUS_SESSION_BUS_ADDRESS DBUS_SYSTEM_BUS_ADDRESS GNOME_KEYRING_CONTROL SSH_AUTH_SOCK; do
+            test -z "${!key:-}" || { echo "$key is set to '${!key}'" >&2; exit 1; }
+          done
+          echo "no inherited display, seat, bus or login session"
+
+      - name: Fetch the pinned candidate artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_SHA" != "$CANDIDATE_SOURCE_SHA" ]; then
+            echo "note: this run checks out $GITHUB_SHA; the candidate bytes come from the pinned packaging run and are held to their SHA-256 by the fixture"
+          fi
+          mkdir -p "$RUNNER_TEMP/inputs/candidate"
+          gh run download "$CANDIDATE_RUN_ID" -R xddinside/crewbot \
+            --name "$CANDIDATE_ARTIFACT" --dir "$RUNNER_TEMP/inputs/candidate"
+          # The artifact may carry one directory level. Flatten it so the fixture
+          # sees exactly the six supported files and nothing else.
+          if [ ! -f "$RUNNER_TEMP/inputs/candidate/SHA256SUMS-ubuntu-x64.txt" ]; then
+            inner="$(dirname "$(find "$RUNNER_TEMP/inputs/candidate" -maxdepth 3 -name SHA256SUMS-ubuntu-x64.txt -print -quit)")"
+            test -n "$inner"
+            mv "$inner"/* "$RUNNER_TEMP/inputs/candidate/"
+          fi
+          ls -1 "$RUNNER_TEMP/inputs/candidate"
+
+      - name: Write the pinned candidate manifest
+        # Inlined rather than fetched: the handover values are the contract, and
+        # this keeps the run independent of any scratch path on any branch.
+        run: |
+          cat > "$RUNNER_TEMP/inputs/candidate-hashes.json" <<'JSON'
+          {
+            "sha": "7fb1e45327d7e204cdcec681d96012f851976e13",
+            "tree": "ea869419a454c6e01e38e64662de245c6653505a",
+            "run": 36982252699,
+            "artifactId": 11215642565,
+            "artifactName": "crewbot-ubuntu-0.1.84-x64",
+            "apiArtifactDigest": "sha256:6a3384753c37b5a7eab3d717b48763c7eb9f69b540c61b3b9689d5ae2582ae8f",
+            "files": [
+              { "name": "SHA256SUMS-ubuntu-x64.txt", "bytes": 355, "sha256": "f0fc1baca3729d169ea1b4acd83cfaeb6ba749ce26147806735488f5baafb84c" },
+              { "name": "crewbot-0.1.84-amd64.deb", "bytes": 231693316, "sha256": "65552b3c0b3da81efa394025155cbcab7286f082a8c5bf43671b1df43e08e410" },
+              { "name": "crewbot-0.1.84-x86_64.AppImage", "bytes": 273351218, "sha256": "fa597b4bd8b57b710b1f3cb47b42b4202c8522caf0547abe4b333d7a6c23d432" },
+              { "name": "crewbot-amd64.deb", "bytes": 231693316, "sha256": "65552b3c0b3da81efa394025155cbcab7286f082a8c5bf43671b1df43e08e410" },
+              { "name": "crewbot.AppImage", "bytes": 273351218, "sha256": "fa597b4bd8b57b710b1f3cb47b42b4202c8522caf0547abe4b333d7a6c23d432" },
+              { "name": "latest-linux.yml", "bytes": 538, "sha256": "c2a49f8db8da943268165c6e357d88f6e0ec9e3dc3364013065a8f5d0c1abf7c" }
+            ]
+          }
+          JSON
+
+      - name: Drive the installed native folder picker
+        env:
+          OMB_RECOVERY_CANDIDATE_DIR: ${{ runner.temp }}/inputs/candidate
+          OMB_RECOVERY_CANDIDATE_MANIFEST: ${{ runner.temp }}/inputs/candidate-hashes.json
+          OMB_RECOVERY_CANDIDATE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
+          OMB_KEEP_RECOVERY_FIXTURE: "1"
+        run: node scripts/verify-installed-desktop-recovery.mjs
+
+      # Keep the owned home, display, bus and package until the evidence upload
+      # and the pnpm/setup-node post-job handlers have finished. The disposable
+      # runner removes them after the job.
+      - name: Upload the recovery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-desktop-recovery-evidence
+          path: |
+            ${{ runner.temp }}/omb-installed-recovery-*/evidence.json
+            ${{ runner.temp }}/omb-installed-recovery-*/evidence/
+            ${{ runner.temp }}/inputs/candidate-hashes.json
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 14
+
+      - name: Upload recovery diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-desktop-recovery-diagnostics
+          path: |
+            ${{ runner.temp }}/omb-installed-recovery-*/logs/
+            ${{ runner.temp }}/omb-installed-recovery-*/home/.config/
+            /var/log/dpkg.log
+            /var/log/apt/term.log
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 7
+
+      - name: Remove the installed package and prove nothing of the fixture is left
+        if: always()
+        run: |
+          sudo dpkg --purge crewbot || true
+          sudo rm -rf /opt/crewbot
+          rm -rf "$RUNNER_TEMP"/omb-installed-recovery-*
+          # The fixture owns its display, bus, window manager, app process group
+          # and temp root. A leftover here would mean teardown skipped one, so it
+          # is reported rather than left silent.
+          for pattern in 'Xvfb :9[1-9]' 'Xvfb :1[0-2][0-9]' openbox "dbus-daemon --session --fork" /opt/crewbot/crewbot; do
+            if pgrep -a -f "$pattern" | grep -v pgrep; then
+              echo "::warning::something the fixture owned survived teardown: $pattern"
+            fi
+          done
+          ls /tmp/.X11-unix 2>/dev/null || echo "no X sockets remain"
+          dpkg-query -W -f='${db:Status-Abbrev}\n' crewbot 2>/dev/null || echo "the candidate package is not installed"

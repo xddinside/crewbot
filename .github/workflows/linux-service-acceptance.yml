@@ -1,0 +1,149 @@
+# Native systemd proof for the standalone Crewbot service.
+#
+# `crewbot service install`, the legacy `openmausbot.service` cutover, and
+# `crewbot service rollback` are only believable against a real init. This job
+# runs on a disposable GitHub-hosted Ubuntu 24.04 runner, where systemd is PID 1
+# and `systemctl` is the distribution binary; the fixture refuses to run
+# anywhere else, including inside a container.
+#
+# The trigger is `pull_request` on purpose: a workflow file that only declares
+# `workflow_dispatch` cannot run before it reaches the default branch, so it
+# could never gate this change.
+#
+# Package installation is a separate claim and is NOT exercised here: this job
+# installs a standalone service from a source checkout. The old OpenMausBot
+# DEB belongs to the installed-app continuity proof.
+name: Linux service acceptance
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  # least privilege: this job only reads the checkout
+  contents: read
+
+concurrency:
+  group: linux-service-acceptance-${{ github.event_name == 'merge_group' && github.event.merge_group.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  service-cutover:
+    name: systemd cutover + rollback (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    # Two cases, each booting the real server three times through real units,
+    # plus a fake-engine turn per boot. The cap catches a hang, not growth.
+    timeout-minutes: 45
+    env:
+      # The runner is headless. Never inherit a desktop, keyring or seat: this
+      # job touches systemd only, and an inherited live session would be the
+      # user's, not the runner's.
+      DISPLAY: ""
+      WAYLAND_DISPLAY: ""
+      XDG_SESSION_TYPE: ""
+      XDG_SEAT: ""
+      XDG_CURRENT_DESKTOP: ""
+      DESKTOP_SESSION: ""
+      DBUS_SESSION_BUS_ADDRESS: ""
+      DBUS_SYSTEM_BUS_ADDRESS: ""
+      OMB_FIXTURE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The fixture executes the historical `server/service-unit.ts` that
+          # wrote the real pre-rename `openmausbot.service`, so it needs the
+          # commit that introduced the Crewbot name.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Confirm this runner really runs systemd as PID 1
+        # Fail before any fixture work if the runner shape ever changes: a
+        # container here would make every later assertion worthless.
+        run: |
+          set -euo pipefail
+          test "$(cat /proc/1/comm)" = systemd
+          test -d /run/systemd/system
+          test ! -e /.dockerenv
+          test ! -e /run/.containerenv
+          systemctl --version | head -1
+          systemctl is-system-running || true
+      - name: Run the native service cutover and rollback proof
+        # The fixture drives real units, so it needs root and the runner's
+        # RUNNER_TEMP. It cleans up every unit, path and shim it creates in its
+        # own `finally`, and reports a cleanup problem as a failure.
+        run: |
+          sudo --preserve-env=RUNNER_TEMP,GITHUB_RUN_ID,GITHUB_RUN_ATTEMPT,CI \
+            node scripts/smoke-linux-service-cutover.mjs
+      - name: Collect service fixture diagnostics
+        if: always()
+        run: |
+          set -uo pipefail
+          diagnostics="$RUNNER_TEMP/omb-service-cutover-diagnostics"
+          mkdir -p "$diagnostics"
+          sudo systemctl list-units --all 'crewbot*' 'openmausbot*' --no-pager >"$diagnostics/units.txt" 2>&1 || true
+          sudo systemctl list-unit-files 'crewbot*' 'openmausbot*' --no-pager >"$diagnostics/unit-files.txt" 2>&1 || true
+          sudo journalctl -u crewbot.service -n 300 --no-pager >"$diagnostics/journal-crewbot.txt" 2>&1 || true
+          sudo journalctl -u openmausbot.service -n 300 --no-pager >"$diagnostics/journal-openmausbot.txt" 2>&1 || true
+          sudo ls -la /etc/systemd/system >"$diagnostics/etc-systemd-system.txt" 2>&1 || true
+          sudo chown -R "$(id -u):$(id -g)" "$diagnostics"
+      - name: Upload service fixture diagnostics
+        # Upload before the cleanup step, so the evidence the fixture wrote
+        # survives even when cleanup removes its working root.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: crewbot-linux-service-cutover-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/omb-service-cutover-diagnostics
+            ${{ runner.temp }}/omb-service-cutover-evidence-*.json
+            ${{ runner.temp }}/omb-service-cutover-[0-9]*
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove any fixture state the fixture itself left behind
+        # The fixture already cleans up. This step is the safety net, and it only
+        # touches paths the fixture actually claimed: without its root directory
+        # the fixture never started, so nothing here is ours to remove.
+        if: always()
+        run: |
+          set -uo pipefail
+          problems=0
+          if compgen -G "$RUNNER_TEMP/omb-service-cutover-*" >/dev/null; then
+            sudo systemctl disable --now crewbot.service openmausbot.service || true
+            sudo rm -f /etc/systemd/system/crewbot.service \
+                      /etc/systemd/system/openmausbot.service \
+                      /etc/systemd/system/openmausbot.service.crewbot-backup
+            sudo systemctl daemon-reload
+            sudo systemctl reset-failed || true
+            sudo rm -rf "$HOME/.crewbot" "$HOME/.openmausbot"
+            sudo rm -rf "$RUNNER_TEMP"/omb-service-cutover-*
+          else
+            echo "the fixture never created its root: nothing of ours to clean up"
+          fi
+          for unit in crewbot.service openmausbot.service; do
+            state="$(sudo systemctl show -p LoadState --value "$unit" 2>/dev/null || true)"
+            if [ -n "$state" ] && [ "$state" != "not-found" ]; then
+              echo "leftover unit state: $unit=$state" >&2
+              problems=1
+            fi
+            for path in "/etc/systemd/system/$unit" "/etc/systemd/system/$unit.crewbot-backup"; do
+              if sudo test -e "$path"; then
+                echo "leftover unit file: $path" >&2
+                problems=1
+              fi
+            done
+          done
+          for path in "$HOME/.crewbot" "$HOME/.openmausbot"; do
+            if [ -e "$path" ]; then
+              echo "leftover data root: $path" >&2
+              problems=1
+            fi
+          done
+          exit "$problems"

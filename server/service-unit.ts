@@ -27,6 +27,8 @@ export interface ServiceSpec {
 }
 
 export const SYSTEMD_UNIT_NAME = "crewbot.service";
+/** The pre-rename unit the Linux cutover retires and rollback restores. */
+export const LEGACY_SYSTEMD_UNIT_NAME = "openmausbot.service";
 export const LAUNCHD_LABEL = "dev.xddinside.crewbot.serve";
 
 function quoteSystemd(value: string): string {
@@ -129,7 +131,7 @@ export function unstableInstallWarning(script: string): string | null {
 export function servicePlan(platform: NodeJS.Platform, dataDir: string, home = homedir()): { file: string; installed: string; activate: string[]; deactivate: string[]; prepareLegacy?: string[]; retireLegacy?: string[]; legacyUnit?: string; legacyBackup?: string } | null {
   if (platform === "linux") {
     const installed = `/etc/systemd/system/${SYSTEMD_UNIT_NAME}`;
-    const legacy = "/etc/systemd/system/openmausbot.service";
+    const legacy = `/etc/systemd/system/${LEGACY_SYSTEMD_UNIT_NAME}`;
     const legacyBackup = `${legacy}.crewbot-backup`;
     return {
       file: join(dataDir, SYSTEMD_UNIT_NAME),
@@ -142,7 +144,7 @@ export function servicePlan(platform: NodeJS.Platform, dataDir: string, home = h
         `sudo test -f ${legacy}`,
         `sudo test ! -e ${legacyBackup}`,
         `sudo cp --preserve=all ${legacy} ${legacyBackup}`,
-        "sudo systemctl disable --now openmausbot.service",
+        `sudo systemctl disable --now ${LEGACY_SYSTEMD_UNIT_NAME}`,
       ],
       retireLegacy: [`sudo rm ${legacy}`, "sudo systemctl daemon-reload"],
     };
