@@ -608,10 +608,19 @@ async function main() {
     };
     step("continuity", `seeded transcript and attachment survived; bytes identical (${identical.sha256.slice(0, 16)}…)`);
 
-    await nextServer.send(conversationBot.id, { text: "Continuity: take the next turn in this conversation." });
+    const nextRequest = "Continuity: take the next turn in this conversation.";
+    const priorMessageIds = new Set(migratedMessages.map((message) => message.id));
+    await nextServer.send(conversationBot.id, { text: nextRequest });
     const settled = await nextServer.waitForBot(
       conversationBot.id,
-      (value) => !value.busy && (value.messages ?? []).some((message) => message.role === "bot" && (message.text ?? "").includes(ENGINE_REPLY)),
+      (value) => {
+        if (value.busy) return false;
+        const messages = value.messages ?? [];
+        const requestIndex = messages.findIndex((message) => message.role === "user"
+          && message.text === nextRequest && !priorMessageIds.has(message.id));
+        return requestIndex >= 0 && messages.slice(requestIndex + 1).some((message) => message.role === "bot"
+          && !priorMessageIds.has(message.id) && (message.text ?? "").includes(ENGINE_REPLY));
+      },
       { label: "the next turn to settle with the engine's reply", budgetMs: 180_000 },
     );
     const afterTurn = await nextServer.threadMessages(settled.threadId, 100);
