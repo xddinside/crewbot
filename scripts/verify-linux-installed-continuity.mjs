@@ -264,7 +264,7 @@ async function main() {
     const ownedBus = startOwnedSessionBus(fixture);
     const baseEnv = fixtureBaseEnv(fixture, { display: ownedDisplay.display, dbusAddress: ownedBus.address });
     step("session", `owned display ${ownedDisplay.display} and session bus ${ownedBus.address}`);
-    keyring = startOwnedKeyring({ env: baseEnv, password: syntheticSecret });
+    keyring = await startOwnedKeyring({ env: baseEnv, password: syntheticSecret });
     fixture.stopped.push(() => keyring.stop());
     // Only offer the control address when the daemon published one. libsecret
     // reaches the secret service over the session bus without it, so an absent
@@ -361,6 +361,7 @@ async function main() {
       storeArgs,
       profileDir: join(fixture.config, OLD_PACKAGE.profileName),
       dataDir: legacyDataDir,
+      expectEnv: "XAI_API_KEY",
       timeoutMs: 300_000,
     });
     writeFileSync(join(fixture.logs, "old-app-output.log"), oldApp.output);

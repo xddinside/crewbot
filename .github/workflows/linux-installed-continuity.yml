@@ -155,6 +155,9 @@ jobs:
             console.log(`[continuity] pinned manifest for ${manifest.sha}, artifact ${manifest.artifactId} of run ${manifest.run}`);
           ' "$RUNNER_TEMP/inputs/candidate-hashes.json" "$CANDIDATE_SOURCE_SHA"
 
+      - name: Prove private keyring startup and installed-app exit regressions
+        run: node --test scripts/installed-keyring.node-test.mjs
+
       - name: Drive the installed old-to-new upgrade
         env:
           OMB_CONTINUITY_OLD_DEB: ${{ runner.temp }}/inputs/OpenMausBot-0.1.83-amd64.deb

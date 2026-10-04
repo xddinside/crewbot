@@ -203,7 +203,7 @@ function busNameOwner(env, name) {
       ],
       { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5_000 },
     ).trim();
-    const pid = Number(reply.match(/\d+/)?.[0]);
+    const pid = Number(reply.match(/uint32\s+(\d+)/)?.[1]);
     return Number.isInteger(pid) && pid > 1 ? pid : null;
   } catch {
     return null;
@@ -250,135 +250,64 @@ function defaultCollectionState(env) {
   return { path, locked: /true/.test(locked) };
 }
 
-/** Start this fixture's own secret-service daemon with a synthetic password.
- *
- * `dbus-run-session` already gave this run a private bus; the keyring daemon
- * started here is unlocked with a value generated inside the fixture and is
- * killed with it. No host keyring, no host password, no host login session is
- * read or written.
- *
- * Readiness is the default collection answering on the fixture's own bus and
- * reporting itself unlocked — the two conditions a libsecret client needs before
- * it can store anything. It is deliberately not the `GNOME_KEYRING_CONTROL=`
- * line, which is a login-keyring convenience for libsecret's fallback path, and
- * whether the daemon prints it depends on its version and on whether it
- * daemonizes: the packaged daemon on Ubuntu 24.04 serves the secret service
- * while never announcing an address. A control address is recorded when offered
- * and never waited for.
- *
- * An address pointing outside this fixture's runtime directory means the daemon
- * found somebody else's login keyring and pointed at it instead of serving this
- * bus. That breaks the isolation the fixture claims, so it is refused rather
- * than used.
- *
- * The daemon is started twice on purpose. `--start` creates the login keyring and
- * the collection; only then can `--unlock` unlock them, and `--start` together
- * with `--unlock` in one invocation is rejected outright by the daemon. stdin must
- * be a pipe, and the control directory must exist at 0700 or the daemon refuses to
- * start. */
-export function startOwnedKeyring({ env, password }) {
+/** Start one foreground daemon on this fixture's private bus and control socket.
+ * --unlock reads the complete password through EOF and creates the login keyring
+ * during daemon startup. Yield while waiting so stdin can close and logs drain;
+ * a synchronous polling loop leaves the daemon waiting for EOF forever. */
+export async function startOwnedKeyring({ env, password, timeoutMs = 15_000 }) {
   if (typeof password !== "string" || password.length < 16) {
     throw new Error("the fixture keyring needs its own generated password");
   }
-  const controlDirectory = join(env.XDG_RUNTIME_DIR ?? "/tmp", "keyring");
+  const controlDirectory = join(env.XDG_RUNTIME_DIR, "keyring");
   mkdirSync(controlDirectory, { recursive: true, mode: 0o700 });
   chmodSync(controlDirectory, 0o700);
-  const keyringsDirectory = join(env.HOME, ".local", "share", "keyrings");
-  mkdirSync(keyringsDirectory, { recursive: true, mode: 0o700 });
+  const usable = { ...env, GNOME_KEYRING_CONTROL: controlDirectory };
+  const child = spawn("gnome-keyring-daemon", [
+    "--foreground", "--unlock", "--components=secrets", `--control-directory=${controlDirectory}`,
+  ], { env: usable, stdio: ["pipe", "pipe", "pipe"] });
   let announced = "";
-  const start = (args, input) => {
-    const child = spawn("gnome-keyring-daemon", args, { env, stdio: ["pipe", "pipe", "pipe"] });
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk) => { announced += chunk; });
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { announced += chunk; });
-    child.stdin.on("error", () => { /* the daemon may exit before reading it */ });
-    child.stdin.end(input === undefined ? "" : `${input}\n`);
-    return child;
-  };
-  const children = [];
-  children.push(start(["--start", "--components=secrets"]));
-  // Wait for the daemon to answer on the bus before unlocking. `--unlock` reaches
-  // the running daemon over its control socket, so asking a daemon that has not
-  // finished starting loses the password and leaves the collection locked for
-  // good — the run then waits out the whole deadline for a state it can no
-  // longer reach.
-  const serving = Date.now() + 15_000;
-  while (Date.now() < serving) {
-    try {
-      execFileSync(
-        "gdbus",
-        ["call", "--session", "--dest", "org.freedesktop.secrets", "--object-path", "/org/freedesktop/secrets", "--method", "org.freedesktop.DBus.Peer.Ping"],
-        { env, stdio: ["ignore", "pipe", "pipe"], timeout: 5_000 },
-      );
-      break;
-    } catch {
-      execFileSync("sleep", ["0.2"], { env, stdio: "ignore", timeout: 5_000 });
-    }
+  let spawnFailure = null;
+  child.on("error", (error) => { spawnFailure = error; });
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.setEncoding("utf8");
+    stream.on("data", (chunk) => { announced = (announced + chunk).slice(-8192); });
   }
-  children.push(start(["--unlock", "--components=secrets"], password));
-  const control = () => announced.match(/GNOME_KEYRING_CONTROL=(.+)/)?.[1]?.trim() ?? null;
+  child.stdin.on("error", () => { /* reported by readiness/exit below */ });
+  // Newlines are part of the password, not a delimiter in this protocol.
+  child.stdin.end(password);
   const stop = () => {
-    // The daemon may hand its work to a background process and let the spawned
-    // child exit, so the bus owner is what has to be stopped.
-    const owner = busNameOwner(env, "org.freedesktop.secrets");
-    for (const pid of new Set([owner, ...children.map((child) => child.pid)].filter((value) => Number.isInteger(value) && value > 1))) {
-      try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
-    }
-    for (const child of children) {
-      try { child.kill("SIGKILL"); } catch { /* already gone */ }
-    }
+    try { child.kill("SIGTERM"); } catch { /* already gone */ }
   };
   let lastState = null;
   let lastFailure = null;
-  const deadline = Date.now() + 45_000;
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const offered = control();
-    if (offered && !offered.startsWith(controlDirectory)) {
-      stop();
-      throw new Error([
-        `gnome-keyring-daemon pointed at a keyring outside this fixture: ${offered}`,
-        `this fixture owns only ${controlDirectory}`,
-        `a host keyring must never be read or written by this proof`,
-      ].join("\n"));
-    }
-    const usable = offered ? { ...env, GNOME_KEYRING_CONTROL: offered } : env;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (spawnFailure || child.exitCode !== null || child.signalCode !== null) break;
     try {
+      // Do not activate a second daemon while our foreground child is starting.
+      if (busNameOwner(usable, "org.freedesktop.secrets") !== child.pid) continue;
       lastState = defaultCollectionState(usable);
       if (lastState.path && lastState.locked === false) {
-        return {
-          control: offered,
-          collection: lastState.path,
-          pid: busNameOwner(usable, "org.freedesktop.secrets") ?? children[0].pid,
-          announce: announced,
-          stop,
-        };
+        return { control: controlDirectory, collection: lastState.path, pid: child.pid, announce: announced, stop };
       }
     } catch (error) {
-      // No secret service on this bus yet. Keep waiting, and keep the reason for
-      // the failure report.
       lastFailure = error instanceof Error ? error.message : String(error);
     }
-    execFileSync("sleep", ["0.2"], { env, stdio: "ignore", timeout: 5_000 });
   }
   stop();
   throw new Error([
-    `the default collection on this fixture's own session bus was not unlocked within 45s`,
+    `the fixture's default collection was not unlocked within ${timeoutMs}ms`,
     `collection: ${JSON.stringify(lastState)}`,
-    `argv: --start --components=secrets, then --unlock --components=secrets`,
-    `HOME: ${env.HOME}`,
-    `XDG_RUNTIME_DIR: ${env.XDG_RUNTIME_DIR}`,
-    `DBUS_SESSION_BUS_ADDRESS: ${env.DBUS_SESSION_BUS_ADDRESS ?? "(unset)"}`,
-    `control directory: ${controlDirectory}`,
-    `login keyring directory: ${keyringsDirectory}`,
-    `last state read failure: ${lastFailure ?? "none attempted"}`,
-    `stdout/stderr:\n${announced}`,
+    `daemon exit: ${child.exitCode ?? child.signalCode ?? "still running"}`,
+    `last state failure: ${spawnFailure?.message ?? lastFailure ?? "none"}`,
+    `stdout/stderr: ${announced.replaceAll(password, "<REDACTED>")}`,
   ].join("\n"));
 }
 
 /** Read the secret-service default collection through the D-Bus API itself.
  *
- * `Item.Search` with an empty attribute array is the specification's "every
+ * `Collection.SearchItems` with an empty attribute dictionary is the specification's "every
  * item in this collection", so this needs no unlocked session and prints no
  * secret material. It is the observable that separates a real operating-system
  * keyring from Electron's `basic_text` fallback, which writes no item at all.
@@ -391,7 +320,7 @@ export function listSecretServiceItems(env) {
       "--session",
       "--dest", "org.freedesktop.secrets",
       "--object-path", "/org/freedesktop/secrets/aliases/default",
-      "--method", "org.freedesktop.Secret.Item.Search", "[]",
+      "--method", "org.freedesktop.Secret.Collection.SearchItems", "{}",
     ],
     { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 20_000 },
   ).trim();
@@ -404,7 +333,8 @@ export function listSecretServiceItems(env) {
         "--session",
         "--dest", "org.freedesktop.secrets",
         "--object-path", itemPath,
-        "--method", "org.freedesktop.Secret.Item.GetAttributes",
+        "--method", "org.freedesktop.DBus.Properties.Get",
+        "org.freedesktop.Secret.Item", "Attributes",
       ],
       { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 20_000 },
     ).trim();
@@ -422,12 +352,13 @@ export function listSecretServiceItems(env) {
  * timeout then waits for a password that will never be typed — the fixture stops
  * reporting and the job runs to its own timeout instead of naming the cause. */
 export function proveKeyringRoundTrip(env, { label, value, timeoutMs = 20_000 }) {
-  const run = (args) => {
+  const run = (args, input) => {
     try {
       return execFileSync("secret-tool", args, {
         env,
         encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
+        input,
+        stdio: ["pipe", "pipe", "pipe"],
         timeout: timeoutMs,
       });
     } catch (error) {
@@ -437,7 +368,7 @@ export function proveKeyringRoundTrip(env, { label, value, timeoutMs = 20_000 })
       );
     }
   };
-  run(["store", "--label", label, "continuity", value]);
+  run(["store", "--label", label, "continuity", label], value);
   const read = run(["lookup", "continuity", label]).trim();
   run(["clear", "continuity", label]);
   if (read !== value) throw new Error("the fixture keyring did not round-trip its own synthetic value");

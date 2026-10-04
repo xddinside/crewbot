@@ -109,6 +109,10 @@ export async function runInstalledApp({
     env,
     stdio: ["ignore", "pipe", "pipe"],
   });
+  const closed = new Promise((resolve, reject) => {
+    child.once("close", resolve);
+    child.once("error", reject);
+  });
   let output = "";
   for (const stream of [child.stdout, child.stderr]) {
     stream.setEncoding("utf8");
@@ -144,7 +148,7 @@ export async function runInstalledApp({
       try { process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ }
     }
   }
-  await new Promise((resolve) => child.once("close", resolve));
+  await closed;
 
   return {
     executable,
