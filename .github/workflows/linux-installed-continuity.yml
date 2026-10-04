@@ -167,13 +167,17 @@ jobs:
           OMB_KEEP_CONTINUITY_FIXTURE: "1"
         run: node scripts/verify-linux-installed-continuity.mjs
 
+      # Only upload proof and recovery metadata. The installed app can create
+      # nested user-namespace container storage that the runner cannot traverse.
       - name: Upload the continuity evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-installed-continuity-evidence
           path: |
-            ${{ runner.temp }}/omb-installed-continuity-*/
+            ${{ runner.temp }}/omb-installed-continuity-*/logs/
+            ${{ runner.temp }}/omb-installed-continuity-*/home/.crewbot/.crewbot-migration/
+            ${{ runner.temp }}/omb-installed-continuity-*/home/.crewbot/attachments/
             ${{ runner.temp }}/inputs/candidate-hashes.json
           if-no-files-found: warn
           include-hidden-files: true
@@ -185,4 +189,4 @@ jobs:
           sudo dpkg --purge crewbot || true
           sudo dpkg --purge openmausbot || true
           sudo rm -rf /opt/crewbot /opt/OpenMausBot
-          rm -rf "$RUNNER_TEMP"/omb-installed-continuity-*
+          sudo rm -rf "$RUNNER_TEMP"/omb-installed-continuity-*
