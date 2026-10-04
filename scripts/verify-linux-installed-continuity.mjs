@@ -270,13 +270,15 @@ async function main() {
     // reaches the secret service over the session bus without it, so an absent
     // address is a normal outcome and must not become the string "undefined".
     const appEnv = keyring.control ? { ...baseEnv, GNOME_KEYRING_CONTROL: keyring.control } : { ...baseEnv };
-    // Prove the keyring works at all before the app's use of it means anything.
+    // Prove the collection really takes a secret before the app's use of it means
+    // anything. The collection already reported itself unlocked to start with;
+    // this is the write-then-read that a client actually performs.
     proveKeyringRoundTrip(appEnv, { label: "continuity-selfcheck", value: keyringSelfCheck });
     const baselineItems = listSecretServiceItems(appEnv);
     evidence.baselineSecretServiceItems = baselineItems.length;
     step(
       "keyring",
-      `own secret service on the fixture bus${keyring.control ? ` (control ${keyring.control})` : " (no control address offered)"}; ${baselineItems.length} pre-existing item(s)`,
+      `own unlocked collection ${keyring.collection}${keyring.control ? ` (control ${keyring.control})` : " (no control address offered)"}; ${baselineItems.length} pre-existing item(s)`,
     );
 
     // ── 2. the old package ─────────────────────────────────────────────
