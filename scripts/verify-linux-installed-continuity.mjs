@@ -486,15 +486,15 @@ async function main() {
     assertRefusalPreservedOriginals({
       legacyDirs: [secondLegacy, candidateDataDir],
       expectedWarningFragments: [
-        { warning: profileLog, text: "only one directory moves automatically" },
-        { warning: profileLog, text: "Keep both directories intact" },
+        { warning: candidateApp.output, text: "only one directory moves automatically" },
+        { warning: candidateApp.output, text: "Keep both directories intact" },
       ],
     });
     if (readFileSync(join(secondLegacy, "keep.txt"), "utf8") !== "a second legacy root that must not be merged\n") {
       throw new Error("the migration changed the second legacy root");
     }
     evidence.refusalSecondLegacyRoot.afterMigrationPreserved = true;
-    evidence.refusalSecondLegacyRoot.afterMigrationWarning = profileLog.split("\n")
+    evidence.refusalSecondLegacyRoot.afterMigrationWarning = candidateApp.output.split("\n")
       .find((line) => line.includes("only one directory moves automatically")) ?? null;
     auditCredentialSurvival({
       credentialsFile: join(fixture.config, OLD_PACKAGE.profileName, "credentials.bin"),
