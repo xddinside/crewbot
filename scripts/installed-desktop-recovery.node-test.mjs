@@ -31,6 +31,38 @@ import {
 } from "./installed-desktop-recovery/inputs.mjs";
 import { selectThread, spawnInstalledApp } from "./installed-desktop-recovery/renderer.mjs";
 import { countChooserWindows, listWindows, waitForFolderChooser } from "./installed-desktop-recovery/native-picker.mjs";
+import { assertAcceptedRequestPreserved, assertConcurrentTurns, assertScopedStop, assertStoppedTranscript, freshReplyEvidence } from "./installed-desktop-recovery/stop-proof.mjs";
+
+test("Stop proof rejects stopping both concurrent threads or seeding a failed working folder", () => {
+  const running = (threadId) => ({ threadId, busy: true, activity: "working", cwd: "/owned/project" });
+  const idle = (threadId) => ({ ...running(threadId), busy: false, activity: "idle" });
+  assert.doesNotThrow(() => assertConcurrentTurns(new Map([["a", running("a")], ["b", running("b")]]), "a", "b", "/owned/project"));
+  assert.throws(() => assertConcurrentTurns(new Map([["a", running("a")], ["b", idle("b")]]), "a", "b", "/owned/project"), /not concurrently running/);
+  assert.throws(() => assertConcurrentTurns(new Map([["a", running("a")], ["b", running("b")]]), "a", "b", "/owned/missing"), /existing fixture folder/);
+  assert.doesNotThrow(() => assertScopedStop(new Map([["a", idle("a")], ["b", running("b")]]), "a", "b"));
+  assert.throws(() => assertScopedStop(new Map([["a", idle("a")], ["b", idle("b")]]), "a", "b"), /also interrupted/);
+  assert.throws(() => assertScopedStop(new Map([["a", running("a")], ["b", running("b")]]), "a", "b"), /target thread running/);
+});
+
+test("Stop proof rejects auto-replay and a late answer while preserving interrupted requests", () => {
+  const request = { id: "request", role: "user", kind: "text", text: "Keep running" };
+  const interrupted = { id: "cancel", role: "bot", kind: "activity", text: "Outcome unknown" };
+  assert.doesNotThrow(() => assertStoppedTranscript([request], [request, interrupted], request.text));
+  assert.throws(() => assertStoppedTranscript([request], [request, { ...request, id: "replay" }], request.text), /automatically replayed/);
+  assert.throws(() => assertStoppedTranscript([request], [request, { id: "late", role: "bot", kind: "text", text: "late answer" }], request.text), /late assistant/);
+  assert.doesNotThrow(() => assertAcceptedRequestPreserved([request], [request, { id: "new-request", role: "user", kind: "text", text: "Distinct new work" }], request.text));
+  assert.throws(() => assertAcceptedRequestPreserved([request], [request, { ...request, id: "replay-after-provider-change" }], request.text), /automatically replayed/);
+});
+
+test("post-Stop continuation needs a new request and new reply, not idle state or a prior answer", () => {
+  const prior = { id: "old-reply", role: "bot", kind: "text", text: "hello from fake claude" };
+  const request = { id: "new-request", role: "user", kind: "text", text: "New work after Stop" };
+  const input = { before: [prior], requestText: request.text, expectedReply: prior.text };
+  assert.equal(freshReplyEvidence({ ...input, after: [prior] }), null);
+  assert.equal(freshReplyEvidence({ ...input, after: [prior, request, { id: "failed", role: "bot", kind: "activity", text: "working folder vanished" }] }), null);
+  assert.equal(freshReplyEvidence({ ...input, after: [prior, { ...prior, id: "early-reply" }, request] }), null);
+  assert.deepEqual(freshReplyEvidence({ ...input, after: [prior, request, { ...prior, id: "new-reply" }] }), { requestId: "new-request", replyId: "new-reply" });
+});
 
 test("installed app cleanup returns after an immediately exiting child and keeps its log", async () => {
   const root = mkdtempSync(join(tmpdir(), "omb-recovery-stop-test-"));
@@ -374,6 +406,7 @@ test("every local module of the fixture is dependency-free, so the runner needs 
     join("installed-desktop-recovery", "inputs.mjs"),
     join("installed-desktop-recovery", "native-picker.mjs"),
     join("installed-desktop-recovery", "renderer.mjs"),
+    join("installed-desktop-recovery", "stop-proof.mjs"),
   ];
   for (const name of modules) {
     const source = readFileSync(join(ROOT, "scripts", name), "utf8");

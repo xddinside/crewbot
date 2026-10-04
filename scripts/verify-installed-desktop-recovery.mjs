@@ -64,6 +64,13 @@ import {
   sha256File,
   verifyCandidateArtifact,
 } from "./installed-desktop-recovery/inputs.mjs";
+import {
+  assertAcceptedRequestPreserved,
+  assertConcurrentTurns,
+  assertScopedStop,
+  assertStoppedTranscript,
+  freshReplyEvidence,
+} from "./installed-desktop-recovery/stop-proof.mjs";
 
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const fakeCli = join(repoRoot, "server", "testing", "fake-claude-cli.ts");
@@ -163,6 +170,49 @@ async function waitForSettled(base, botId, threadId, { timeoutMs = 90_000 } = {}
     await delay(300);
   }
   throw new Error(`thread ${threadId} never settled: ${JSON.stringify(last)}`);
+}
+
+async function liveTasks(base, botId) {
+  const result = await api(base, "/api/bots?messages=0");
+  if (result.status >= 400) throw new Error(`reading live Stop state failed: ${result.status}`);
+  const bot = result.body?.bots?.find((entry) => entry.id === botId);
+  if (!bot) throw new Error(`Stop fixture bot ${botId} is missing from the live API`);
+  return new Map((bot.tasks ?? []).map((task) => [task.threadId, task]));
+}
+
+async function waitForRunningThreads(base, botId, threadIds) {
+  const deadline = Date.now() + 60_000;
+  let tasks;
+  while (Date.now() < deadline) {
+    tasks = await liveTasks(base, botId);
+    if (threadIds.every((id) => tasks.get(id)?.busy === true && tasks.get(id)?.activity === "working")) return tasks;
+    await delay(250);
+  }
+  throw new Error(`Stop fixture threads did not become concurrently busy: ${JSON.stringify([...tasks])}`);
+}
+
+function observeLiveStopState(label, botId, tasks, threadIds) {
+  evidence.observations.push({
+    label,
+    botId,
+    at: new Date().toISOString(),
+    tasks: threadIds.map((threadId) => {
+      const task = tasks.get(threadId);
+      return { threadId, busy: task?.busy, activity: task?.activity, cwd: task?.cwd };
+    }),
+  });
+}
+
+async function waitForFreshReply(base, threadId, before, requestText) {
+  const deadline = Date.now() + 60_000;
+  let after;
+  while (Date.now() < deadline) {
+    after = (await api(base, `/api/threads/${threadId}/messages?limit=100`)).body?.messages ?? [];
+    const proof = freshReplyEvidence({ before, after, requestText, expectedReply: "hello from fake claude" });
+    if (proof) return { proof, messages: after };
+    await delay(250);
+  }
+  throw new Error(`the post-Stop turn produced no new successful reply: ${JSON.stringify(after.map((row) => ({ id: row.id, role: row.role, kind: row.kind })))}`);
 }
 
 /** The approval mode the server currently records for one thread. A thread that
@@ -666,18 +716,39 @@ async function main() {
       `Full access granted through the renderer's own control`,
     );
 
-    // ── thread-scoped Stop on a synthetic running turn ──
-    // A second bot uses the repository's hanging fake engine, so its turn really
-    // is running and the installed composer's Stop really has something to stop.
+    // ── thread-scoped Stop with concurrent turns under the same bot ──
+    // Both hang on a folder that still exists. A bot-wide or global Stop must
+    // fail this proof by interrupting the sibling's live turn too.
+    const stopCwd = fixture.alternateCwd;
+    if (!statSync(stopCwd).isDirectory()) throw new Error("the Stop proof's working folder does not exist");
     const stopBot = await mutate("/api/bots", {
       body: { name: "Stop fixture", modelSelection: { instanceId: "hanging", model: "claude-sonnet-5" } },
     });
     if (stopBot.status >= 400) throw new Error(`creating the stop fixture bot failed: ${JSON.stringify(stopBot)}`);
     const stopBotId = stopBot.body.bot.id;
     const stopThread = stopBot.body.bot.threadId;
+    const stopPinned = await mutate(`/api/bots/${stopBotId}`, { method: "PATCH", body: { cwd: stopCwd } });
+    if (stopPinned.status >= 400) throw new Error(`pinning the Stop fixture failed: ${JSON.stringify(stopPinned)}`);
+    const stopSibling = await mutate(`/api/bots/${stopBotId}/tasks`, { body: { title: "Concurrent Stop sibling" } });
+    if (stopSibling.status >= 400) throw new Error(`creating the Stop sibling failed: ${JSON.stringify(stopSibling)}`);
+    const stopSiblingThread = stopSibling.body.task.threadId;
+    const stopIds = [stopThread, stopSiblingThread];
+    const targetRequest = "Keep the Stop target running";
+    const siblingRequest = "Keep the concurrent Stop sibling running";
     await selectThread(renderer, { botId: stopBotId, botName: "Stop fixture", threadId: stopThread });
-    const stopSent = await renderer.evaluate(sendThroughComposer("Keep this turn running"));
+    const stopSent = await renderer.evaluate(sendThroughComposer(targetRequest));
     if (!stopSent.sent) throw new Error(`the stop fixture composer refused the request: ${JSON.stringify(stopSent)}`);
+    await waitForRunningThreads(base, stopBotId, [stopThread]);
+    await selectThread(renderer, { botId: stopBotId, botName: "Stop fixture", threadId: stopSiblingThread });
+    const siblingSent = await renderer.evaluate(sendThroughComposer(siblingRequest));
+    if (!siblingSent.sent) throw new Error(`the Stop sibling composer refused the request: ${JSON.stringify(siblingSent)}`);
+    const concurrent = await waitForRunningThreads(base, stopBotId, stopIds);
+    assertConcurrentTurns(concurrent, stopThread, stopSiblingThread, stopCwd);
+    observeLiveStopState("before Stop, two concurrent turns of the same bot", stopBotId, concurrent, stopIds);
+    const targetBeforeStop = (await api(base, `/api/threads/${stopThread}/messages?limit=100`)).body.messages;
+    const siblingBeforeStop = (await api(base, `/api/threads/${stopSiblingThread}/messages?limit=100`)).body.messages;
+    step("two Stop fixture threads are concurrently running", JSON.stringify({ botId: stopBotId, threads: stopIds, cwd: stopCwd }));
+    await selectThread(renderer, { botId: stopBotId, botName: "Stop fixture", threadId: stopThread });
     await renderer.waitFor(
       `[...document.querySelectorAll("button")].some((button) => /stop this turn/i.test(button.getAttribute("aria-label") || ""))`,
       "the installed Stop control while a turn is running",
@@ -686,28 +757,57 @@ async function main() {
     const stopped = await renderer.evaluate(CLICK_STOP);
     if (!stopped.clicked) throw new Error(`Stop did not activate: ${JSON.stringify(stopped)}`);
     await waitForSettled(base, stopBotId, stopThread, { timeoutMs: 90_000 });
-    const afterStop = storedTasks(dataDir, stopBotId).get(stopThread);
-    if (afterStop.busy) throw new Error("Stop left the stopped thread busy");
-    // Stopped work must not land late. The fake engine in `hang` mode never
-    // replies at all, so the window below is what a late write would have to
-    // slip through: re-read after it and require the thread still idle and
-    // still empty of assistant rows.
+    const afterStop = await liveTasks(base, stopBotId);
+    assertScopedStop(afterStop, stopThread, stopSiblingThread);
+    observeLiveStopState("target stopped while the same bot's sibling remains busy", stopBotId, afterStop, stopIds);
+    // Re-read after a late-event window. Neither accepted request may replay,
+    // and no late answer may land on the stopped target.
     await delay(3_000);
-    const settledAgain = storedTasks(dataDir, stopBotId).get(stopThread);
-    if (settledAgain.busy) throw new Error("the stopped thread became busy again after Stop");
-    const afterStopTranscript = (await api(base, `/api/threads/${stopThread}/messages?limit=50`)).body.messages;
-    const cancelledAssistant = afterStopTranscript.filter((message) => message.role === "bot" && message.kind === "text");
-    if (cancelledAssistant.length) {
-      throw new Error(`stopped work applied a stale assistant answer: ${cancelledAssistant.map((m) => m.id).join(", ")}`);
-    }
-    // The sibling thread of the recovery bot is still usable after that Stop.
-    const siblingStillWorks = await mutate(`/api/bots/${botId}/messages`,
-      { body: { text: "Still usable after the other thread was stopped", threadId: siblingThread } });
-    if (siblingStillWorks.status >= 400) throw new Error(`the sibling stopped working: ${JSON.stringify(siblingStillWorks)}`);
-    await waitForSettled(base, botId, siblingThread);
-    evidence.screenshots.push(await saveScreenshot(renderer, fixture.evidence, "09-after-stop"));
+    assertScopedStop(await liveTasks(base, stopBotId), stopThread, stopSiblingThread);
+    const afterStopTranscript = (await api(base, `/api/threads/${stopThread}/messages?limit=100`)).body.messages;
+    const siblingStillRunning = (await api(base, `/api/threads/${stopSiblingThread}/messages?limit=100`)).body.messages;
+    assertStoppedTranscript(targetBeforeStop, afterStopTranscript, targetRequest);
+    assertStoppedTranscript(siblingBeforeStop, siblingStillRunning, siblingRequest);
+    evidence.screenshots.push(await saveScreenshot(renderer, fixture.evidence, "09-scoped-stop-sibling-still-running"));
     observe("after the thread-scoped Stop", dataDir, stopBotId, stopThread, afterStopTranscript);
-    step("thread-scoped Stop cancelled only its own turn", `stopped ${stopThread}, sibling ${siblingThread} still answered`);
+    step("thread-scoped Stop left its same-bot sibling running", `stopped ${stopThread}, still busy ${stopSiblingThread}`);
+
+    // Explicitly stop the other accepted turn before switching providers and
+    // submitting different work. No old request is retried automatically.
+    await selectThread(renderer, { botId: stopBotId, botName: "Stop fixture", threadId: stopSiblingThread });
+    const siblingStopped = await renderer.evaluate(CLICK_STOP);
+    if (!siblingStopped.clicked) throw new Error(`sibling Stop did not activate: ${JSON.stringify(siblingStopped)}`);
+    await waitForSettled(base, stopBotId, stopSiblingThread);
+    await delay(3_000);
+    const bothStopped = await liveTasks(base, stopBotId);
+    if (stopIds.some((id) => bothStopped.get(id)?.busy !== false || bothStopped.get(id)?.activity !== "idle")) {
+      throw new Error("an accepted hanging turn restarted after its explicit Stop");
+    }
+    const siblingAfterStop = (await api(base, `/api/threads/${stopSiblingThread}/messages?limit=100`)).body.messages;
+    assertStoppedTranscript(siblingBeforeStop, siblingAfterStop, siblingRequest);
+    assertStoppedTranscript(targetBeforeStop, (await api(base, `/api/threads/${stopThread}/messages?limit=100`)).body.messages, targetRequest);
+    observeLiveStopState("both accepted turns stopped explicitly without replay", stopBotId, bothStopped, stopIds);
+    const happySelection = await mutate(`/api/bots/${stopBotId}/tasks/${stopSiblingThread}`, {
+      method: "PATCH", body: { modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } },
+    });
+    if (happySelection.status >= 400) throw new Error(`selecting the happy provider failed: ${JSON.stringify(happySelection)}`);
+    const newRequest = "Perform new work after the explicit sibling Stop";
+    const continued = await renderer.evaluate(sendThroughComposer(newRequest));
+    if (!continued.sent) throw new Error(`the post-Stop composer refused new work: ${JSON.stringify(continued)}`);
+    const successful = await waitForFreshReply(base, stopSiblingThread, siblingAfterStop, newRequest);
+    await waitForSettled(base, stopBotId, stopSiblingThread);
+    const completedSibling = (await api(base, `/api/threads/${stopSiblingThread}/messages?limit=100`)).body.messages;
+    assertAcceptedRequestPreserved(siblingBeforeStop, completedSibling, siblingRequest);
+    assertStoppedTranscript(targetBeforeStop, (await api(base, `/api/threads/${stopThread}/messages?limit=100`)).body.messages, targetRequest);
+    const completedTasks = await liveTasks(base, stopBotId);
+    if (stopIds.some((id) => completedTasks.get(id)?.busy !== false || completedTasks.get(id)?.activity !== "idle")) {
+      throw new Error("the post-Stop turn left a stopped thread running");
+    }
+    observeLiveStopState("both threads idle after distinct successful new work", stopBotId, completedTasks, stopIds);
+    observe("new successful work after the explicit sibling Stop", dataDir, stopBotId, stopSiblingThread, completedSibling);
+    evidence.observations.push({ label: "post-Stop new request and new successful reply", botId: stopBotId, threadId: stopSiblingThread, ...successful.proof });
+    evidence.screenshots.push(await saveScreenshot(renderer, fixture.evidence, "10-new-work-after-stop"));
+    step("the stopped sibling answered distinct new work", JSON.stringify(successful.proof));
 
     renderer.close();
     renderer = null;
