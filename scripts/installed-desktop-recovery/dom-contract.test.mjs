@@ -36,6 +36,9 @@ const FULL_ACCESS_CONFIRM = /enable full access/i;
 const STOP_CONTROL = /stop this turn/i;
 
 describe("installed recovery fixture selectors", () => {
+  it("keeps the separate thread expansion control's accessible name", () => {
+    expect(t("task.expandNamed", { name: "Fixture" })).toBe("Expand Fixture threads");
+  });
   it("finds the selected thread by the sidebar row attributes the fixture queries", () => {
     const task = { threadId: "thread-fixture", title: "Fixture thread" };
     const row = (current) => renderToStaticMarkup(createElement(SidebarThreadRow, {

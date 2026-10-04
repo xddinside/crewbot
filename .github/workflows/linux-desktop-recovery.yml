@@ -151,6 +151,7 @@ jobs:
           JSON
 
       - name: Drive the installed native folder picker
+        timeout-minutes: 15
         env:
           OMB_RECOVERY_CANDIDATE_DIR: ${{ runner.temp }}/inputs/candidate
           OMB_RECOVERY_CANDIDATE_MANIFEST: ${{ runner.temp }}/inputs/candidate-hashes.json
@@ -158,9 +159,8 @@ jobs:
           OMB_KEEP_RECOVERY_FIXTURE: "1"
         run: node scripts/verify-installed-desktop-recovery.mjs
 
-      # Keep the owned home, display, bus and package until the evidence upload
-      # and the pnpm/setup-node post-job handlers have finished. The disposable
-      # runner removes them after the job.
+      # The journey reaps its owned processes and removes the package even on
+      # failure. Keep only its files until evidence and diagnostic uploads finish.
       - name: Upload the recovery evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

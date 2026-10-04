@@ -207,6 +207,31 @@ export const CLICK_RECOVERY = `(() => {
   return { clicked: true };
 })()`;
 
+/** Selection and expansion are separate shipped controls. Wait for each React
+ * render before trying the next control, then prove the requested thread is
+ * current before a composer send or an approval grant. */
+export async function selectThread(renderer, { botId, botName, threadId, timeoutMs = 30_000 }) {
+  const botSelector = JSON.stringify(`[data-sidebar-bot-row="${botId}"]`);
+  const threadSelector = JSON.stringify(`[data-sidebar-thread-row="${threadId}"]`);
+  const options = { timeoutMs };
+  await renderer.waitFor(`Boolean(document.querySelector(${botSelector}))`, `bot ${botId} in the sidebar`, options);
+  await renderer.evaluate(`document.querySelector(${botSelector}).click()`);
+  const expanded = await renderer.evaluate(`(() => {
+    const label = ${JSON.stringify(`Expand ${botName} threads`)};
+    const toggle = [...document.querySelectorAll('button[aria-expanded]')]
+      .find((button) => button.getAttribute("aria-label") === label);
+    if (toggle) toggle.click();
+    return Boolean(toggle);
+  })()`);
+  await renderer.waitFor(`Boolean(document.querySelector(${threadSelector}))`, `thread ${threadId} after sidebar expansion`, options);
+  await renderer.evaluate(`document.querySelector(${threadSelector}).click()`);
+  await renderer.waitFor(
+    `document.querySelector(${threadSelector})?.getAttribute("aria-current") === "page"`,
+    `thread ${threadId} to be current`, options,
+  );
+  return { botId, threadId, expanded };
+}
+
 export async function saveScreenshot(renderer, evidenceDir, name) {
   mkdirSync(evidenceDir, { recursive: true });
   const shot = await renderer.send("Page.captureScreenshot", { format: "png" });
@@ -227,6 +252,10 @@ export function spawnInstalledApp({ executable, args, env, logPath }) {
     stdio: ["ignore", "pipe", "pipe"],
   });
   const output = [];
+  // Register before asking the process group to exit. `close` can fire while a
+  // grace period is running, and registering afterward loses that event.
+  const closed = new Promise((resolveClosed) => child.once("close", resolveClosed));
+  child.on("error", (error) => output.push(`app launch failed: ${error.message}\n`));
   for (const stream of [child.stdout, child.stderr]) {
     stream.setEncoding("utf8");
     stream.on("data", (chunk) => {
@@ -244,22 +273,41 @@ export function spawnInstalledApp({ executable, args, env, logPath }) {
       return null;
     }
   };
+  const closedWithin = async (timeoutMs) => {
+    let timer;
+    try {
+      return await Promise.race([
+        closed.then(() => true),
+        new Promise((resolveTimeout) => { timer = setTimeout(() => resolveTimeout(false), timeoutMs); }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  let stopping;
   return {
     child,
     pid: child.pid,
     text: () => output.join(""),
     logPath,
-    stop: async function stop() {
-      if (running(child)) {
-        try { process.kill(-child.pid, "SIGTERM"); } catch { /* already gone */ }
-        const grace = Date.now() + 15_000;
-        while (running(child) && Date.now() < grace) await delay(100);
-        if (running(child)) {
-          try { process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ }
+    stop() {
+      stopping ??= (async () => {
+        try {
+          if (child.pid) {
+            try { process.kill(-child.pid, "SIGTERM"); } catch { /* already gone */ }
+          }
+          if (!await closedWithin(15_000)) {
+            try { process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ }
+            if (!await closedWithin(5_000)) {
+              throw new Error(`installed app process group ${child.pid} did not close after SIGKILL`);
+            }
+          }
+          return save();
+        } finally {
+          save();
         }
-        await new Promise((resolvePromise) => child.once("close", resolvePromise));
-      }
-      return save();
+      })();
+      return stopping;
     },
   };
 }

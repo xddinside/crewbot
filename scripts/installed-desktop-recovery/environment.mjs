@@ -83,12 +83,14 @@ export function createFixtureEnvironment(runnerTemp, label = "omb-installed-reco
     own(restore) {
       this.stopped.push(restore);
     },
-    stop() {
+    async stop({ keep = false } = {}) {
       for (const restore of this.stopped.reverse()) {
-        try { restore(); } catch { /* teardown must never mask the real failure */ }
+        try { await restore(); } catch (error) {
+          console.error(`[desktop-recovery] WARNING owned fixture cleanup failed: ${error?.message ?? error}`);
+        }
       }
       this.stopped.length = 0;
-      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      if (!keep) rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     },
   };
 }
@@ -222,7 +224,7 @@ export function startOwnedSessionBus(fixture) {
     pid: child.pid,
     socket,
     stop() {
-      try { child.kill("SIGTERM"); } catch { /* already gone */ }
+      return terminate(child, socket);
     },
   };
   fixture.own(() => owned.stop());
@@ -266,7 +268,7 @@ export async function startOwnedWindowManager(fixture, display) {
     name: binary,
     pid: child.pid,
     stop() {
-      try { process.kill(child.pid, "SIGTERM"); } catch { /* already gone */ }
+      return terminate(child);
     },
   };
   fixture.own(() => owned.stop());
@@ -276,16 +278,17 @@ export async function startOwnedWindowManager(fixture, display) {
 /** Bounded teardown for the display: ask, then insist, then report the socket
  * still standing rather than leaving another run's display behind. */
 async function terminate(child, socket) {
-  if (child.exitCode !== null && !existsSync(socket)) return;
+  const gone = () => (child.exitCode !== null || child.signalCode !== null) && (!socket || !existsSync(socket));
+  if (gone()) return;
   try { child.kill("SIGTERM"); } catch { /* already gone */ }
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null && !existsSync(socket)) return;
+    if (gone()) return;
     await delay(100);
   }
   try { child.kill("SIGKILL"); } catch { /* already gone */ }
   await delay(300);
-  if (existsSync(socket)) {
+  if (socket && existsSync(socket)) {
     throw new Error(`Xvfb left its socket behind after SIGKILL: ${socket}`);
   }
 }

@@ -9,13 +9,15 @@
 // "the fixture cannot quietly prove something about the wrong machine".
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync,
+  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 
 import {
   ISOLATED_SESSION_KEYS,
@@ -27,6 +29,95 @@ import {
   candidateDeb,
   verifyCandidateArtifact,
 } from "./installed-desktop-recovery/inputs.mjs";
+import { selectThread, spawnInstalledApp } from "./installed-desktop-recovery/renderer.mjs";
+import { countChooserWindows, listWindows, waitForFolderChooser } from "./installed-desktop-recovery/native-picker.mjs";
+
+test("installed app cleanup returns after an immediately exiting child and keeps its log", async () => {
+  const root = mkdtempSync(join(tmpdir(), "omb-recovery-stop-test-"));
+  const logPath = join(root, "app.log");
+  const app = spawnInstalledApp({
+    executable: process.execPath,
+    args: ["-e", "console.log('fixture ready'); setInterval(() => {}, 1000)"],
+    env: { PATH: process.env.PATH },
+    logPath,
+  });
+  let timer;
+  try {
+    await once(app.child.stdout, "data");
+    await Promise.race([
+      app.stop(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("cleanup missed the child's close event")), 1500);
+      }),
+    ]);
+    assert.match(readFileSync(logPath, "utf8"), /fixture ready/);
+    assert.notEqual(app.child.signalCode, null);
+    await app.stop();
+  } finally {
+    clearTimeout(timer);
+    try { process.kill(-app.pid, "SIGKILL"); } catch { /* this test's child already exited */ }
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("thread selection expands the bot and waits for its thread to become current", async () => {
+  let selectedBot = false;
+  let expanded = false;
+  let current = false;
+  const bot = { click: () => { selectedBot = true; } };
+  const thread = {
+    click: () => { queueMicrotask(() => { current = true; }); },
+    getAttribute: (name) => name === "aria-current" && current ? "page" : null,
+  };
+  const toggle = {
+    click: () => { queueMicrotask(() => { expanded = true; }); },
+    getAttribute: (name) => name === "aria-label" ? "Expand Fixture threads" : "false",
+  };
+  const document = {
+    querySelector: (selector) => selector.includes("data-sidebar-bot-row") ? bot : expanded ? thread : null,
+    querySelectorAll: () => expanded ? [] : [toggle],
+  };
+  const renderer = {
+    evaluate: async (expression) => runInNewContext(expression, { document }),
+    waitFor: async (expression, description) => {
+      assert.ok(runInNewContext(expression, { document }), description);
+    },
+  };
+  const result = await selectThread(renderer, { botId: "bot", botName: "Fixture", threadId: "thread" });
+  assert.deepEqual(result, { botId: "bot", threadId: "thread", expanded: true });
+  assert.equal(selectedBot, true);
+  assert.equal(current, true);
+  // Selecting another thread under an already expanded bot must not collapse it.
+  assert.equal((await selectThread(renderer, { botId: "bot", botName: "Fixture", threadId: "sibling" })).expanded, false);
+  assert.equal(expanded, true);
+});
+
+test("the picker pairs xdotool IDs with titles and counts chooser windows using the owned env", async () => {
+  const root = mkdtempSync(join(tmpdir(), "omb-recovery-xdotool-test-"));
+  const binary = join(root, "xdotool");
+  // Match xdotool's actual output contract without connecting to any display.
+  writeFileSync(binary, `#!${process.execPath}
+if (process.env.DISPLAY !== ':owned-fixture') process.exit(2);
+const [command, id] = process.argv.slice(2);
+if (command === 'search') {
+  if (process.env.NO_WINDOWS === '1') process.exit(1);
+  console.log('101\\n102\\n103\\n104');
+} else if (command === 'getwindowname') {
+  if (id === '104') process.exit(1);
+  console.log(id === '101' ? 'Crewbot' : 'Choose a working folder');
+} else process.exit(2);
+`);
+  chmodSync(binary, 0o700);
+  const env = { PATH: root, DISPLAY: ":owned-fixture" };
+  try {
+    assert.deepEqual([...listWindows(env)], [["101", "Crewbot"], ["102", "Choose a working folder"], ["103", "Choose a working folder"]]);
+    assert.deepEqual(await waitForFolderChooser({ env }), { id: "102", name: "Choose a working folder" });
+    assert.equal(countChooserWindows({ env }), 2);
+    assert.equal(listWindows({ ...env, NO_WINDOWS: "1" }).size, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const VERSION = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version;
@@ -152,11 +243,37 @@ test("the owned fixture root is private, holds the three working folders, and re
 
       let torn = 0;
       fixture.own(() => { torn += 1; });
-      fixture.stop();
+      await fixture.stop();
       assert.equal(torn, 1, "every owned teardown must run");
       assert.equal(existsSync(fixture.root), false, "the fixture root must not outlive the run");
     } finally {
       rmSync(parent, { recursive: true, force: true, maxRetries: 5 });
+    }
+  });
+});
+
+test("fixture teardown awaits owned processes in reverse order before removing their root", async () => {
+  await withoutSession(async () => {
+    const parent = mkdtempSync(join(tmpdir(), "omb-recovery-teardown-test-"));
+    const fixture = createFixtureEnvironment(parent);
+    const calls = [];
+    fixture.own(async () => {
+      assert.deepEqual(calls, ["app"]);
+      assert.equal(existsSync(fixture.root), true);
+      calls.push("display");
+    });
+    fixture.own(async () => {
+      await Promise.resolve();
+      calls.push("app");
+    });
+    try {
+      await fixture.stop({ keep: true });
+      assert.deepEqual(calls, ["app", "display"]);
+      assert.equal(existsSync(fixture.root), true);
+      await fixture.stop();
+      assert.equal(existsSync(fixture.root), false);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
     }
   });
 });

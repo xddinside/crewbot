@@ -47,6 +47,7 @@ import {
   connectToRenderer,
   mutateInRenderer,
   saveScreenshot,
+  selectThread,
   spawnInstalledApp,
 } from "./installed-desktop-recovery/renderer.mjs";
 import {
@@ -212,20 +213,6 @@ const sendThroughComposer = (text) => `(() => {
   return { sent: true };
 })()`;
 
-const SELECT_THREAD = (threadId) => `(() => {
-  const row = document.querySelector('[data-sidebar-thread-row="' + ${JSON.stringify(threadId)} + '"]');
-  if (!row) return { clicked: false, reason: "thread row is not in the sidebar" };
-  row.click();
-  return { clicked: true };
-})()`;
-
-/** `aria-current="page"` is what SidebarThreadRow puts on the selected row, so
- * it is the shipped signal that the renderer really switched threads. */
-const THREAD_IS_CURRENT = (threadId) => `(() => {
-  const row = document.querySelector('[data-sidebar-thread-row="' + ${JSON.stringify(threadId)} + '"]');
-  return row?.getAttribute("aria-current") === "page";
-})()`;
-
 const CLICK_STOP = `(() => {
   const stop = [...document.querySelectorAll("button")].find((button) =>
     /stop this turn/i.test(button.getAttribute("aria-label") || ""));
@@ -241,8 +228,7 @@ const CLICK_STOP = `(() => {
  * production path: renderer -> store -> preload -> private Electron IPC -> the
  * embedded server's utility port.
  */
-const CHOOSE_APPROVAL_MODE = (label) => `(() => {
-  const wanted = ${JSON.stringify(label)};
+const OPEN_APPROVAL_MENU = `(() => {
   const trigger = [...document.querySelectorAll('button[aria-haspopup="menu"]')]
     .find((button) => (button.getAttribute("aria-label") || "").endsWith(${JSON.stringify(APPROVAL_TRIGGER_SUFFIX)}));
   if (!trigger) {
@@ -251,6 +237,11 @@ const CHOOSE_APPROVAL_MODE = (label) => `(() => {
         .map((button) => button.getAttribute("aria-label")) };
   }
   if (trigger.getAttribute("aria-expanded") !== "true") trigger.click();
+  return { opened: true };
+})()`;
+
+const CHOOSE_APPROVAL_MODE = (label) => `(() => {
+  const wanted = ${JSON.stringify(label)};
   const menu = [...document.querySelectorAll('[role="menu"]')].find((node) =>
     /approval mode/i.test(node.getAttribute("aria-label") || ""));
   if (!menu) return { opened: false, reason: "the approval menu did not open" };
@@ -356,6 +347,7 @@ async function main() {
     // The welcome flow is recorded as already finished: a first-run install
     // replaces the whole shell with it, and this journey is about the chat.
     const dataDir = join(fixture.home, ".crewbot");
+    const engineDump = join(fixture.root, "fake-engine-launch.json");
     mkdirSync(dataDir, { recursive: true, mode: 0o700 });
     writeFileSync(join(dataDir, "config.json"), JSON.stringify({
       instances: {
@@ -363,7 +355,7 @@ async function main() {
           driver: "claudeAgent",
           displayName: ENGINE_NAME,
           config: { cli: fakeCli },
-          environment: { FAKE_CLAUDE_MODE: "happy" },
+          environment: { FAKE_CLAUDE_MODE: "happy", FAKE_CLAUDE_DUMP: engineDump },
         },
         hanging: {
           driver: "claudeAgent",
@@ -387,7 +379,8 @@ async function main() {
       env: { ...env, CREWBOT_DATA_DIR: dataDir },
       logPath: join(fixture.logs, "app.log"),
     });
-    fixture.own(() => app.stop());
+    const ownedApp = app;
+    fixture.own(() => ownedApp.stop());
     step("installed app launched", `pid ${app.pid}, devtools on 127.0.0.1:${debugPort}`);
 
     renderer = await connectToRenderer({ port: debugPort, child: app.child, log: console.log });
@@ -420,10 +413,19 @@ async function main() {
     const siblingThread = sibling.body.task.threadId;
     step("fixture bot ready", `bot ${botId}, failed thread ${failedThread}, sibling ${siblingThread}`);
 
+    const seeded = await mutate(`/api/bots/${botId}/messages`, {
+      body: { text: "Establish the failed thread's original session", threadId: failedThread },
+    });
+    if (seeded.status >= 400) throw new Error(`seeding the failed thread failed: ${JSON.stringify(seeded)}`);
+    await waitForSettled(base, botId, failedThread);
     await mutate(`/api/bots/${botId}/messages`, { body: { text: SIBLING_REQUEST, threadId: siblingThread } });
     await waitForSettled(base, botId, siblingThread);
     const beforeFailure = storedTasks(dataDir, botId);
     const siblingBefore = beforeFailure.get(siblingThread);
+    const failedBefore = beforeFailure.get(failedThread);
+    if (!Object.keys(failedBefore?.resumeCursors ?? {}).length) {
+      throw new Error("the failed thread has no provider continuation to reset");
+    }
     if (!Object.keys(siblingBefore?.resumeCursors ?? {}).length) {
       throw new Error("the sibling thread has no provider continuation to protect");
     }
@@ -433,22 +435,10 @@ async function main() {
     // thread in the real sidebar and types into the real composer.
     rmSync(fixture.missingCwd, { recursive: true, force: true });
     step("removed the working folder underneath the bot", fixture.missingCwd);
-    const selectBot = await renderer.evaluate(
-      `(() => {
-        const row = document.querySelector('[data-sidebar-bot-row="' + ${JSON.stringify(botId)} + '"]');
-        if (!row) return { clicked: false, reason: "bot row missing" };
-        row.click();
-        return { clicked: true };
-      })()`,
-    );
-    step("selected the fixture bot in the sidebar", JSON.stringify(selectBot));
-    if (!selectBot.clicked) throw new Error(`could not select the fixture bot in the sidebar: ${JSON.stringify(selectBot)}`);
     // Creating the sibling thread made it the bot's selected task, so the failed
     // thread is opened by its own sidebar row — the same click a user makes.
-    const opened = await renderer.evaluate(SELECT_THREAD(failedThread));
-    step("clicked the failed thread in the sidebar", JSON.stringify(opened));
-    if (!opened.clicked) throw new Error(`the failed thread was not in the sidebar: ${JSON.stringify(opened)}`);
-    await renderer.waitFor(THREAD_IS_CURRENT(failedThread), `thread ${failedThread} to be current`, { timeoutMs: 30_000 });
+    const opened = await selectThread(renderer, { botId, botName: BOT_NAME, threadId: failedThread });
+    step("selected and expanded the fixture bot's failed thread", JSON.stringify(opened));
     step("the failed thread is the one on screen", failedThread);
 
     const sent = await renderer.evaluate(sendThroughComposer(FAILED_REQUEST));
@@ -480,7 +470,7 @@ async function main() {
     if (JSON.stringify(afterCancelTranscript.map((m) => m.id)) !== JSON.stringify(failedTranscript.body.messages.map((m) => m.id))) {
       throw new Error("a cancelled chooser changed the transcript");
     }
-    if (afterCancel.get(failedThread).resumeCursors !== undefined) {
+    if (JSON.stringify(afterCancel.get(failedThread).resumeCursors) !== JSON.stringify(failedBefore.resumeCursors)) {
       throw new Error("a cancelled chooser touched the provider continuation");
     }
     evidence.screenshots.push(await saveScreenshot(renderer, fixture.evidence, "03-after-cancel"));
@@ -495,6 +485,13 @@ async function main() {
     evidence.screenshots.push(captureWindow({ env, id: chooser.id, path: join(fixture.evidence, "04-native-chooser.png") }));
     const chooseInput = await chooseFolder({ env, id: chooser.id, path: fixture.replacementCwd });
     await waitForChooserClosed({ env, id: chooser.id });
+    await renderer.waitFor(
+      `(() => {
+        const state = ${READ_CHAT_STATE};
+        return state.rows.some((row) => !${JSON.stringify(failedTranscript.body.messages.map((message) => message.id))}.includes(row.id));
+      })()`,
+      "the recovery retry to add a new transcript row", { timeoutMs: 30_000 },
+    );
     await waitForSettled(base, botId, failedThread);
     evidence.screenshots.push(await saveScreenshot(renderer, fixture.evidence, "05-after-recovery"));
 
@@ -504,9 +501,17 @@ async function main() {
         `the chooser did not pin the folder it returned: ${recovered.get(failedThread)?.cwd} (want ${fixture.replacementCwd})`,
       );
     }
-    if (Object.keys(recovered.get(failedThread)?.resumeCursors ?? {}).length) {
-      throw new Error("recovery did not clear the failed thread's provider continuation");
+    const launch = JSON.parse(readFileSync(engineDump, "utf8"));
+    const sessionFlag = launch.argv.indexOf("--session-id");
+    const freshSession = sessionFlag >= 0 ? launch.argv[sessionFlag + 1] : null;
+    if (!freshSession || launch.argv.includes("--resume") || Object.values(failedBefore.resumeCursors).includes(freshSession)) {
+      throw new Error("recovery did not start a fresh provider session after clearing the failed continuation");
     }
+    const recoveredCursors = Object.values(recovered.get(failedThread)?.resumeCursors ?? {});
+    if (!recoveredCursors.includes(freshSession) || recoveredCursors.some((cursor) => Object.values(failedBefore.resumeCursors).includes(cursor))) {
+      throw new Error("the recovered thread did not replace its old continuation with the fresh retry's session");
+    }
+    evidence.observations.push({ label: "recovery provider launch", freshSession, resumed: false });
     const afterRetry = (await api(base, `/api/threads/${failedThread}/messages?limit=50`)).body.messages;
     const failedUserRepeats = afterRetry.filter((message) => message.role === "user" && message.text === FAILED_REQUEST);
     if (failedUserRepeats.length !== 2) {
@@ -594,9 +599,7 @@ async function main() {
     if (!staleClick.clicked) throw new Error("the recovery control was not activatable for the stale case");
     const staleChooser = await waitForFolderChooser({ env });
     evidence.windows.push({ phase: "stale", ...staleChooser });
-    const switchResult = await renderer.evaluate(SELECT_THREAD(siblingThread));
-    if (!switchResult.clicked) throw new Error("could not switch to the sibling thread while the chooser was open");
-    await renderer.waitFor(THREAD_IS_CURRENT(siblingThread), "the sibling thread to become current", { timeoutMs: 30_000 });
+    await selectThread(renderer, { botId, botName: BOT_NAME, threadId: siblingThread });
     const chooseStale = await chooseFolder({ env, id: staleChooser.id, path: fixture.alternateCwd });
     await waitForChooserClosed({ env, id: staleChooser.id });
     await delay(2_000);
@@ -628,6 +631,7 @@ async function main() {
     // refuses them for every client that is not the packaged desktop. That
     // refusal is checked first, then the renderer's own control is used, which
     // is exactly what a user clicks and the only path that can grant it.
+    await selectThread(renderer, { botId, botName: BOT_NAME, threadId: failedThread });
     const modeBefore = await readApprovalMode(base, botId, failedThread);
     const overHttp = await api(base, `/api/bots/${botId}/tasks/${failedThread}`, {
       method: "PATCH",
@@ -641,9 +645,15 @@ async function main() {
     if (modeAfterRefusal !== modeBefore) {
       throw new Error(`a refused grant changed the thread's approval mode: ${modeBefore} -> ${modeAfterRefusal}`);
     }
+    const menu = await renderer.evaluate(OPEN_APPROVAL_MENU);
+    if (!menu.opened) throw new Error(`the approval-mode control was not present: ${JSON.stringify(menu)}`);
+    await renderer.waitFor(
+      `[...document.querySelectorAll('[role="menu"]')].some((node) => /approval mode/i.test(node.getAttribute("aria-label") || ""))`,
+      "the installed approval menu to open", { timeoutMs: 30_000 },
+    );
     const approval = await renderer.evaluate(CHOOSE_APPROVAL_MODE("Full access"));
-    if (!approval.opened) throw new Error(`the approval-mode control was not present: ${JSON.stringify(approval)}`);
     if (!approval.selected) throw new Error(`the installed menu offered no Full access entry: ${JSON.stringify(approval)}`);
+    await renderer.waitFor(`Boolean(document.querySelector('[role="alertdialog"]'))`, "the Full access warning", { timeoutMs: 30_000 });
     const confirmed = await renderer.evaluate(CONFIRM_APPROVAL_WARNING);
     if (!confirmed.confirmed) throw new Error(`the Full access warning was not confirmed: ${JSON.stringify(confirmed)}`);
     await waitForApprovalMode(base, botId, failedThread, "full");
@@ -663,15 +673,7 @@ async function main() {
     if (stopBot.status >= 400) throw new Error(`creating the stop fixture bot failed: ${JSON.stringify(stopBot)}`);
     const stopBotId = stopBot.body.bot.id;
     const stopThread = stopBot.body.bot.threadId;
-    const openedStop = await renderer.evaluate(
-      `(() => {
-        const row = document.querySelector('[data-sidebar-bot-row="' + ${JSON.stringify(stopBotId)} + '"]');
-        if (!row) return { clicked: false };
-        row.click();
-        return { clicked: true };
-      })()`,
-    );
-    if (!openedStop.clicked) throw new Error("the stop fixture bot was not in the sidebar");
+    await selectThread(renderer, { botId: stopBotId, botName: "Stop fixture", threadId: stopThread });
     const stopSent = await renderer.evaluate(sendThroughComposer("Keep this turn running"));
     if (!stopSent.sent) throw new Error(`the stop fixture composer refused the request: ${JSON.stringify(stopSent)}`);
     await renderer.waitFor(
@@ -716,9 +718,17 @@ async function main() {
       throw new Error("the installed package digest changed under the run");
     }
     step("journey complete", `${evidence.screenshots.length} screenshots, ${evidence.windows.length} chooser windows`);
+  } catch (error) {
+    evidence.failure = error?.stack ?? String(error);
+    step("journey failed", error?.message ?? String(error));
+    throw error;
   } finally {
     renderer?.close();
-    if (app) await app.stop();
+    if (app) {
+      try { await app.stop(); } catch (error) {
+        console.error(`[desktop-recovery] WARNING app cleanup failed: ${error?.message ?? error}`);
+      }
+    }
     evidence.logs = collectFixtureLogs(fixture, fixture.evidence);
     if (installed) {
       try {
@@ -732,6 +742,7 @@ async function main() {
     writeFileSync(join(fixture.root, "evidence.json"), JSON.stringify({
       startedAt: new Date(started).toISOString(),
       durationMs: Date.now() - started,
+      failure: evidence.failure ?? null,
       observations: evidence.observations,
       screenshots: evidence.screenshots,
       windows: evidence.windows,
@@ -739,18 +750,14 @@ async function main() {
       steps: evidence.steps,
     }, null, 2));
     console.log(`[desktop-recovery] evidence: ${fixture.root}`);
-    if (process.env.OMB_KEEP_RECOVERY_FIXTURE === "1") {
+    const keep = process.env.OMB_KEEP_RECOVERY_FIXTURE === "1";
+    if (keep) {
       step("fixture kept", fixture.root);
       // Keep the evidence on disk but stop the owned display, bus and app. Left
       // running they hold this process's event loop open, so the job hangs to
       // its timeout and the real failure is never reported.
-      for (const restore of [...fixture.stopped].reverse()) {
-        try { restore(); } catch { /* teardown must not mask the real failure */ }
-      }
-      fixture.stopped.length = 0;
-    } else {
-      fixture.stop();
     }
+    await fixture.stop({ keep });
   }
 }
 

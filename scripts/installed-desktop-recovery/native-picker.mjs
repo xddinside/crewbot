@@ -32,11 +32,23 @@ function xdotool(args, env, { timeoutMs = 15_000 } = {}) {
 /** Every mapped window on the fixture's display, by id. The chooser is found by
  * its exact production title among these — never by guessing at its class. */
 export function listWindows(env) {
-  const output = xdotool(["search", "--name", ".", "getwindowname", "%@"], env).split("\n");
   const names = new Map();
-  for (const line of output) {
-    const match = line.match(/^(\d+)\s"(.*)"$/);
-    if (match) names.set(match[1], match[2]);
+  let ids;
+  try {
+    ids = xdotool(["search", "--onlyvisible", "--name", "."], env).trim().split(/\s+/).filter(Boolean);
+  } catch (error) {
+    if (error.status === 1) return names; // No mapped windows yet.
+    throw error;
+  }
+  // `search` prints IDs; `getwindowname` prints only the title. Keeping the
+  // calls separate preserves the association instead of parsing imaginary
+  // '<id> "<name>"' output from the chained command.
+  for (const id of ids) {
+    try {
+      names.set(id, xdotool(["getwindowname", id], env).trim());
+    } catch (error) {
+      if (error.status !== 1) throw error; // A window can close between calls.
+    }
   }
   return names;
 }
@@ -67,7 +79,7 @@ export async function waitForFolderChooser({ env, timeoutMs = 60_000 } = {}) {
 
 /** How many chooser windows exist right now. Two activations of one row must
  * never make this 2: that is the duplicate-retry guard's observable. */
-export function countChooserWindows(env) {
+export function countChooserWindows({ env }) {
   return [...listWindows(env)].filter(([, name]) => name === FOLDER_CHOOSER_TITLE).length;
 }
 
