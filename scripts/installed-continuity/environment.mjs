@@ -230,8 +230,11 @@ function defaultCollectionState(env) {
     ],
     { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 10_000 },
   ).trim();
+  // An unbound alias is reported as the root path, not as an empty string. There
+  // is no collection under "/" , so treat it as "not bound yet" rather than
+  // asking a path that does not exist for a property.
   const path = alias.match(/'([^']+)'/)?.[1];
-  if (!path) return { path: null, locked: null };
+  if (!path || path === "/") return { path: null, locked: null };
   const locked = execFileSync(
     "gdbus",
     [
@@ -295,6 +298,24 @@ export function startOwnedKeyring({ env, password }) {
   };
   const children = [];
   children.push(start(["--start", "--components=secrets"]));
+  // Wait for the daemon to answer on the bus before unlocking. `--unlock` reaches
+  // the running daemon over its control socket, so asking a daemon that has not
+  // finished starting loses the password and leaves the collection locked for
+  // good — the run then waits out the whole deadline for a state it can no
+  // longer reach.
+  const serving = Date.now() + 15_000;
+  while (Date.now() < serving) {
+    try {
+      execFileSync(
+        "gdbus",
+        ["call", "--session", "--dest", "org.freedesktop.secrets", "--object-path", "/org/freedesktop/secrets", "--method", "org.freedesktop.DBus.Peer.Ping"],
+        { env, stdio: ["ignore", "pipe", "pipe"], timeout: 5_000 },
+      );
+      break;
+    } catch {
+      execFileSync("sleep", ["0.2"], { env, stdio: "ignore", timeout: 5_000 });
+    }
+  }
   children.push(start(["--unlock", "--components=secrets"], password));
   const control = () => announced.match(/GNOME_KEYRING_CONTROL=(.+)/)?.[1]?.trim() ?? null;
   const stop = () => {
