@@ -452,11 +452,11 @@ async function main() {
     assertRefusalPreservedOriginals({
       legacyDirs: [secondLegacy, legacyDataDir, candidateDataDir],
       expectedWarningFragments: [
-        { warning: secondWarning, text: "only one directory moves automatically" },
+        { warning: secondWarning, text: "already exists and wins without merging" },
         { warning: secondWarning, text: "Keep both directories intact" },
       ],
     });
-    evidence.refusalSecondLegacyRoot = { preserved: [secondLegacy], warning: secondWarning.split("\n").find((line) => line.includes("only one directory moves automatically")) ?? null };
+    evidence.refusalSecondLegacyRoot = { preserved: [secondLegacy], warning: secondWarning.split("\n").find((line) => line.includes("already exists and wins without merging")) ?? null };
     step("refusal", "a second legacy root was preserved, not merged");
 
     // ── 5. the real migration, in the installed candidate ───────────────
@@ -478,6 +478,19 @@ async function main() {
     if (!profileLog.includes("using the existing OpenMausBot desktop profile in place at")) {
       throw new Error(`the candidate did not adopt the old desktop profile; its log ended: ${profileLog.slice(-800)}`);
     }
+    assertRefusalPreservedOriginals({
+      legacyDirs: [secondLegacy, candidateDataDir],
+      expectedWarningFragments: [
+        { warning: profileLog, text: "only one directory moves automatically" },
+        { warning: profileLog, text: "Keep both directories intact" },
+      ],
+    });
+    if (readFileSync(join(secondLegacy, "keep.txt"), "utf8") !== "a second legacy root that must not be merged\n") {
+      throw new Error("the migration changed the second legacy root");
+    }
+    evidence.refusalSecondLegacyRoot.afterMigrationPreserved = true;
+    evidence.refusalSecondLegacyRoot.afterMigrationWarning = profileLog.split("\n")
+      .find((line) => line.includes("only one directory moves automatically")) ?? null;
     auditCredentialSurvival({
       credentialsFile: join(fixture.config, OLD_PACKAGE.profileName, "credentials.bin"),
       syntheticSecret,
