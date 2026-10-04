@@ -170,13 +170,14 @@ export class ProductionServer {
  *
  * @param options.serverEntry - `<installRoot>/resources/server/index.js`.
  * @param options.dataDir - Workspace root; the legacy build uses the fixture
- *   home default, so `undefined` is passed through as "no override".
+ *   home default when overrideDataDir is false.
  * @param options.fakeCli - Absolute path to the repository fake CLI.
  * @param options.replies - Scripted replies for deterministic turns.
  */
 export async function startProductionServer({
   serverEntry,
   dataDir,
+  overrideDataDir = true,
   env,
   fakeCli,
   replies,
@@ -193,7 +194,7 @@ export async function startProductionServer({
   }, null, 2), { mode: 0o600 });
 
   const childEnv = { ...env };
-  if (dataDir) childEnv.CREWBOT_DATA_DIR = dataDir;
+  if (overrideDataDir) childEnv.CREWBOT_DATA_DIR = dataDir;
   childEnv.OMB_PORT = String(port);
   childEnv.OMB_WEBHOOK_PORT = String(port + 1);
   childEnv.FAKE_CLAUDE_MODE = "happy";

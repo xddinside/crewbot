@@ -310,7 +310,8 @@ async function main() {
 
     const oldServer = await startProductionServer({
       serverEntry: OLD_PACKAGE.serverEntry,
-      dataDir: undefined, // the 0.1.83 default: $HOME/.openmausbot
+      dataDir: legacyDataDir,
+      overrideDataDir: false, // prove the 0.1.83 default: $HOME/.openmausbot
       env: appEnv,
       fakeCli,
       replies: [],

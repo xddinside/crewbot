@@ -52,3 +52,29 @@ test("installed-app observer returns after a child exits before the polling dead
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("legacy server stages its real workspace while leaving the data-dir override unset", { timeout: 5_000 }, async () => {
+  const { writeFileSync, readFileSync } = await import("node:fs");
+  const { reservePortBlock, startProductionServer } = await import("./installed-continuity/workspace.mjs");
+  const root = mkdtempSync(join(tmpdir(), "omb-legacy-default-"));
+  const entry = join(root, "server.mjs");
+  const report = join(root, "launch.json");
+  writeFileSync(entry, `
+    import { createServer } from 'node:http';
+    import { writeFileSync } from 'node:fs';
+    writeFileSync(${JSON.stringify(report)}, JSON.stringify({ override: process.env.CREWBOT_DATA_DIR ?? null, dump: process.env.FAKE_CLAUDE_DUMP }));
+    createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({app:'openmausbot'}))}).listen(Number(process.env.OMB_PORT),'127.0.0.1');
+  `);
+  let server;
+  try {
+    server = await startProductionServer({
+      serverEntry: entry, dataDir: root, overrideDataDir: false, env: { PATH: process.env.PATH, HOME: root },
+      fakeCli: process.execPath, replies: [], port: (await reservePortBlock()).port, logPath: join(root, "server.log"), cwd: root,
+    });
+    assert.deepEqual(JSON.parse(readFileSync(report, "utf8")), { override: null, dump: join(root, "fake-claude-dump.json") });
+    assert.equal(JSON.parse(readFileSync(join(root, "config.json"), "utf8")).instances.claude.config.cli, process.execPath);
+  } finally {
+    if (server) await server.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
