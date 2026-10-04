@@ -21,10 +21,12 @@ if (!existsSync(marker)) {
     throw new Error("refusing an ownership marker that does not match this exact fixture");
   }
   const problems = [];
-  const systemctl = (args, { optional = false } = {}) => {
+  const systemctl = (args, { optional = false, absentValue } = {}) => {
     try {
       return execFileSync("systemctl", args, { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"] }).trim();
     } catch (error) {
+      // systemctl can report an absent unit in stdout while exiting nonzero.
+      if (absentValue !== undefined && String(error.stdout).trim() === absentValue) return absentValue;
       if (!optional) problems.push(`systemctl ${args.join(" ")}: ${error.message}`);
       return null;
     }
@@ -40,9 +42,9 @@ if (!existsSync(marker)) {
     try { rmSync(path, { recursive: true, force: true }); } catch (error) { problems.push(`${path}: ${error.message}`); }
   }
   for (const unit of units) {
-    const state = systemctl(["show", "-p", "LoadState", "--value", unit]);
+    const state = systemctl(["show", "-p", "LoadState", "--value", unit], { absentValue: "not-found" });
     if (state && state !== "not-found") problems.push(`owned unit survived: ${unit}=${state}`);
-    const pid = Number(systemctl(["show", "-p", "MainPID", "--value", unit]));
+    const pid = Number(systemctl(["show", "-p", "MainPID", "--value", unit], { absentValue: "0" }));
     if (pid > 0) problems.push(`owned service process survived: ${unit} pid=${pid}`);
   }
   for (const path of paths) if (existsSync(path)) problems.push(`owned path survived: ${path}`);

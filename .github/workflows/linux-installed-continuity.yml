@@ -156,6 +156,8 @@ jobs:
           ' "$RUNNER_TEMP/inputs/candidate-hashes.json" "$CANDIDATE_SOURCE_SHA"
 
       - name: Prove private keyring startup and installed-app exit regressions
+        env:
+          OMB_NATIVE_KEYRING_TEST: "1"
         run: node --test scripts/installed-keyring.node-test.mjs
 
       - name: Drive the installed old-to-new upgrade

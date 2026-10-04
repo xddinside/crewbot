@@ -16,7 +16,9 @@ import { runInstalledApp } from "./installed-continuity/app-launch.mjs";
 
 for (const key of LIVE_SESSION_VARIABLES) delete process.env[key];
 
-test("private keyring creates an unlocked default collection, round-trips and exposes item attributes", { timeout: 25_000 }, async () => {
+test("private keyring creates an unlocked default collection, round-trips and exposes item attributes", {
+  timeout: 25_000, skip: process.env.OMB_NATIVE_KEYRING_TEST !== "1",
+}, async () => {
   const fixture = createFixtureEnvironment(tmpdir());
   try {
     const bus = startOwnedSessionBus(fixture);
@@ -37,7 +39,7 @@ test("private keyring creates an unlocked default collection, round-trips and ex
     assert.deepEqual(listSecretServiceItems(usable), []);
   } finally {
     for (const stop of fixture.stopped.splice(0).reverse()) await stop();
-    fixture.stop();
+    await fixture.stop();
   }
 });
 
