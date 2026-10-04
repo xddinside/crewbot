@@ -633,24 +633,25 @@ async function main() {
     writeFileSync(join(fixture.logs, "evidence.json"), `${JSON.stringify(evidence, null, 2)}\n`);
     console.log(`[continuity] OK in ${Math.round((Date.now() - started) / 1000)}s: ${OLD_PACKAGE.version} -> ${candidateVersion}, real keyring, isolated session`);
   } finally {
-    const problems = [];
-    for (const server of servers) {
-      try { await server.stop(); } catch (error) { problems.push(`server: ${error.message}`); }
-    }
-    for (const restore of [...fixture.stopped].reverse()) {
-      try { await restore(); } catch (error) { problems.push(`owned process: ${error.message}`); }
-    }
-    fixture.stopped.length = 0;
-    for (const name of [CANDIDATE_PACKAGE.name, OLD_PACKAGE.name]) {
-      try { execFileSync("sudo", ["dpkg", "--purge", name], { stdio: "ignore", timeout: 30_000 }); }
-      catch (error) { problems.push(`purge ${name}: ${error.message}`); }
-    }
-    evidence.cleanup = { ok: problems.length === 0, problems };
-    writeFileSync(join(fixture.logs, "evidence.json"), `${JSON.stringify(evidence, null, 2)}\n`);
-    if (process.env.OMB_KEEP_CONTINUITY_FIXTURE === "1") console.log(`[continuity] kept ${fixture.root}`);
-    else await fixture.stop();
-    if (problems.length) throw new Error(`continuity cleanup failed: ${problems.join("; ")}`);
-
+    await (async () => {
+      const problems = [];
+      for (const server of servers) {
+        try { await server.stop(); } catch (error) { problems.push(`server: ${error.message}`); }
+      }
+      for (const restore of [...fixture.stopped].reverse()) {
+        try { await restore(); } catch (error) { problems.push(`owned process: ${error.message}`); }
+      }
+      fixture.stopped.length = 0;
+      for (const name of [CANDIDATE_PACKAGE.name, OLD_PACKAGE.name]) {
+        try { execFileSync("sudo", ["dpkg", "--purge", name], { stdio: "ignore", timeout: 30_000 }); }
+        catch (error) { problems.push(`purge ${name}: ${error.message}`); }
+      }
+      evidence.cleanup = { ok: problems.length === 0, problems };
+      writeFileSync(join(fixture.logs, "evidence.json"), `${JSON.stringify(evidence, null, 2)}\n`);
+      if (process.env.OMB_KEEP_CONTINUITY_FIXTURE === "1") console.log(`[continuity] kept ${fixture.root}`);
+      else await fixture.stop();
+      if (problems.length) throw new Error(`continuity cleanup failed: ${problems.join("; ")}`);
+    })();
   }
 }
 
