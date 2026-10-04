@@ -517,14 +517,17 @@ async function main() {
     step("paths", "no old data-root path survived; the workspace project moved and the external project did not");
 
     // ── 6. separation, from what the launches created ──────────────────
-    const stableTree = listTree(fixture.root);
+    // Inspect application identity roots; runtime/logs/project belong to the
+    // harness and are created before either installed application starts.
+    const stableTree = [fixture.home, fixture.config, fixture.data, fixture.cache]
+      .flatMap((root) => listTree(root).map((entry) => join(root, entry)));
     evidence.separation = auditStableDevelopmentSeparation({
       home: fixture.home,
       config: fixture.config,
       data: fixture.data,
       cache: fixture.cache,
       development: fixture.development,
-      observed: stableTree.map((entry) => join(fixture.root, entry)),
+      observed: stableTree,
     });
     const devItems = listSecretServiceItems(appEnv).filter((item) => item.attributes?.application === "crewbot-development");
     if (devItems.length) throw new Error(`a development identity already owns ${devItems.length} keyring item(s)`);
@@ -553,7 +556,7 @@ async function main() {
     servers.push(nextServer);
     step("continuity", `candidate shipped server ${nextServer.url}`);
 
-    const migrated = nextServer.bot(conversationBot.id);
+    const migrated = await nextServer.bot(conversationBot.id);
     if (!migrated) throw new Error(`the migrated workspace does not contain the seeded conversation ${conversationBot.id}`);
     const migratedMessages = await nextServer.threadMessages(migrated.threadId, 100);
     if (migratedMessages.length < evidence.seed.oldMessageCount) {
@@ -565,7 +568,7 @@ async function main() {
     if (!seededUser) {
       throw new Error(`no migrated message points at the attachment under the new workspace; paths seen: ${JSON.stringify(migratedMessages.flatMap((message) => attachmentPathsIn(message.text)))}`);
     }
-    const carried = nextServer.bot(embeddedBot.id);
+    const carried = await nextServer.bot(embeddedBot.id);
     if (!carried) throw new Error("the migrated workspace does not contain the workspace-pinned conversation");
     if (carried.cwd !== join(candidateDataDir, "projects", "embedded")) {
       throw new Error(`the embedded workspace path was not rebased: ${carried.cwd}`);
