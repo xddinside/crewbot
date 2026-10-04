@@ -303,10 +303,16 @@ export function ensureDirectory(path, { owner, mode = 0o700 } = {}) {
  *
  * Tolerates a non-zero exit by default: several of the boundaries under test are
  * refusals, so the caller has to be able to inspect the exit status and the
- * message. Callers that require success assert on `result.status` themselves. */
+ * message. Callers that require success assert on `result.status` themselves.
+ *
+ * `CREWBOT_DEV_LAUNCH` is preserved by name because sudo's default `env_reset`
+ * drops it: the stable/development separation is proved by running the CLI with
+ * that variable set, and without preserving it the CLI never sees it and the
+ * development launch quietly behaves like the stable one. Naming one variable
+ * keeps the reset in force for everything else. */
 export function productionCli(args, { as, home, repoRoot, env = {}, extraPath = [], allowFailure = true } = {}) {
   const searchPath = [...extraPath, "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"].join(":");
-  return run("sudo", ["-n", "-u", as, "-H", process.execPath, "--experimental-strip-types", join(repoRoot, "server", "openmausbot.ts"), ...args], {
+  return run("sudo", ["-n", "-u", as, "-H", "--preserve-env=CREWBOT_DEV_LAUNCH", process.execPath, "--experimental-strip-types", join(repoRoot, "server", "openmausbot.ts"), ...args], {
     env: { ...process.env, HOME: home, PATH: searchPath, ...env },
     cwd: repoRoot,
     allowFailure,
