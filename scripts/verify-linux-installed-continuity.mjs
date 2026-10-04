@@ -633,20 +633,24 @@ async function main() {
     writeFileSync(join(fixture.logs, "evidence.json"), `${JSON.stringify(evidence, null, 2)}\n`);
     console.log(`[continuity] OK in ${Math.round((Date.now() - started) / 1000)}s: ${OLD_PACKAGE.version} -> ${candidateVersion}, real keyring, isolated session`);
   } finally {
-    for (const server of servers) await server.stop();
-    if (keyring) keyring.stop();
-    writeFileSync(join(fixture.logs, "evidence.json"), `${JSON.stringify(evidence, null, 2)}\n`);
-    if (process.env.OMB_KEEP_CONTINUITY_FIXTURE === "1") console.log(`[continuity] kept ${fixture.root}`);
-    // Stop the owned children even when the root is kept for inspection.
-    // Leaving them attached keeps this process's event loop alive, so the job
-    // hangs until its timeout and the real failure is never reported.
+    const problems = [];
+    for (const server of servers) {
+      try { await server.stop(); } catch (error) { problems.push(`server: ${error.message}`); }
+    }
     for (const restore of [...fixture.stopped].reverse()) {
-      try { restore(); } catch { /* teardown must not mask the real failure */ }
+      try { await restore(); } catch (error) { problems.push(`owned process: ${error.message}`); }
     }
     fixture.stopped.length = 0;
-    if (process.env.OMB_KEEP_CONTINUITY_FIXTURE !== "1") fixture.stop();
-    execFileSync("sudo", ["dpkg", "--purge", CANDIDATE_PACKAGE.name], { stdio: "ignore" });
-    execFileSync("sudo", ["dpkg", "--purge", OLD_PACKAGE.name], { stdio: "ignore" });
+    for (const name of [CANDIDATE_PACKAGE.name, OLD_PACKAGE.name]) {
+      try { execFileSync("sudo", ["dpkg", "--purge", name], { stdio: "ignore", timeout: 30_000 }); }
+      catch (error) { problems.push(`purge ${name}: ${error.message}`); }
+    }
+    evidence.cleanup = { ok: problems.length === 0, problems };
+    writeFileSync(join(fixture.logs, "evidence.json"), `${JSON.stringify(evidence, null, 2)}\n`);
+    if (process.env.OMB_KEEP_CONTINUITY_FIXTURE === "1") console.log(`[continuity] kept ${fixture.root}`);
+    else await fixture.stop();
+    if (problems.length) throw new Error(`continuity cleanup failed: ${problems.join("; ")}`);
+
   }
 }
 

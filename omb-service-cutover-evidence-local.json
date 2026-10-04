@@ -1,9 +1,0 @@
-{
-  "steps": [],
-  "assertions": [],
-  "cleanup": null,
-  "environment": null,
-  "legacyUnit": null,
-  "inputs": null,
-  "failure": "Error: [linux-service-cutover] RUNNER_TEMP must be an existing absolute CI path\n    at fail (file:///home/xdd/dev/work/crewbot-linux-first/scripts/testing/linux-service-fixture.mjs:22:9)\n    at main (file:///home/xdd/dev/work/crewbot-linux-first/scripts/smoke-linux-service-cutover.mjs:823:5)\n    at file:///home/xdd/dev/work/crewbot-linux-first/scripts/smoke-linux-service-cutover.mjs:893:9\n    at ModuleJob.run (node:internal/modules/esm/module_job:569:25)\n    at async node:internal/modules/esm/loader:650:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)"
-}

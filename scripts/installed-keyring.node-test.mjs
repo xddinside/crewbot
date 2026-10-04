@@ -36,6 +36,7 @@ test("private keyring creates an unlocked default collection, round-trips and ex
     execFileSync("secret-tool", ["clear", "application", "fixture-native"], { env: usable, timeout: 5_000 });
     assert.deepEqual(listSecretServiceItems(usable), []);
   } finally {
+    for (const stop of fixture.stopped.splice(0).reverse()) await stop();
     fixture.stop();
   }
 });

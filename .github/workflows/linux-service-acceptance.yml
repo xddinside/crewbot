@@ -75,6 +75,8 @@ jobs:
           test ! -e /run/.containerenv
           systemctl --version | head -1
           systemctl is-system-running || true
+      - name: Prove preflight refusal leaves existing data untouched
+        run: node --test scripts/linux-service-cleanup.node-test.mjs
       - name: Run the native service cutover and rollback proof
         # The fixture drives real units, so it needs root and the runner's
         # RUNNER_TEMP. It cleans up every unit, path and shim it creates in its
@@ -107,43 +109,8 @@ jobs:
             ${{ runner.temp }}/omb-service-cutover-[0-9]*
           if-no-files-found: warn
           retention-days: 7
-      - name: Remove any fixture state the fixture itself left behind
-        # The fixture already cleans up. This step is the safety net, and it only
-        # touches paths the fixture actually claimed: without its root directory
-        # the fixture never started, so nothing here is ours to remove.
+      - name: Remove only the service fixture's recorded ownership
         if: always()
-        run: |
-          set -uo pipefail
-          problems=0
-          if compgen -G "$RUNNER_TEMP/omb-service-cutover-*" >/dev/null; then
-            sudo systemctl disable --now crewbot.service openmausbot.service || true
-            sudo rm -f /etc/systemd/system/crewbot.service \
-                      /etc/systemd/system/openmausbot.service \
-                      /etc/systemd/system/openmausbot.service.crewbot-backup
-            sudo systemctl daemon-reload
-            sudo systemctl reset-failed || true
-            sudo rm -rf "$HOME/.crewbot" "$HOME/.openmausbot"
-            sudo rm -rf "$RUNNER_TEMP"/omb-service-cutover-*
-          else
-            echo "the fixture never created its root: nothing of ours to clean up"
-          fi
-          for unit in crewbot.service openmausbot.service; do
-            state="$(sudo systemctl show -p LoadState --value "$unit" 2>/dev/null || true)"
-            if [ -n "$state" ] && [ "$state" != "not-found" ]; then
-              echo "leftover unit state: $unit=$state" >&2
-              problems=1
-            fi
-            for path in "/etc/systemd/system/$unit" "/etc/systemd/system/$unit.crewbot-backup"; do
-              if sudo test -e "$path"; then
-                echo "leftover unit file: $path" >&2
-                problems=1
-              fi
-            done
-          done
-          for path in "$HOME/.crewbot" "$HOME/.openmausbot"; do
-            if [ -e "$path" ]; then
-              echo "leftover data root: $path" >&2
-              problems=1
-            fi
-          done
-          exit "$problems"
+        run: >-
+          sudo node scripts/cleanup-linux-service-fixture.mjs
+          "$RUNNER_TEMP" "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" "$HOME"

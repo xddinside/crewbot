@@ -17,6 +17,36 @@ import { assertIsolatedSessionEnv } from "./inputs.mjs";
 
 const FIXTURE_MODE = 0o700;
 
+/** Observe an owned child immediately and return an idempotent, bounded shutdown. */
+export function ownFixtureProcess(child, { processGroup = false } = {}) {
+  const closed = new Promise((done) => child.once("close", done));
+  const wait = async (timeoutMs) => {
+    let timer;
+    try {
+      return await Promise.race([
+        closed.then(() => true),
+        new Promise((done) => { timer = setTimeout(() => done(false), timeoutMs); }),
+      ]);
+    } finally { clearTimeout(timer); }
+  };
+  const signal = (name) => {
+    if (!processGroup) return child.kill(name);
+    try { process.kill(-child.pid, name); }
+    catch (error) { if (error.code !== "ESRCH") throw error; }
+  };
+  let stopping;
+  return () => {
+    stopping ??= (async () => {
+      signal("SIGTERM");
+      if (!await wait(5_000)) {
+        signal("SIGKILL");
+        if (!await wait(5_000)) throw new Error(`owned fixture process ${child.pid} survived SIGKILL`);
+      }
+    })();
+    return stopping;
+  };
+}
+
 /** Create the owned root and its isolated session directories. The root lives
  * under RUNNER_TEMP so the whole run is disposable with the runner itself. */
 export function createFixtureEnvironment(runnerTemp, label = "omb-installed-continuity-") {
@@ -53,11 +83,12 @@ export function createFixtureEnvironment(runnerTemp, label = "omb-installed-cont
       webhookPort: 18800,
     },
     stopped: [],
-    stop() {
-      for (const restore of this.stopped.reverse()) {
-        try { restore(); } catch { /* teardown must never mask the real failure */ }
+    async stop() {
+      const problems = [];
+      for (const restore of this.stopped.splice(0).reverse()) {
+        try { await restore(); } catch (error) { problems.push(error); }
       }
-      this.stopped.length = 0;
+      if (problems.length) throw new AggregateError(problems, "owned fixture cleanup failed");
       rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     },
   };
@@ -107,6 +138,7 @@ export function startOwnedDisplay(fixture) {
       env: { PATH: process.env.PATH, HOME: fixture.home, TMPDIR: fixture.tmp },
       stdio: ["ignore", "ignore", "pipe"],
     });
+    const stopChild = ownFixtureProcess(child);
     let errors = "";
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => { errors += chunk; });
@@ -121,8 +153,9 @@ export function startOwnedDisplay(fixture) {
         if (ready) {
           return {
             display: `:${number}`,
-            stop() {
-              try { child.kill("SIGTERM"); } catch { /* already gone */ }
+            async stop() {
+              await stopChild();
+              if (existsSync(socket)) throw new Error(`owned display socket survived shutdown: ${socket}`);
             },
           };
         }
@@ -159,6 +192,7 @@ export function startOwnedSessionBus(fixture) {
     ["--session", "--nofork", `--address=${address}`],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
+  const stopChild = ownFixtureProcess(child);
   let stderr = "";
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk) => { stderr += chunk; });
@@ -178,8 +212,10 @@ export function startOwnedSessionBus(fixture) {
     address,
     pid: child.pid,
     socket,
-    stop() {
-      try { child.kill("SIGTERM"); } catch { /* already gone */ }
+    async stop() {
+      await stopChild();
+      rmSync(socket, { force: true });
+      if (existsSync(socket)) throw new Error(`owned session socket survived shutdown: ${socket}`);
     },
   };
   fixture.stopped.push(() => bus.stop());
@@ -265,6 +301,7 @@ export async function startOwnedKeyring({ env, password, timeoutMs = 15_000 }) {
   const child = spawn("gnome-keyring-daemon", [
     "--foreground", "--unlock", "--components=secrets", `--control-directory=${controlDirectory}`,
   ], { env: usable, stdio: ["pipe", "pipe", "pipe"] });
+  const stop = ownFixtureProcess(child);
   let announced = "";
   let spawnFailure = null;
   child.on("error", (error) => { spawnFailure = error; });
@@ -275,9 +312,6 @@ export async function startOwnedKeyring({ env, password, timeoutMs = 15_000 }) {
   child.stdin.on("error", () => { /* reported by readiness/exit below */ });
   // Newlines are part of the password, not a delimiter in this protocol.
   child.stdin.end(password);
-  const stop = () => {
-    try { child.kill("SIGTERM"); } catch { /* already gone */ }
-  };
   let lastState = null;
   let lastFailure = null;
   const deadline = Date.now() + timeoutMs;
@@ -295,7 +329,7 @@ export async function startOwnedKeyring({ env, password, timeoutMs = 15_000 }) {
       lastFailure = error instanceof Error ? error.message : String(error);
     }
   }
-  stop();
+  await stop();
   throw new Error([
     `the fixture's default collection was not unlocked within ${timeoutMs}ms`,
     `collection: ${JSON.stringify(lastState)}`,

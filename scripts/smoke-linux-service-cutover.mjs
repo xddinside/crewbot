@@ -863,6 +863,14 @@ async function main() {
   };
   record("recorded the exact inputs", evidence.inputs);
 
+  if (lstatSync(fixtureRoot, { throwIfNoEntry: false })) fail(`refusing a pre-existing fixture root: ${fixtureRoot}`);
+  // This handover exists only after all preflight refusal checks pass. The CI
+  // safety net must never infer ownership from diagnostics or failure evidence.
+  writeFileSync(join(runnerTemp, `omb-service-cutover-owned-${runId}.json`), JSON.stringify({
+    version: 1, fixtureRoot, home,
+    units: [CREWBOT_UNIT, LEGACY_UNIT],
+    paths: [fixtureRoot, join(home, ".openmausbot"), join(home, ".crewbot")],
+  }), { mode: 0o600, flag: "wx" });
   ensureDirectory(fixtureRoot, { mode: 0o755 });
   ensureDirectory(join(fixtureRoot, "bin"), { mode: 0o755 });
   owned.path(fixtureRoot);

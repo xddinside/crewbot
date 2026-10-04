@@ -16,6 +16,8 @@ import { createHash } from "node:crypto";
 import { openSync, closeSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { ownFixtureProcess } from "./environment.mjs";
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function sha256Bytes(bytes) {
@@ -59,6 +61,7 @@ export class ProductionServer {
     this.dataDir = dataDir;
     this.logPath = logPath;
     this.stopped = false;
+    this.stopProcess = ownFixtureProcess(child, { processGroup: true });
   }
 
   async request(route, init = {}) {
@@ -154,13 +157,7 @@ export class ProductionServer {
   async stop() {
     if (this.stopped) return;
     this.stopped = true;
-    const exited = new Promise((resolve) => this.child.once("close", resolve));
-    try { process.kill(-this.child.pid, "SIGTERM"); } catch { /* already gone */ }
-    const settled = await Promise.race([exited.then(() => true), delay(10_000).then(() => false)]);
-    if (!settled) {
-      try { process.kill(-this.child.pid, "SIGKILL"); } catch { /* already gone */ }
-      await Promise.race([exited, delay(5_000)]);
-    }
+    await this.stopProcess();
   }
 }
 
