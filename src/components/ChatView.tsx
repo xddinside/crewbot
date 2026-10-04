@@ -203,22 +203,23 @@ export async function attemptWorkingFolderRecovery(
 ): Promise<WorkingFolderRecoveryOutcome> {
   const { target, chooseCwd, isStillCurrent, restartTask, retryRequest, onError } = activation;
   if (!isStillCurrent()) return { status: "stale" };
-  const cwd = await chooseCwd();
-  if (!cwd) return { status: "cancelled" };
-  if (!isStillCurrent()) return { status: "stale" };
   try {
+    const cwd = await chooseCwd();
+    if (!cwd) return { status: "cancelled" };
+    if (!isStillCurrent()) return { status: "stale" };
     await restartTask({
       restartAtCwd: cwd,
       expectedErrorMessageId: target.errorMessageId,
       expectedUserMessageId: target.userMessageId,
     });
+    if (!isStillCurrent()) return { status: "stale" };
+    retryRequest({ messageId: target.userMessageId, text: target.userMessageText });
+    return { status: "retried", cwd };
   } catch (error) {
-    if (isStillCurrent()) onError(error instanceof Error ? error.message : String(error));
-    return { status: "failed", message: error instanceof Error ? error.message : String(error) };
+    const message = error instanceof Error ? error.message : String(error);
+    if (isStillCurrent()) onError(message);
+    return { status: "failed", message };
   }
-  if (!isStillCurrent()) return { status: "stale" };
-  retryRequest({ messageId: target.userMessageId, text: target.userMessageText });
-  return { status: "retried", cwd };
 }
 
 /** "Today" / "Yesterday" / "Mon, Aug 11" — real dates, not a hardcoded label. */

@@ -180,6 +180,17 @@ describe("working folder recovery lifecycle", () => {
     expect(calls.retry).toEqual([]);
   });
 
+  it("reports a rejected native picker without changing the task or replaying", async () => {
+    const { calls, attempt } = recoveryHarness({
+      choose: async () => { throw new Error("Folder picker unavailable"); },
+    });
+
+    expect(await attempt()).toEqual({ status: "failed", message: "Folder picker unavailable" });
+    expect(calls.errors).toEqual(["Folder picker unavailable"]);
+    expect(calls.restart).toEqual([]);
+    expect(calls.retry).toEqual([]);
+  });
+
   it("reports a refused PATCH to a still-current failure and never replays it", async () => {
     const { calls, attempt } = recoveryHarness({
       choose: async () => "/fixture/replacement",
