@@ -311,3 +311,21 @@ export function spawnInstalledApp({ executable, args, env, logPath }) {
     },
   };
 }
+
+export const chooseApprovalMode = (label) => `(() => {
+  const wanted = ${JSON.stringify(label)};
+  const menu = [...document.querySelectorAll('[role="menu"]')].find((node) =>
+    /approval mode/i.test(node.getAttribute("aria-label") || ""));
+  if (!menu) return { opened: false, reason: "the approval menu did not open" };
+  const entry = [...menu.querySelectorAll('[role="menuitemradio"]')]
+    // The menu item includes a description. Its first nested span is the
+    // visible title line; matching the whole item joins title + description.
+    .find((button) => (button.querySelector("span > span")?.textContent || "").trim().toLowerCase() === wanted.toLowerCase());
+  if (!entry) {
+    return { opened: true, selected: false,
+      offered: [...menu.querySelectorAll('[role="menuitemradio"]')].map((b) => (b.textContent || "").trim()) };
+  }
+  if (entry.disabled) return { opened: true, selected: false, reason: "the entry is disabled" };
+  entry.click();
+  return { opened: true, selected: true };
+})()`;

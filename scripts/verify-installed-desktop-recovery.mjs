@@ -45,6 +45,7 @@ import {
   CLICK_RECOVERY,
   READ_CHAT_STATE,
   connectToRenderer,
+  chooseApprovalMode,
   mutateInRenderer,
   saveScreenshot,
   selectThread,
@@ -288,22 +289,6 @@ const OPEN_APPROVAL_MENU = `(() => {
   }
   if (trigger.getAttribute("aria-expanded") !== "true") trigger.click();
   return { opened: true };
-})()`;
-
-const CHOOSE_APPROVAL_MODE = (label) => `(() => {
-  const wanted = ${JSON.stringify(label)};
-  const menu = [...document.querySelectorAll('[role="menu"]')].find((node) =>
-    /approval mode/i.test(node.getAttribute("aria-label") || ""));
-  if (!menu) return { opened: false, reason: "the approval menu did not open" };
-  const entry = [...menu.querySelectorAll('[role="menuitemradio"]')]
-    .find((button) => new RegExp("^" + wanted + "$", "i").test((button.textContent || "").trim()));
-  if (!entry) {
-    return { opened: true, selected: false,
-      offered: [...menu.querySelectorAll('[role="menuitemradio"]')].map((b) => (b.textContent || "").trim()) };
-  }
-  if (entry.disabled) return { opened: true, selected: false, reason: "the entry is disabled" };
-  entry.click();
-  return { opened: true, selected: true };
 })()`;
 
 const CONFIRM_APPROVAL_WARNING = `(() => {
@@ -703,7 +688,7 @@ async function main() {
       `[...document.querySelectorAll('[role="menu"]')].some((node) => /approval mode/i.test(node.getAttribute("aria-label") || ""))`,
       "the installed approval menu to open", { timeoutMs: 30_000 },
     );
-    const approval = await renderer.evaluate(CHOOSE_APPROVAL_MODE("Full access"));
+    const approval = await renderer.evaluate(chooseApprovalMode("Full access"));
     if (!approval.selected) throw new Error(`the installed menu offered no Full access entry: ${JSON.stringify(approval)}`);
     await renderer.waitFor(`Boolean(document.querySelector('[role="alertdialog"]'))`, "the Full access warning", { timeoutMs: 30_000 });
     const confirmed = await renderer.evaluate(CONFIRM_APPROVAL_WARNING);

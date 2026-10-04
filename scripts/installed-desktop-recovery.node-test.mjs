@@ -29,7 +29,7 @@ import {
   candidateDeb,
   verifyCandidateArtifact,
 } from "./installed-desktop-recovery/inputs.mjs";
-import { selectThread, spawnInstalledApp } from "./installed-desktop-recovery/renderer.mjs";
+import { chooseApprovalMode, selectThread, spawnInstalledApp } from "./installed-desktop-recovery/renderer.mjs";
 import { countChooserWindows, listWindows, waitForFolderChooser } from "./installed-desktop-recovery/native-picker.mjs";
 import { assertAcceptedRequestPreserved, assertConcurrentTurns, assertScopedStop, assertStoppedTranscript, freshReplyEvidence } from "./installed-desktop-recovery/stop-proof.mjs";
 
@@ -424,4 +424,31 @@ test("every local module of the fixture is dependency-free, so the runner needs 
   const fake = join(ROOT, "server", "testing", "fake-claude-cli.ts");
   assert.match(readFileSync(fake, "utf8"), /^#!\/usr\/bin\/env node\n/);
   assert.equal(statSync(fake).mode & 0o111, 0o111);
+});
+
+test("approval fixture selects the exact label inside the menu item description", () => {
+  const entry = (label, description, disabled = false) => ({
+    textContent: label + description, disabled, clicks: 0,
+    querySelector: (selector) => selector === "span > span" ? { textContent: label } : null,
+    click() { this.clicks++; },
+  });
+  const ask = entry("Ask for approval", "Requests approval for commands and file changes");
+  const full = entry("Full access", "Full computer access (elevated risk)");
+  const entries = [ask, full];
+  const menu = {
+    getAttribute: () => "Approval mode for Recovery fixture",
+    querySelectorAll: (selector) => selector === '[role="menuitemradio"]' ? entries : [],
+  };
+  const document = { querySelectorAll: (selector) => selector === '[role="menu"]' ? [menu] : [] };
+  const choose = () => JSON.parse(JSON.stringify(runInNewContext(chooseApprovalMode("Full access"), { document })));
+  assert.deepEqual(choose(), { opened: true, selected: true });
+  assert.equal(full.clicks, 1);
+  assert.equal(ask.clicks, 0);
+  full.disabled = true;
+  assert.equal(choose().selected, false);
+  assert.equal(full.clicks, 1);
+  full.disabled = false;
+  entries.splice(1, 1, entry("Full access to other settings", "Full access"));
+  // Match only the visible title line, never a description or a partial label.
+  assert.equal(choose().selected, false);
 });
