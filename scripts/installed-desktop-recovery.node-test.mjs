@@ -49,6 +49,11 @@ test("Stop proof rejects stopping both concurrent threads or seeding a failed wo
 test("Stop proof rejects auto-replay and a late answer while preserving interrupted requests", () => {
   const request = { id: "request", role: "user", kind: "text", text: "Keep running" };
   const interrupted = { id: "cancel", role: "bot", kind: "activity", text: "Outcome unknown" };
+  const greeting = { id: "greeting", role: "bot", kind: "text", text: "Hi, I'm Stop fixture. What would you like me to do?" };
+  assert.doesNotThrow(() => assertStoppedTranscript([greeting, request], [greeting, request, interrupted], request.text));
+  assert.throws(() => assertStoppedTranscript([greeting, request], [{ ...greeting, text: greeting.text + "late delta" }, request], request.text), /late assistant/);
+  assert.throws(() => assertStoppedTranscript([greeting, request], [{ ...greeting, attachments: [{ kind: "image", path: "late.png" }] }, request], request.text), /late assistant/);
+  assert.throws(() => assertStoppedTranscript([greeting, request], [greeting, request, { ...greeting, id: "new-answer" }], request.text), /late assistant/);
   assert.doesNotThrow(() => assertStoppedTranscript([request], [request, interrupted], request.text));
   assert.throws(() => assertStoppedTranscript([request], [request, { ...request, id: "replay" }], request.text), /automatically replayed/);
   assert.throws(() => assertStoppedTranscript([request], [request, { id: "late", role: "bot", kind: "text", text: "late answer" }], request.text), /late assistant/);

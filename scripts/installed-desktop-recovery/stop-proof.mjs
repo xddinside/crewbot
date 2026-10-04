@@ -35,8 +35,14 @@ export function assertAcceptedRequestPreserved(before, after, requestText) {
 
 export function assertStoppedTranscript(before, after, requestText) {
   assertAcceptedRequestPreserved(before, after, requestText);
-  if (after.some((row) => row.role === "bot" && row.kind === "text")) {
-    throw new Error("stopped work applied a late assistant answer");
+  const previousText = new Map(before.filter((row) => row.role === "bot" && row.kind === "text").map((row) => [row.id, row]));
+  for (const row of after.filter((message) => message.role === "bot" && message.kind === "text")) {
+    const previous = previousText.get(row.id);
+    // New bots include a greeting before the hanging turn. Its exact content
+    // may remain, but no new answer or delta to an existing row may land.
+    if (!previous || row.text !== previous.text || JSON.stringify(row.attachments) !== JSON.stringify(previous.attachments)) {
+      throw new Error(`stopped work applied a late assistant answer: ${row.id}`);
+    }
   }
 }
 

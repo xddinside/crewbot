@@ -745,6 +745,8 @@ async function main() {
     observeLiveStopState("before Stop, two concurrent turns of the same bot", stopBotId, concurrent, stopIds);
     const targetBeforeStop = (await api(base, `/api/threads/${stopThread}/messages?limit=100`)).body.messages;
     const siblingBeforeStop = (await api(base, `/api/threads/${stopSiblingThread}/messages?limit=100`)).body.messages;
+    evidence.observations.push({ label: "both running transcripts before Stop", botId: stopBotId,
+      transcripts: [{ threadId: stopThread, messages: targetBeforeStop }, { threadId: stopSiblingThread, messages: siblingBeforeStop }] });
     step("two Stop fixture threads are concurrently running", JSON.stringify({ botId: stopBotId, folders: [...stopCwds] }));
     await selectThread(renderer, { botId: stopBotId, botName: "Stop fixture", threadId: stopThread });
     await renderer.waitFor(
@@ -764,6 +766,8 @@ async function main() {
     assertScopedStop(await liveTasks(base, stopBotId), stopThread, stopSiblingThread);
     const afterStopTranscript = (await api(base, `/api/threads/${stopThread}/messages?limit=100`)).body.messages;
     const siblingStillRunning = (await api(base, `/api/threads/${stopSiblingThread}/messages?limit=100`)).body.messages;
+    evidence.observations.push({ label: "delayed transcripts after target Stop", botId: stopBotId,
+      transcripts: [{ threadId: stopThread, messages: afterStopTranscript }, { threadId: stopSiblingThread, messages: siblingStillRunning }] });
     assertStoppedTranscript(targetBeforeStop, afterStopTranscript, targetRequest);
     assertStoppedTranscript(siblingBeforeStop, siblingStillRunning, siblingRequest);
     evidence.screenshots.push(await saveScreenshot(renderer, fixture.evidence, "09-scoped-stop-sibling-still-running"));
