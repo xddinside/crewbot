@@ -287,6 +287,7 @@ function executePrinted(commands, { extraPath = [], failFrom = Number.POSITIVE_I
 }
 
 function runServiceInstall({ home, owner, port, dataDir, env = {} }) {
+  chownToOwner(dataDir, owner);
   const result = productionCli(["service", "install", "--port", String(port), "--data-dir", dataDir], {
     as: owner, home, repoRoot: REPO_ROOT, env,
   });
@@ -297,6 +298,7 @@ function runServiceInstall({ home, owner, port, dataDir, env = {} }) {
 /** Production rollback. Boundaries under test are refusals, so this reports the
  * result and the caller decides whether a non-zero exit is the expected answer. */
 function runServiceRollback({ home, owner, dataDir }) {
+  chownToOwner(dataDir, owner);
   return productionCli(["service", "rollback", "--data-dir", dataDir], { as: owner, home, repoRoot: REPO_ROOT });
 }
 
@@ -332,6 +334,35 @@ function migrationTree(dataDir) {
     entries: listing(migrationDir, "", 0).slice(0, 200),
     dataDirEntries: existsSync(dataDir) ? readdirSync(dataDir).slice(0, 100) : null,
   };
+}
+
+/** Hand a fixture-created tree to the service owner.
+ *
+ * This fixture runs as root, because it installs real systemd units. The
+ * migration bookkeeping it stages is created exactly as the product creates it:
+ * `.crewbot-migration` at 0700 and `journal.json` at 0600. Left owned by root,
+ * that state is invisible to the unprivileged user production runs as — a
+ * traversal the owner cannot make reads as "absent", so the migration silently
+ * does nothing instead of rolling the interrupted cutover back. Production only
+ * ever runs as the owner, so the fixture must hand over its staged state before
+ * asking production to act on it. */
+function chownToOwner(path, owner) {
+  if (!existsSync(path)) return;
+  const result = run("chown", ["-R", `${owner}:`, path], { allowFailure: true });
+  if (result.status !== 0) fail(`could not hand ${path} to the service owner ${owner}: ${result.stderr}`);
+}
+
+/** Whether the service owner can actually see a path.
+ *
+ * Run as the owner, through the same `sudo` shape production uses, because the
+ * difference between "the path exists" and "the owner can see it" is the whole
+ * point: a root-only fixture tree reads as absent to the user under test. */
+function ownerSees(path, { owner, home }) {
+  const result = run("sudo", ["-n", "-u", owner, "-H", "test", "-r", path], {
+    env: { HOME: home },
+    allowFailure: true,
+  });
+  return { readable: result.status === 0, status: result.status, stderr: String(result.stderr ?? "").trim() };
 }
 
 function completedReceipt(dataDir) {
@@ -556,6 +587,15 @@ function buildInterruptedCutover(dataDir, home) {
   assert(existsSync(join(dataDir, ".crewbot-migration", "journal.json")), "the fixture left a real in-flight migration journal");
   assert(!existsSync(receipt.receiptPath), "the fixture removed the completion receipt");
   assert(!existsSync(receipt.source), "an interrupted cutover leaves no legacy root, so recovery must publish it again");
+  // Production reads this state as the unprivileged owner, so the owner has to be
+  // able to see it before production is asked to act on it.
+  chownToOwner(dataDir, evidence.environment.owner);
+  const ownerJournal = ownerSees(join(dataDir, ".crewbot-migration", "journal.json"), evidence.environment);
+  assert(
+    ownerJournal.readable,
+    `the service owner cannot read the staged migration journal, so production would find no interrupted cutover to roll back: ${JSON.stringify(ownerJournal)}`,
+  );
+  record("the service owner can read the staged migration journal", ownerJournal);
   return receipt;
 }
 
