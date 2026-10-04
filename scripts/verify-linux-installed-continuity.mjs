@@ -340,6 +340,9 @@ async function main() {
       (message) => message.role === "user" && attachmentPathsIn(message.text).length > 0,
       { label: "the seeded user message with its attachment in the production transcript" },
     );
+    await oldServer.waitForBot(conversationBot.id, (bot) => !bot.busy && (bot.messages ?? [])
+      .some((message) => message.role === "bot" && (message.text ?? "").includes(ENGINE_REPLY)),
+    { label: "the old server's seed turn to settle" });
     const seededMessages = await oldServer.threadMessages(seededBot.threadId, 50);
     evidence.seed = {
       conversationBotId: conversationBot.id,
@@ -353,6 +356,10 @@ async function main() {
       oldTurnSettled: !seededBot.busy,
     };
     step("seed-old", `transcript persisted ${seededMessages.length} message(s) through the old shipped server`);
+
+    // Release the exclusive data lease before the desktop app takes ownership.
+    await oldServer.stop();
+    servers = servers.filter((entry) => entry !== oldServer);
 
     // ── 3. the old app encrypts ─────────────────────────────────────────
     step("old-app", "launching the installed old app so it writes the credential itself");
@@ -385,8 +392,6 @@ async function main() {
     };
     step("old-app", `old app encrypted the secret and handed it to its own server child (pid ${oldApp.serverPid})`);
     if (!oldApp.rendererReady) warn("the old app's renderer never reported ready; its credential effects still came from its own boot");
-    await oldServer.stop();
-    servers = servers.filter((entry) => entry !== oldServer);
     // The migration snapshot must be compared against the workspace exactly as
     // the old app left it, after its own boot migration rewrote config.json.
     const before = digestTree(legacyDataDir);
