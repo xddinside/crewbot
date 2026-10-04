@@ -684,7 +684,14 @@ async function caseInterruptedCutoverThenRollback(context) {
   assert(/symbolic link in migrated metadata/i.test(unsafe.stderr), `the refusal names the unsafe link: ${unsafe.stderr.trim()}`);
   assert(!existsSync(externalTarget), "the external metadata target was never created");
   assert(JSON.stringify(unitSnapshot(OWNED_UNITS)) === JSON.stringify(beforeRefusals), "no systemd unit changed while refusing the unsafe path");
+  // Remove the link before restoring the file. `bots.json` is still the symlink
+  // here, and writing to that path would follow it: the real metadata would land
+  // in the external target, the refusal would survive in the link, and every
+  // later rollback would refuse again for a reason this case already proved.
+  rmSync(metadata, { force: true });
   writeFileSync(metadata, savedMetadata, { mode: 0o600 });
+  assert(!lstatSync(metadata).isSymbolicLink(), "the restored metadata is a real file again, not the refused link");
+  assert(!existsSync(externalTarget), "restoring the metadata wrote nothing through the refused link");
   record("refused a dangling metadata symlink before any systemd change", unsafe.stderr.trim());
 
   // Boundary: a damaged receipt must refuse before anything destructive.
