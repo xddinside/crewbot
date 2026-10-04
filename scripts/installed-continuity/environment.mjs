@@ -186,24 +186,81 @@ export function startOwnedSessionBus(fixture) {
   return bus;
 }
 
+/** The pid that owns a bus name on the session bus, or null when nobody owns it.
+ *
+ * `gnome-keyring-daemon` hands its real work to a background process and lets the
+ * spawned child exit, so the child's pid is not always the daemon. Asking the bus
+ * who holds the name is the only answer that survives that split. */
+function busNameOwner(env, name) {
+  try {
+    const reply = execFileSync(
+      "gdbus",
+      [
+        "call", "--session",
+        "--dest", "org.freedesktop.DBus",
+        "--object-path", "/org/freedesktop/DBus",
+        "--method", "org.freedesktop.DBus.GetConnectionUnixProcessID", name,
+      ],
+      { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5_000 },
+    ).trim();
+    const pid = Number(reply.match(/\d+/)?.[0]);
+    return Number.isInteger(pid) && pid > 1 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether a name currently has an owner on this fixture's private bus. */
+function busNameOwned(env, name) {
+  try {
+    execFileSync(
+      "gdbus",
+      ["call", "--session", "--dest", name, "--object-path", "/org/freedesktop/secrets", "--method", "org.freedesktop.DBus.Peer.Ping"],
+      { env, stdio: ["ignore", "pipe", "pipe"], timeout: 5_000 },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Start this fixture's own secret-service daemon with a synthetic password.
  *
  * `dbus-run-session` already gave this run a private bus; the keyring daemon
  * started here is unlocked with a value generated inside the fixture and is
  * killed with it. No host keyring, no host password, no host login session is
- * read or written. */
+ * read or written.
+ *
+ * Readiness is a secret round trip through `secret-tool` on the fixture's own
+ * bus — the same operation the proof later performs — not the
+ * `GNOME_KEYRING_CONTROL=` line. That line is a login-keyring convenience for
+ * libsecret's fallback path, and whether the daemon prints it depends on its
+ * version and on whether it daemonizes: the packaged daemon on Ubuntu 24.04
+ * serves the secret service while never announcing an address. A control address
+ * is recorded when it is offered and never waited for.
+ *
+ * An address pointing outside this fixture's runtime directory means the daemon
+ * found somebody else's login keyring and pointed at it instead of serving this
+ * bus. That breaks the isolation the fixture claims, so it is refused rather
+ * than used.
+ *
+ * `--start` is incompatible with `--unlock`: the daemon rejects the pair
+ * outright. `--unlock` alone both reads the generated password from stdin and
+ * unlocks the collection, so it is the only correct invocation. stdin must be a
+ * pipe, and the control directory must exist at 0700 or the daemon refuses to
+ * start. The login keyring itself is created first: `--unlock` has nothing to
+ * unlock in a fresh home and will not unlock anything until one exists. */
 export function startOwnedKeyring({ env, password }) {
   if (typeof password !== "string" || password.length < 16) {
     throw new Error("the fixture keyring needs its own generated password");
   }
-  // `--start` is incompatible with `--unlock`: the daemon rejects the pair
-  // outright and never publishes a control address. `--unlock` alone both reads
-  // the generated password from stdin and reports GNOME_KEYRING_CONTROL, so it
-  // is the only correct invocation. stdin must be a pipe, and the control
-  // directory must exist at 0700 or the daemon refuses to start.
   const controlDirectory = join(env.XDG_RUNTIME_DIR ?? "/tmp", "keyring");
   mkdirSync(controlDirectory, { recursive: true, mode: 0o700 });
   chmodSync(controlDirectory, 0o700);
+  const keyringsDirectory = join(env.HOME, ".local", "share", "keyrings");
+  mkdirSync(keyringsDirectory, { recursive: true, mode: 0o700 });
+  const loginKeyring = join(keyringsDirectory, "login.keyring");
+  if (!existsSync(loginKeyring)) writeFileSync(loginKeyring, "", { mode: 0o600 });
   const child = spawn("gnome-keyring-daemon", ["--unlock", "--components=secrets"], {
     env,
     stdio: ["pipe", "pipe", "pipe"],
@@ -215,28 +272,52 @@ export function startOwnedKeyring({ env, password }) {
   child.stdout.on("data", (chunk) => { announced += chunk; });
   child.stdin.on("error", () => { /* the daemon may exit before reading it */ });
   child.stdin.end(`${password}\n`);
-  const deadline = Date.now() + 20_000;
-  while (Date.now() < deadline) {
-    const match = announced.match(/GNOME_KEYRING_CONTROL=(.+)/);
-    if (match) {
-      const control = match[1].trim();
-      return {
-        control,
-        pid: child.pid,
-        announce: announced,
-        stop() {
-          try { child.kill("SIGTERM"); } catch { /* already gone */ }
-        },
-      };
+  const control = () => announced.match(/GNOME_KEYRING_CONTROL=(.+)/)?.[1]?.trim() ?? null;
+  const stop = () => {
+    // The spawned child may already have exited and handed the name to a
+    // background process, so the bus owner is what has to be stopped.
+    const owner = busNameOwner(env, "org.freedesktop.secrets");
+    for (const pid of new Set([owner, child.pid].filter((value) => Number.isInteger(value) && value > 1))) {
+      try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
     }
-    if (child.exitCode !== null) break;
-    execFileSync("sleep", ["0.1"], { env, stdio: "ignore" });
+    try { child.kill("SIGKILL"); } catch { /* already gone */ }
+  };
+  let lastFailure = null;
+  const deadline = Date.now() + 45_000;
+  while (Date.now() < deadline) {
+    const offered = control();
+    if (offered && !offered.startsWith(controlDirectory)) {
+      stop();
+      throw new Error([
+        `gnome-keyring-daemon pointed at a keyring outside this fixture: ${offered}`,
+        `this fixture owns only ${controlDirectory}`,
+        `a host keyring must never be read or written by this proof`,
+      ].join("\n"));
+    }
+    const usable = offered ? { ...env, GNOME_KEYRING_CONTROL: offered } : env;
+    if (busNameOwned(usable, "org.freedesktop.secrets")) {
+      try {
+        proveKeyringRoundTrip(usable, { label: "fixture-readiness", value: password });
+        return {
+          control: offered,
+          pid: busNameOwner(usable, "org.freedesktop.secrets") ?? child.pid,
+          announce: announced,
+          stop,
+        };
+      } catch (error) {
+        // The name is owned but the collection is still locked or empty. Keep
+        // waiting, and keep the reason for the failure report.
+        lastFailure = error instanceof Error ? error.message : String(error);
+      }
+    }
+    if (child.exitCode !== null && !announced) break;
+    execFileSync("sleep", ["0.2"], { env, stdio: "ignore" });
   }
-  try { child.kill("SIGKILL"); } catch { /* already gone */ }
-  // The daemon is silent when it exits before announcing, so report the exit
-  // status and what it was actually given as well as anything it printed.
+  stop();
+  // Report the exit status and what the daemon was actually given as well as
+  // anything it printed, so a start failure names its cause.
   throw new Error([
-    `gnome-keyring-daemon did not publish a control address within 20s`,
+    `no secret service on this fixture's own session bus could store and read a value within 45s`,
     `exit: ${child.exitCode === null ? "still running" : child.exitCode}`,
     `signal: ${child.signalCode ?? "none"}`,
     `argv: --unlock --components=secrets`,
@@ -244,6 +325,8 @@ export function startOwnedKeyring({ env, password }) {
     `XDG_RUNTIME_DIR: ${env.XDG_RUNTIME_DIR}`,
     `DBUS_SESSION_BUS_ADDRESS: ${env.DBUS_SESSION_BUS_ADDRESS ?? "(unset)"}`,
     `control directory: ${controlDirectory}`,
+    `login keyring: ${loginKeyring}`,
+    `last round-trip failure: ${lastFailure ?? "none attempted"}`,
     `stdout/stderr:\n${announced}`,
   ].join("\n"));
 }

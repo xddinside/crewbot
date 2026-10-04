@@ -309,6 +309,31 @@ function migrationReceipts(dataDir) {
     .map((path) => ({ ...JSON.parse(readFileSync(path, "utf8")), receiptPath: path }));
 }
 
+/** The migration bookkeeping as it actually sits on disk, names only.
+ *
+ * A missing receipt is ambiguous on its own: the same empty result means the
+ * migration never ran, that it ran somewhere else, or that its bookkeeping was
+ * removed. Listing the real tree turns that ambiguity into one readable fact. */
+function migrationTree(dataDir) {
+  const migrationDir = join(dataDir, ".crewbot-migration");
+  const listing = (directory, prefix, depth) => {
+    if (depth > 3) return [];
+    let entries;
+    try { entries = readdirSync(directory, { withFileTypes: true }); }
+    catch { return []; }
+    return entries.flatMap((entry) => {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (!entry.isDirectory()) return [relative];
+      return [relative, ...listing(join(directory, entry.name), relative, depth + 1)];
+    });
+  };
+  return {
+    migrationDirPresent: existsSync(migrationDir),
+    entries: listing(migrationDir, "", 0).slice(0, 200),
+    dataDirEntries: existsSync(dataDir) ? readdirSync(dataDir).slice(0, 100) : null,
+  };
+}
+
 function completedReceipt(dataDir) {
   const completed = migrationReceipts(dataDir).filter((receipt) => receipt.phase === "complete");
   if (!completed.length) fail(`no completed migration receipt under ${join(dataDir, ".crewbot-migration", "recovery")}`);
@@ -548,6 +573,20 @@ async function caseInterruptedCutoverThenRollback(context) {
 
   const installResult = runServiceInstall({ home, owner, port: crewbotPort, dataDir });
   const plan = printedPlan(installResult.stdout);
+  // Read the migration bookkeeping on both sides of the printed plan. The plan
+  // starts crewbot.service, so without this the record cannot say whether the
+  // install failed to migrate or the started service undid it.
+  const migrationState = (label) => record(`migration bookkeeping ${label}`, {
+    dataDirPresent: existsSync(dataDir),
+    legacyRootPresent: existsSync(legacyRoot),
+    journalPresent: existsSync(join(dataDir, ".crewbot-migration", "journal.json")),
+    receipts: migrationReceipts(dataDir).map((entry) => ({ id: entry.id, phase: entry.phase })),
+    legacyRootReceipts: existsSync(legacyRoot)
+      ? migrationReceipts(legacyRoot).map((entry) => ({ id: entry.id, phase: entry.phase }))
+      : [],
+    onDisk: migrationTree(dataDir),
+  });
+  migrationState("after service install, before the printed plan ran");
   const executed = executePrinted(plan.commands);
   record("case 2 install and its printed plan", {
     stdout: String(installResult.stdout).trim().slice(0, 600),
@@ -558,6 +597,7 @@ async function caseInterruptedCutoverThenRollback(context) {
   // Report every receipt production left, not just the first absent one: the
   // interesting states are a `rolled-back` receipt with no redo, and a redo
   // whose completion receipt landed somewhere other than the expected root.
+  migrationState("after production redid the interrupted cutover and the plan ran");
   record("receipts after production redid the interrupted cutover", {
     dataDir,
     legacyRootPresent: existsSync(legacyRoot),
@@ -567,6 +607,8 @@ async function caseInterruptedCutoverThenRollback(context) {
     legacyRootReceipts: existsSync(legacyRoot)
       ? migrationReceipts(legacyRoot).map((entry) => ({ id: entry.id, phase: entry.phase }))
       : [],
+    onDisk: migrationTree(dataDir),
+    legacyRootOnDisk: existsSync(legacyRoot) ? migrationTree(legacyRoot) : null,
   });
   // The interrupted cutover must leave the seeded conversation reachable. If the
   // receipt is gone and the conversation with it, the install completed against a
@@ -822,5 +864,19 @@ try {
   console.log(`${FIXTURE_TAG} OK: ${evidence.assertions.length} native systemd assertions passed`);
 } catch (error) {
   console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
+  evidence.failure = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  // A failed proof still has to be readable afterwards. The workflow uploads this
+  // file on every run, so writing it here is what turns "it failed" into the
+  // steps, receipts and unit state that explain why.
+  try {
+    const evidencePath = join(
+      process.env.RUNNER_TEMP ?? ".",
+      `omb-service-cutover-evidence-${process.env.GITHUB_RUN_ID ?? "local"}.json`,
+    );
+    writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o644 });
+    console.error(`${FIXTURE_TAG} evidence written to ${evidencePath}`);
+  } catch (writeError) {
+    console.error(`${FIXTURE_TAG} the failure evidence could not be written: ${writeError instanceof Error ? writeError.message : String(writeError)}`);
+  }
   process.exit(1);
 }

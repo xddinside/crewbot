@@ -28,7 +28,7 @@ export async function connectToRenderer({ port, timeoutMs = 120_000, child, log 
   let lastError = "no target seen yet";
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/list`);
+      const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(5_000) });
       const targets = await response.json();
       const page = targets.find((target) => target.type === "page" && target.webSocketDebuggerUrl);
       if (page) return await attachToTarget(page);
@@ -50,8 +50,10 @@ async function attachToTarget(page) {
   const pending = new Map();
   let nextId = 0;
   await new Promise((resolvePromise, rejectPromise) => {
-    socket.addEventListener("open", resolvePromise, { once: true });
-    socket.addEventListener("error", () => rejectPromise(new Error("devtools websocket failed")), { once: true });
+    const timer = setTimeout(() => rejectPromise(new Error("the devtools websocket did not open within 30s")), 30_000);
+    timer.unref?.();
+    socket.addEventListener("open", () => { clearTimeout(timer); resolvePromise(); }, { once: true });
+    socket.addEventListener("error", () => { clearTimeout(timer); rejectPromise(new Error("devtools websocket failed")); }, { once: true });
   });
   socket.addEventListener("message", (event) => {
     const frame = JSON.parse(String(event.data));
@@ -62,22 +64,36 @@ async function attachToTarget(page) {
     else waiter.resolve(frame.result);
   });
 
-  const send = (method, params = {}) => new Promise((resolvePromise, rejectPromise) => {
+  /** One DevTools round trip, bounded.
+   *
+   * The protocol has no reply timeout: a renderer that never answers, or a page
+   * whose evaluated promise never settles, leaves the request id in `pending`
+   * forever. That is a hang the whole job inherits, so every request carries its
+   * own deadline and the failed id is dropped rather than leaked. */
+  const send = (method, params = {}, { timeoutMs = 60_000 } = {}) => new Promise((resolvePromise, rejectPromise) => {
     const id = (nextId += 1);
-    pending.set(id, { resolve: resolvePromise, reject: rejectPromise });
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      rejectPromise(new Error(`${method} did not answer within ${timeoutMs}ms`));
+    }, timeoutMs);
+    timer.unref?.();
+    pending.set(id, {
+      resolve: (value) => { clearTimeout(timer); resolvePromise(value); },
+      reject: (error) => { clearTimeout(timer); rejectPromise(error); },
+    });
     socket.send(JSON.stringify({ id, method, params }));
   });
 
   /** Run one expression in the page and return its value. A rejection inside
    * the page becomes this call's rejection, so a failing journey step reports
    * its own message instead of a silent null. */
-  const evaluate = async (expression, { awaitPromise = true } = {}) => {
+  const evaluate = async (expression, { awaitPromise = true, timeoutMs = 60_000 } = {}) => {
     const result = await send("Runtime.evaluate", {
       expression,
       awaitPromise,
       returnByValue: true,
       userGesture: true,
-    });
+    }, { timeoutMs });
     if (result.exceptionDetails) {
       const text = result.exceptionDetails.exception?.description
         ?? result.exceptionDetails.text
@@ -94,7 +110,9 @@ async function attachToTarget(page) {
     const limit = Date.now() + waitMs;
     let last = null;
     while (Date.now() < limit) {
-      last = await evaluate(expression);
+      // Each poll gets what is left of this wait, so an unresponsive renderer
+      // ends the step by name instead of outliving the wait that contains it.
+      last = await evaluate(expression, { timeoutMs: Math.max(1_000, limit - Date.now()) });
       if (last) return last;
       await delay(intervalMs);
     }

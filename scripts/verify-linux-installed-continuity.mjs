@@ -266,12 +266,18 @@ async function main() {
     step("session", `owned display ${ownedDisplay.display} and session bus ${ownedBus.address}`);
     keyring = startOwnedKeyring({ env: baseEnv, password: syntheticSecret });
     fixture.stopped.push(() => keyring.stop());
-    const appEnv = { ...baseEnv, GNOME_KEYRING_CONTROL: keyring.control };
+    // Only offer the control address when the daemon published one. libsecret
+    // reaches the secret service over the session bus without it, so an absent
+    // address is a normal outcome and must not become the string "undefined".
+    const appEnv = keyring.control ? { ...baseEnv, GNOME_KEYRING_CONTROL: keyring.control } : { ...baseEnv };
     // Prove the keyring works at all before the app's use of it means anything.
     proveKeyringRoundTrip(appEnv, { label: "continuity-selfcheck", value: keyringSelfCheck });
     const baselineItems = listSecretServiceItems(appEnv);
     evidence.baselineSecretServiceItems = baselineItems.length;
-    step("keyring", `own keyring reachable at ${keyring.control}; ${baselineItems.length} pre-existing item(s)`);
+    step(
+      "keyring",
+      `own secret service on the fixture bus${keyring.control ? ` (control ${keyring.control})` : " (no control address offered)"}; ${baselineItems.length} pre-existing item(s)`,
+    );
 
     // ── 2. the old package ─────────────────────────────────────────────
     step("install-old", `${OLD_PACKAGE.name} ${OLD_PACKAGE.version} from ${OLD_PACKAGE.url}`);
