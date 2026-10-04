@@ -119,14 +119,12 @@ export function focusWindow({ env, id }) {
 /**
  * Type an absolute path into GTK's location entry and accept it.
  *
- * Ctrl+L is GTK's "type a location" binding. Enter navigates to the path; in
- * folder-selection mode the chooser still has to run its default action to
- * return that folder, so Enter is sent again. Whether either Enter was needed is
- * recorded rather than assumed, and the caller still has to observe the exact
- * path come back through IPC — a chooser that accepted the keystrokes without
- * returning the folder fails the journey, which is the point.
+ * Ctrl+L focuses GTK's location entry. Electron's folder chooser keeps that
+ * entry focused after Enter, so another Enter can leave the dialog open too.
+ * Alt+O activates the native Open button instead. The caller must still prove
+ * that the selected path came back through production IPC.
  */
-export async function chooseFolder({ env, id, path, extraEnter = true }) {
+export async function chooseFolder({ env, id, path }) {
   const { focus, attempts } = focusWindow({ env, id });
   const steps = [];
   const run = (args) => {
@@ -136,15 +134,10 @@ export async function chooseFolder({ env, id, path, extraEnter = true }) {
   run(["key", "--clearmodifiers", "ctrl+l"]);
   // GTK's location entry needs a moment before it accepts typed characters.
   await delay(400);
+  run(["key", "--clearmodifiers", "ctrl+a"]);
   run(["type", "--clearmodifiers", "--delay", "30", path]);
   await delay(700);
-  run(["key", "--clearmodifiers", "Return"]);
-  await delay(900);
-  if (extraEnter && windowExists(env, id)) {
-    steps.push("Return (still open)");
-    run(["key", "--clearmodifiers", "Return"]);
-    await delay(700);
-  }
+  run(["key", "--clearmodifiers", "alt+o"]);
   return { focus, attempts, steps };
 }
 

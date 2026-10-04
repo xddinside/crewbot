@@ -484,6 +484,7 @@ async function main() {
     evidence.windows.push({ phase: "choose", ...chooser });
     evidence.screenshots.push(captureWindow({ env, id: chooser.id, path: join(fixture.evidence, "04-native-chooser.png") }));
     const chooseInput = await chooseFolder({ env, id: chooser.id, path: fixture.replacementCwd });
+    step("native folder selection input sent", JSON.stringify(chooseInput));
     await waitForChooserClosed({ env, id: chooser.id });
     await renderer.waitFor(
       `(() => {
@@ -601,6 +602,7 @@ async function main() {
     evidence.windows.push({ phase: "stale", ...staleChooser });
     await selectThread(renderer, { botId, botName: BOT_NAME, threadId: siblingThread });
     const chooseStale = await chooseFolder({ env, id: staleChooser.id, path: fixture.alternateCwd });
+    step("stale native folder selection input sent", JSON.stringify(chooseStale));
     await waitForChooserClosed({ env, id: staleChooser.id });
     await delay(2_000);
     const afterStale = storedTasks(dataDir, botId);
