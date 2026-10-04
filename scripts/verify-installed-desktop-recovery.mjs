@@ -136,7 +136,16 @@ function storedTasks(dataDir, botId) {
 }
 
 async function api(base, path, init) {
-  const response = await fetch(`${base}${path}`, init);
+  // Every call to the installed app is bounded. The app is a real server driving
+  // real turns, and a turn that wedges the HTTP handler leaves `fetch` waiting on
+  // a socket that never answers — the fixture then stops reporting and the job
+  // runs to its own timeout instead of naming the call that hung.
+  let response;
+  try {
+    response = await fetch(`${base}${path}`, { ...init, signal: AbortSignal.timeout(30_000) });
+  } catch (error) {
+    throw new Error(`GET ${path} did not answer within 30s: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const text = await response.text();
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = { raw: text }; }
@@ -423,6 +432,7 @@ async function main() {
     // The folder goes away underneath the bot, then the user opens the failed
     // thread in the real sidebar and types into the real composer.
     rmSync(fixture.missingCwd, { recursive: true, force: true });
+    step("removed the working folder underneath the bot", fixture.missingCwd);
     const selectBot = await renderer.evaluate(
       `(() => {
         const row = document.querySelector('[data-sidebar-bot-row="' + ${JSON.stringify(botId)} + '"]');
@@ -431,16 +441,21 @@ async function main() {
         return { clicked: true };
       })()`,
     );
+    step("selected the fixture bot in the sidebar", JSON.stringify(selectBot));
     if (!selectBot.clicked) throw new Error(`could not select the fixture bot in the sidebar: ${JSON.stringify(selectBot)}`);
     // Creating the sibling thread made it the bot's selected task, so the failed
     // thread is opened by its own sidebar row — the same click a user makes.
     const opened = await renderer.evaluate(SELECT_THREAD(failedThread));
+    step("clicked the failed thread in the sidebar", JSON.stringify(opened));
     if (!opened.clicked) throw new Error(`the failed thread was not in the sidebar: ${JSON.stringify(opened)}`);
     await renderer.waitFor(THREAD_IS_CURRENT(failedThread), `thread ${failedThread} to be current`, { timeoutMs: 30_000 });
+    step("the failed thread is the one on screen", failedThread);
 
     const sent = await renderer.evaluate(sendThroughComposer(FAILED_REQUEST));
+    step("typed the request into the real composer", JSON.stringify(sent));
     if (!sent.sent) throw new Error(`the composer did not accept the request: ${JSON.stringify(sent)}`);
     const failure = await waitForFolderError(renderer);
+    step("the transcript shows the missing-working-folder failure", `error ${failure.failure.id}`);
     const failedTranscript = await api(base, `/api/threads/${failedThread}/messages?limit=50`);
     const failedUser = failedTranscript.body.messages.find((message) => message.role === "user" && message.text === FAILED_REQUEST);
     if (!failedUser) throw new Error("the failed human request is not in the transcript");

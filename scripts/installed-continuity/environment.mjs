@@ -348,7 +348,7 @@ export function listSecretServiceItems(env) {
       "--object-path", "/org/freedesktop/secrets/aliases/default",
       "--method", "org.freedesktop.Secret.Item.Search", "[]",
     ],
-    { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 20_000 },
   ).trim();
   const paths = [...listing.matchAll(/'([^']+)'/g)].map((match) => match[1]);
   return paths.map((itemPath) => {
@@ -361,7 +361,7 @@ export function listSecretServiceItems(env) {
         "--object-path", itemPath,
         "--method", "org.freedesktop.Secret.Item.GetAttributes",
       ],
-      { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+      { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 20_000 },
     ).trim();
     const parsed = {};
     for (const [, key, value] of attributes.matchAll(/'([^']+)':\s*'([^']*)'/g)) parsed[key] = value;
@@ -370,18 +370,31 @@ export function listSecretServiceItems(env) {
 }
 
 /** Round-trip one synthetic secret through the fixture's keyring, so a later
- * "the app used the keyring" claim cannot rest on an empty collection. */
-export function proveKeyringRoundTrip(env, { label, value }) {
-  execFileSync("secret-tool", ["store", "--label", label, "continuity", value], {
-    env,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const read = execFileSync("secret-tool", ["lookup", "continuity", label], {
-    env,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim();
-  execFileSync("secret-tool", ["clear", "continuity", label], { env, stdio: ["ignore", "pipe", "pipe"] });
+ * "the app used the keyring" claim cannot rest on an empty collection.
+ *
+ * Every `secret-tool` call is bounded. Unattended, `secret-tool store` falls back
+ * to prompting on a terminal it cannot see, and a synchronous call with no
+ * timeout then waits for a password that will never be typed — the fixture stops
+ * reporting and the job runs to its own timeout instead of naming the cause. */
+export function proveKeyringRoundTrip(env, { label, value, timeoutMs = 20_000 }) {
+  const run = (args) => {
+    try {
+      return execFileSync("secret-tool", args, {
+        env,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: timeoutMs,
+      });
+    } catch (error) {
+      const timedOut = error?.code === "ETIMEDOUT" || error?.signal === "SIGTERM";
+      throw new Error(
+        `secret-tool ${args[0]} did not finish within ${timeoutMs}ms${timedOut ? " (an unattended store blocks on a password prompt)" : ""}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  };
+  run(["store", "--label", label, "continuity", value]);
+  const read = run(["lookup", "continuity", label]).trim();
+  run(["clear", "continuity", label]);
   if (read !== value) throw new Error("the fixture keyring did not round-trip its own synthetic value");
   return true;
 }
