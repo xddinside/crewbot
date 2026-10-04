@@ -8,12 +8,13 @@ function idleTask(task) {
   return task?.busy === false && task.activity === "idle";
 }
 
-export function assertConcurrentTurns(tasks, targetThread, siblingThread, cwd) {
+export function assertConcurrentTurns(tasks, targetThread, siblingThread, cwds) {
   if (targetThread === siblingThread) throw new Error("Stop proof needs two distinct threads of the same bot");
+  if (cwds.get(targetThread) === cwds.get(siblingThread)) throw new Error("concurrent Stop proof threads need separate project folders");
   for (const id of [targetThread, siblingThread]) {
     const task = tasks.get(id);
     if (!runningTask(task)) throw new Error(`Stop proof thread ${id} is not concurrently running`);
-    if (task.cwd !== cwd) throw new Error(`Stop proof thread ${id} is not pinned to the existing fixture folder`);
+    if (!cwds.get(id) || task.cwd !== cwds.get(id)) throw new Error(`Stop proof thread ${id} is not pinned to the existing fixture folder`);
   }
 }
 

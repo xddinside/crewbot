@@ -189,7 +189,13 @@ async function waitForRunningThreads(base, botId, threadIds) {
     if (threadIds.every((id) => tasks.get(id)?.busy === true && tasks.get(id)?.activity === "working")) return tasks;
     await delay(250);
   }
-  throw new Error(`Stop fixture threads did not become concurrently busy: ${JSON.stringify([...tasks])}`);
+  const transcripts = [];
+  for (const threadId of threadIds) {
+    const response = await api(base, `/api/threads/${threadId}/messages?limit=100`);
+    transcripts.push({ threadId, messages: response.body?.messages ?? [], status: response.status });
+  }
+  evidence.observations.push({ label: "Stop concurrency setup failed", botId, tasks: [...tasks], transcripts });
+  throw new Error(`Stop fixture threads did not become concurrently busy: ${JSON.stringify({ tasks: [...tasks], transcripts })}`);
 }
 
 function observeLiveStopState(label, botId, tasks, threadIds) {
@@ -702,10 +708,12 @@ async function main() {
     );
 
     // ── thread-scoped Stop with concurrent turns under the same bot ──
-    // Both hang on a folder that still exists. A bot-wide or global Stop must
-    // fail this proof by interrupting the sibling's live turn too.
-    const stopCwd = fixture.alternateCwd;
-    if (!statSync(stopCwd).isDirectory()) throw new Error("the Stop proof's working folder does not exist");
+    // Each thread needs its own existing folder: production leases correctly
+    // prevent two concurrent writers to the same project. A bot-wide or global
+    // Stop must still fail this proof by interrupting the same bot's sibling.
+    const stopCwd = join(fixture.root, "stop-target-project");
+    const stopSiblingCwd = join(fixture.root, "stop-sibling-project");
+    for (const cwd of [stopCwd, stopSiblingCwd]) mkdirSync(cwd, { mode: 0o700 });
     const stopBot = await mutate("/api/bots", {
       body: { name: "Stop fixture", modelSelection: { instanceId: "hanging", model: "claude-sonnet-5" } },
     });
@@ -718,21 +726,26 @@ async function main() {
     if (stopSibling.status >= 400) throw new Error(`creating the Stop sibling failed: ${JSON.stringify(stopSibling)}`);
     const stopSiblingThread = stopSibling.body.task.threadId;
     const stopIds = [stopThread, stopSiblingThread];
+    const stopCwds = new Map([[stopThread, stopCwd], [stopSiblingThread, stopSiblingCwd]]);
     const targetRequest = "Keep the Stop target running";
     const siblingRequest = "Keep the concurrent Stop sibling running";
     await selectThread(renderer, { botId: stopBotId, botName: "Stop fixture", threadId: stopThread });
     const stopSent = await renderer.evaluate(sendThroughComposer(targetRequest));
     if (!stopSent.sent) throw new Error(`the stop fixture composer refused the request: ${JSON.stringify(stopSent)}`);
     await waitForRunningThreads(base, stopBotId, [stopThread]);
+    // The running target has now pinned its folder. Change only the bot's
+    // default before the sibling's first turn; the target's pin stays intact.
+    const siblingDefault = await mutate(`/api/bots/${stopBotId}`, { method: "PATCH", body: { cwd: stopSiblingCwd } });
+    if (siblingDefault.status >= 400) throw new Error(`setting the Stop sibling folder failed: ${JSON.stringify(siblingDefault)}`);
     await selectThread(renderer, { botId: stopBotId, botName: "Stop fixture", threadId: stopSiblingThread });
     const siblingSent = await renderer.evaluate(sendThroughComposer(siblingRequest));
     if (!siblingSent.sent) throw new Error(`the Stop sibling composer refused the request: ${JSON.stringify(siblingSent)}`);
     const concurrent = await waitForRunningThreads(base, stopBotId, stopIds);
-    assertConcurrentTurns(concurrent, stopThread, stopSiblingThread, stopCwd);
+    assertConcurrentTurns(concurrent, stopThread, stopSiblingThread, stopCwds);
     observeLiveStopState("before Stop, two concurrent turns of the same bot", stopBotId, concurrent, stopIds);
     const targetBeforeStop = (await api(base, `/api/threads/${stopThread}/messages?limit=100`)).body.messages;
     const siblingBeforeStop = (await api(base, `/api/threads/${stopSiblingThread}/messages?limit=100`)).body.messages;
-    step("two Stop fixture threads are concurrently running", JSON.stringify({ botId: stopBotId, threads: stopIds, cwd: stopCwd }));
+    step("two Stop fixture threads are concurrently running", JSON.stringify({ botId: stopBotId, folders: [...stopCwds] }));
     await selectThread(renderer, { botId: stopBotId, botName: "Stop fixture", threadId: stopThread });
     await renderer.waitFor(
       `[...document.querySelectorAll("button")].some((button) => /stop this turn/i.test(button.getAttribute("aria-label") || ""))`,

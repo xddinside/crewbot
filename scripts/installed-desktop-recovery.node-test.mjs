@@ -34,11 +34,13 @@ import { countChooserWindows, listWindows, waitForFolderChooser } from "./instal
 import { assertAcceptedRequestPreserved, assertConcurrentTurns, assertScopedStop, assertStoppedTranscript, freshReplyEvidence } from "./installed-desktop-recovery/stop-proof.mjs";
 
 test("Stop proof rejects stopping both concurrent threads or seeding a failed working folder", () => {
-  const running = (threadId) => ({ threadId, busy: true, activity: "working", cwd: "/owned/project" });
+  const running = (threadId) => ({ threadId, busy: true, activity: "working", cwd: `/owned/project-${threadId}` });
+  const cwds = new Map([["a", "/owned/project-a"], ["b", "/owned/project-b"]]);
   const idle = (threadId) => ({ ...running(threadId), busy: false, activity: "idle" });
-  assert.doesNotThrow(() => assertConcurrentTurns(new Map([["a", running("a")], ["b", running("b")]]), "a", "b", "/owned/project"));
-  assert.throws(() => assertConcurrentTurns(new Map([["a", running("a")], ["b", idle("b")]]), "a", "b", "/owned/project"), /not concurrently running/);
-  assert.throws(() => assertConcurrentTurns(new Map([["a", running("a")], ["b", running("b")]]), "a", "b", "/owned/missing"), /existing fixture folder/);
+  assert.doesNotThrow(() => assertConcurrentTurns(new Map([["a", running("a")], ["b", running("b")]]), "a", "b", cwds));
+  assert.throws(() => assertConcurrentTurns(new Map([["a", running("a")], ["b", idle("b")]]), "a", "b", cwds), /not concurrently running/);
+  assert.throws(() => assertConcurrentTurns(new Map([["a", running("a")], ["b", running("b")]]), "a", "b", new Map([["a", "/owned/missing-a"], ["b", "/owned/missing-b"]])), /existing fixture folder/);
+  assert.throws(() => assertConcurrentTurns(new Map([["a", running("a")], ["b", running("b")]]), "a", "b", new Map([["a", "/owned/project-a"], ["b", "/owned/project-a"]])), /separate project folders/);
   assert.doesNotThrow(() => assertScopedStop(new Map([["a", idle("a")], ["b", running("b")]]), "a", "b"));
   assert.throws(() => assertScopedStop(new Map([["a", idle("a")], ["b", idle("b")]]), "a", "b"), /also interrupted/);
   assert.throws(() => assertScopedStop(new Map([["a", running("a")], ["b", running("b")]]), "a", "b"), /target thread running/);
