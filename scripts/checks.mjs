@@ -87,7 +87,14 @@ export function runCheck(check, logPath) {
   const log = openSync(logPath, "w");
   return new Promise((done) => {
     const child = spawn(check.command[0], check.command.slice(1), { cwd: ROOT, stdio: ["ignore", log, log] });
+    // A command that does not exist emits `error` and then `close`. Settling
+    // twice would close the log descriptor a second time, which throws EBADF
+    // out of the event handler and takes the whole battery down instead of
+    // reporting one missing executable.
+    let settled = false;
     const settle = (result) => {
+      if (settled) return;
+      settled = true;
       closeSync(log);
       done({
         name: check.name,
