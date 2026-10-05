@@ -340,7 +340,7 @@ async function main() {
       (message) => message.role === "user" && attachmentPathsIn(message.text).length > 0,
       { label: "the seeded user message with its attachment in the production transcript" },
     );
-    await oldServer.waitForBot(conversationBot.id, (bot) => !bot.busy && (bot.messages ?? [])
+    const settledSeed = await oldServer.waitForBot(conversationBot.id, (bot) => !bot.busy && (bot.messages ?? [])
       .some((message) => message.role === "bot" && (message.text ?? "").includes(ENGINE_REPLY)),
     { label: "the old server's seed turn to settle" });
     const seededMessages = await oldServer.threadMessages(seededBot.threadId, 50);
@@ -353,7 +353,7 @@ async function main() {
       attachmentSha256,
       attachmentBytes: attachment.byteLength,
       oldMessageCount: seededMessages.length,
-      oldTurnSettled: !seededBot.busy,
+      oldTurnSettled: !settledSeed.busy,
     };
     step("seed-old", `transcript persisted ${seededMessages.length} message(s) through the old shipped server`);
 

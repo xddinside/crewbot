@@ -69,6 +69,36 @@ export function systemctlProp(unit, property) {
   return value === "" ? null : value;
 }
 
+/** The pid systemd reports as a unit's main process, or null when it reports
+ * nothing usable. `systemctl show --value` prints text, so the digits have to be
+ * parsed before anything can compare them as a number. */
+export function unitMainPid(unit) {
+  return parseMainPid(systemctlProp(unit, "MainPID"));
+}
+
+/** Parse `systemctl show --value` text into a pid, or null when the text names
+ * no process: a stopped unit's `0`, an empty answer, a non-integer, or noise.
+ * Trimming first is what makes a real pid survive systemd's newline. */
+export function parseMainPid(value) {
+  const text = typeof value === "string" ? value.trim() : value;
+  if (text === null || text === undefined || text === "") return null;
+  const pid = Number(text);
+  return Number.isInteger(pid) && pid > 0 ? pid : null;
+}
+
+/** Whether a pid still names a process this fixture can observe. EPERM means the
+ * process exists but this account cannot signal it, which still counts as alive:
+ * the data-dir lease is only released when the process is gone. */
+export function pidIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
 export function unitIsActive(unit) {
   return systemctlProp(unit, "ActiveState") === "active";
 }

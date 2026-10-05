@@ -29,9 +29,10 @@ import { fileURLToPath } from "node:url";
 
 import {
   FIXTURE_TAG, OwnedResources, api, apiOk, controlOmb, ensureDirectory, fail, journalExcerpt, note,
-  parseControlOmb, processCwd, processEnvironment, productionCli, removeQuietly, requireNativeSystemd, reservePortBlock,
-  run, runOk, serviceOwner, sha256, step, stdout, systemctl, systemctlProp, tokenizePrintedCommand,
-  tokenizeQuotedCommand, unitIsActive, unitIsEnabled, unitSnapshot, waitForHealth, writeFailingSudoShim,
+  parseControlOmb, pidIsAlive, processCwd, processEnvironment, productionCli, removeQuietly, requireNativeSystemd,
+  reservePortBlock, run, runOk, serviceOwner, sha256, step, stdout, systemctl, systemctlProp,
+  tokenizePrintedCommand, tokenizeQuotedCommand, unitIsActive, unitIsEnabled, unitMainPid, unitSnapshot,
+  waitForHealth, writeFailingSudoShim,
 } from "./testing/linux-service-fixture.mjs";
 import { legacyUnitProvenance, renderLegacySystemdUnit } from "./testing/linux-legacy-unit.mjs";
 
@@ -97,28 +98,11 @@ function stopUnit(unit) {
   fail(`${unit} was still active 60 s after systemctl stop`);
 }
 
-/** The pid systemd reports as the unit's main process, before it is stopped. */
-function unitMainPid(unit) {
-  const value = systemctlProp(unit, "MainPID");
-  return Number.isInteger(value) && value > 0 ? value : null;
-}
-
-function pidIsAlive(pid) {
-  if (!Number.isInteger(pid)) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    // EPERM means the pid exists but this account cannot signal it.
-    return error?.code === "EPERM";
-  }
-}
-
 /** Everything that must be true of a live unit that owns a data root. */
 async function assertLiveServiceOwnsRoot(unit, { dataDir, port, home, label }) {
   assert(unitIsActive(unit), `${label}: ${unit} is active`);
-  const mainPid = Number(systemctlProp(unit, "MainPID"));
-  assert(Number.isInteger(mainPid) && mainPid > 1, `${label}: ${unit} reports a real MainPID (${mainPid})`);
+  const mainPid = unitMainPid(unit);
+  assert(mainPid !== null && mainPid > 1, `${label}: ${unit} reports a real MainPID (${mainPid})`);
   const environment = processEnvironment(mainPid);
   assert(
     environment.OMB_DATA_DIR === dataDir,
@@ -506,9 +490,16 @@ async function caseLegacyStopFailure(context) {
   // The legacy unit was already stopped before the migration, because the lease
   // guard refuses to move a root a live server owns. So the plan's own stop has
   // nothing left to stop, and what this case proves is that a failing legacy
-  // stop still leaves both data roots recoverable and both unit files intact.
-  const strandedPid = Number(systemctlProp(LEGACY_UNIT, "MainPID"));
-  assert(strandedPid === 0, `no legacy process is left owning the migrated tree (MainPID ${strandedPid})`);
+// stop still leaves both data roots recoverable and both unit files intact.
+  //
+  // A confirmed `MainPID=0` is the fact under test, so read systemd's raw text
+  // and reject an unknown answer. A parsed null would equally cover a failed
+  // query or unparseable text, which is silence, not proof.
+  const rawMainPid = systemctlProp(LEGACY_UNIT, "MainPID");
+  assert(
+    rawMainPid === "0",
+    `no legacy process is left owning the migrated tree, confirmed by systemd itself (MainPID ${rawMainPid ?? "unknown"})`,
+  );
   assert(existsSync(unitFile(LEGACY_UNIT)), "the legacy unit file itself survived the failed stop");
   assert(!existsSync(legacyRoot), "the legacy root stays moved until rollback republishes it");
   assert(conversationRows(dataDir).some((text) => text.includes(SEED_TEXT)), "the migrated conversation is recoverable after the failed stop");

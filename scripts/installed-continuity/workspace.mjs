@@ -126,15 +126,31 @@ export class ProductionServer {
     return this.raw(`/api/attachments/${encodeURIComponent(name)}`);
   }
 
+  /** Poll a probe until it produces a real result.
+   *
+   * A probe that throws is a probe that has not succeeded: the failure is kept
+   * as the latest diagnostic and the wait continues, because only a truthy
+   * result can end the wait. Resolving on the thrown error instead would report
+   * readiness for a server that never answered. */
   async waitFor(predicate, { budgetMs = 90_000, label = "condition", describe } = {}) {
     const deadline = Date.now() + budgetMs;
-    let last = null;
+    let latest = null;
+    let failure = null;
     while (Date.now() < deadline) {
-      last = await predicate().catch((error) => ({ error: String(error) }));
-      if (last) return last;
+      try {
+        latest = await predicate();
+        failure = null;
+      } catch (error) {
+        latest = null;
+        failure = error instanceof Error ? error.message : String(error);
+      }
+      if (latest) return latest;
       await delay(300);
     }
-    throw new Error(`timed out waiting for ${label}: ${JSON.stringify(describe ? describe() : last)?.slice(0, 600)}`);
+    throw new Error(
+      `timed out waiting for ${label}: ${JSON.stringify(describe ? await describe() : latest)?.slice(0, 600)}`
+      + (failure ? ` (last probe failed: ${failure.slice(0, 300)})` : ""),
+    );
   }
 
   waitForBot(botId, predicate, options) {

@@ -11,6 +11,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { EventEmitter } from "node:events";
 import { after, describe, it } from "node:test";
 
 import {
@@ -25,7 +26,7 @@ import {
   listTree,
   readTextIfPresent,
 } from "./installed-continuity/environment.mjs";
-import { digestTree } from "./installed-continuity/workspace.mjs";
+import { ProductionServer, digestTree } from "./installed-continuity/workspace.mjs";
 import {
   assertInside,
   assertOutside,
@@ -206,6 +207,66 @@ describe("path and byte comparisons", () => {
     writeFileSync(file, "x");
     assert.equal(assertRegularFile(file).bytes, 1);
     assert.throws(() => assertRegularFile(directory), /expected a real file/);
+  });
+});
+
+describe("bounded readiness", () => {
+  /** The wait only needs a child handle it never touches, and one is disposed
+   * of here rather than left to a fixture that never launched anything. */
+  function idleServer() {
+    const child = new EventEmitter();
+    return new ProductionServer({ child, url: "http://127.0.0.1:1", port: 1, dataDir: "/none", logPath: "/none" });
+  }
+
+  it("returns the first real result and retries a false probe", async () => {
+    const server = idleServer();
+    let probes = 0;
+    const found = await server.waitFor(() => {
+      probes += 1;
+      return probes < 3 ? null : { ready: true, probes };
+    }, { budgetMs: 5_000, label: "a real result" });
+    assert.deepEqual(found, { ready: true, probes: 3 });
+    assert.equal(probes, 3, "a false probe must be retried, not accepted");
+  });
+
+  it("never treats a throwing probe as the result it was waiting for", async () => {
+    const server = idleServer();
+    let probes = 0;
+    await assert.rejects(
+      server.waitFor(() => {
+        probes += 1;
+        throw new Error("connection refused");
+      }, { budgetMs: 400, label: "a server that never answers" }),
+      (error) => {
+        assert.match(error.message, /timed out waiting for a server that never answers/);
+        assert.match(error.message, /last probe failed: connection refused/);
+        return true;
+      },
+    );
+    assert.ok(probes >= 2, `a throwing probe must be retried until the budget ends (probes: ${probes})`);
+  });
+
+  it("keeps waiting after a failure until a probe actually succeeds", async () => {
+    const server = idleServer();
+    let probes = 0;
+    const found = await server.waitFor(() => {
+      probes += 1;
+      if (probes < 2) throw new Error("the transcript is not readable yet");
+      return { settled: true, probes };
+    }, { budgetMs: 5_000, label: "a settled turn" });
+    assert.deepEqual(found, { settled: true, probes: 2 });
+  });
+
+  it("describes the live state when the budget runs out", async () => {
+    const server = idleServer();
+    await assert.rejects(
+      server.waitFor(() => false, {
+        budgetMs: 200,
+        label: "a bot state",
+        describe: async () => ({ messages: 0, last: null }),
+      }),
+      /timed out waiting for a bot state: \{"messages":0,"last":null\}/,
+    );
   });
 });
 
