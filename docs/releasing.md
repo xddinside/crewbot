@@ -14,6 +14,8 @@ The Linux clean-output, packaged-server, helper-path, browser, feed-hash, and co
 
 **Package Ubuntu** runs on a clean Ubuntu 24.04 runner. Its handed-over DEB command proof uses a disposable Ubuntu rootfs in a chroot to test dependency resolution and AppArmor profile staging. Separate runner-native browser and installed-package checks remain responsible for proving the live sandbox and package behavior. The script's default Docker mode remains useful for manual command checks on unrestricted Ubuntu hosts; on hosts with restricted unprivileged user namespaces, Docker may correctly fail closed because it cannot load the host AppArmor policy. Do not weaken the package post-install check to make that container case pass.
 
+Installed acceptance reuses this workflow at the commit under review. Its manual and reusable entry points upload the six package files and a separate build manifest. Publication remains a separate action.
+
 ## Release secrets
 
 Configure secrets in **xddinside/crewbot → Settings → Secrets and variables → Actions**. Normal Linux releases do not require Apple signing credentials. Only a manual release dispatch with `build_parked_platforms` enabled needs `MAC_CERT_P12_BASE64` and `MAC_CERT_PASSWORD` to sign macOS builds, plus `APPLE_API_KEY_P8_BASE64`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER_ID` to notarize them. Use fork-owned signing credentials. Do not copy upstream credentials or add an upstream-repository token. The release uses its scoped `GITHUB_TOKEN` to write only to the fork.

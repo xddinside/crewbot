@@ -5,6 +5,13 @@
 # in the unified release workflow while making every release candidate
 # reproducible from an exact ref. Attach the resulting files to the matching
 # CrewBot release after the smoke test passes.
+#
+# It is also the single packaging pipeline the installed acceptance jobs build
+# their candidate with: `workflow_call` runs the same recipe at an exact ref, and
+# uploads the same six files plus one handover record describing what it built.
+# A consumer in that run receives the record and the bytes as separate artifacts,
+# so nothing it installs depends on a packaging run from another run — and no
+# run has to outlive its own artifact deadline to still be provable.
 name: Package Ubuntu
 
 on:
@@ -14,6 +21,25 @@ on:
         description: "Commit/tag/branch to build (defaults to the branch this is run from)"
         required: false
         type: string
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit/tag/branch to build (defaults to the commit this is called at)"
+        required: false
+        type: string
+    outputs:
+      candidate-artifact:
+        description: "Artifact holding the six release files this run built"
+        value: ${{ jobs.package.outputs.artifact-name }}
+      candidate-manifest-artifact:
+        description: "Artifact holding this run's handover record for those six files"
+        value: ${{ jobs.package.outputs.manifest-artifact-name }}
+      candidate-version:
+        description: "Release version built from package.json at the built ref"
+        value: ${{ jobs.package.outputs.version }}
+      candidate-source-sha:
+        description: "Commit this run actually built"
+        value: ${{ jobs.package.outputs.source-sha }}
 
 permissions:
   contents: read
@@ -23,6 +49,11 @@ jobs:
     name: DEB + AppImage (Ubuntu 24.04 x64)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      artifact-name: ${{ steps.release.outputs.artifact-name }}
+      manifest-artifact-name: ${{ steps.handover.outputs.artifact-name }}
+      version: ${{ steps.release.outputs.version }}
+      source-sha: ${{ steps.handover.outputs.source-sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -132,6 +163,35 @@ jobs:
           cp release/SHA256SUMS-ubuntu-x64.txt release-assets/
           cp release/latest-linux.yml release-assets/
           node scripts/verify-linux-release-assets.mjs release-assets "$VERSION"
+      - name: Record what this run built for its consumers
+        # The record is written from the validated assets and from the commit this
+        # job actually built, then uploaded as its own artifact. A consumer
+        # receives it separately from the six files and compares the two, so the
+        # claim and the bytes have to agree from two directions. It is never
+        # recomputed downstream: a manifest derived from a download agrees with
+        # a repack by construction.
+        id: handover
+        shell: bash
+        env:
+          # An input, not a script interpolation: a dispatched ref is user input.
+          REQUESTED_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD)"
+          if printf '%s' "$REQUESTED_REF" | grep -Eq '^[0-9a-f]{40}$' \
+            && [ "$source_sha" != "$REQUESTED_REF" ]; then
+            echo "::error::asked to build $REQUESTED_REF but the checkout is $source_sha"
+            exit 1
+          fi
+          handover="$(node scripts/linux-candidate-manifest.mjs write \
+            --assets release-assets \
+            --out candidate-handover/candidate-manifest.json \
+            --source-sha "$source_sha")"
+          printf '%s\n' "$handover"
+          manifest_artifact="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).manifestArtifactName)' "$handover")"
+          test -n "$manifest_artifact"
+          echo "artifact-name=$manifest_artifact" >> "$GITHUB_OUTPUT"
+          echo "source-sha=$source_sha" >> "$GITHUB_OUTPUT"
       - name: Upload diagnostic-only package and smoke logs on failure
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
@@ -149,7 +209,20 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.release.outputs.artifact-name }}
+          overwrite: true
           path: |
             release-assets/*
           if-no-files-found: error
           retention-days: 14
+      # The record has to stay out of the package artifact: the release validator
+      # only accepts the six release files, so a seventh file would make the
+      # artifact it describes unusable. It is small, and the consumers copy it
+      # into their own evidence, so it does not need the package's retention.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.handover.outputs.artifact-name }}
+          overwrite: true
+          path: |
+            candidate-handover/candidate-manifest.json
+          if-no-files-found: error
+          retention-days: 1

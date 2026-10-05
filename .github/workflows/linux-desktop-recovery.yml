@@ -1,0 +1,261 @@
+name: Linux desktop recovery
+
+# The installed native folder picker cannot be proven anywhere else: it needs
+# `dpkg`, a synthetic X server, an owned DBus session, and the real GTK chooser
+# that only a real package under a real display can open.
+#
+# This file is the consumer half of `Linux installed acceptance`, which builds
+# the candidate in this same run and hands over both the six package files and
+# the packaging run's handover record. That wrapper carries the `pull_request`
+# trigger, so this proof still runs before these files reach the default branch,
+# and it no longer depends on a packaging run from another run — or on that
+# run's artifact outliving its expiry date.
+on:
+  workflow_call:
+    inputs:
+      candidate-source-sha:
+        description: "Commit this checkout is pinned to, and the candidate must have been built from"
+        required: true
+        type: string
+      candidate-version:
+        description: "Release version the producer published for those files"
+        required: true
+        type: string
+      candidate-artifact:
+        description: "Same-run artifact holding the six candidate files"
+        required: true
+        type: string
+      candidate-manifest-artifact:
+        description: "Same-run artifact holding the producer's handover record for those files"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  installed-desktop-recovery:
+    # Ubuntu 24.04 x64 is the packaging and CI reference for Linux. Every value
+    # that would attach this run to a desktop or a login session is cleared here,
+    # and the fixture refuses to create a directory until it has proved the
+    # clearing took effect.
+    name: installed native picker recovery (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      DISPLAY: ""
+      WAYLAND_DISPLAY: ""
+      WAYLAND_SOCKET: ""
+      XDG_SESSION_TYPE: ""
+      XDG_SESSION_ID: ""
+      XDG_CURRENT_DESKTOP: ""
+      DESKTOP_SESSION: ""
+      XDG_SEAT: ""
+      XDG_RUNTIME_DIR: ""
+      DBUS_SESSION_BUS_ADDRESS: ""
+      DBUS_SYSTEM_BUS_ADDRESS: ""
+      GNOME_KEYRING_CONTROL: ""
+      SSH_AUTH_SOCK: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No `pnpm install`: the fixture drives the installed package and the
+      # repository's own fake engine, and both run on bare Node with no
+      # dependencies. Only Node itself is needed, at the version the app and its
+      # fake engine target.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      # `dbus-x11` starts the fixture's own session bus, `xvfb`/`x11-utils` its
+      # own X server, `xdotool` drives the real GTK chooser, `openbox` gives that
+      # chooser a window manager so `_NET_ACTIVE_WINDOW` works, and
+      # `imagemagick` captures the chooser's own window as evidence. Nothing here
+      # installs or configures a portal, a compositor or a keyring: this journey
+      # is proven against the native X11 chooser the installed package actually
+      # opens, and it is never the runner's own display.
+      - name: Install the owned display and picker tools
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          dbus dbus-x11 imagemagick openbox x11-utils xdotool xvfb
+          libnotify4 libsecret-1-0 libnss3 libasound2t64 libgbm1 libgtk-3-0 libxss1
+          libxtst6 xdg-utils libdrm2
+      # The package's own post-install refuses to run unless /opt is a real
+      # root-owned 0755 directory: it treats anything else as an unsafe ancestor
+      # for a root-owned /opt/crewbot. GitHub's runner image ships /opt as 0775,
+      # so install the package on a parent that matches a normal Ubuntu machine.
+      # This is the same recipe `ci.yml` and `package-linux.yml` already use; the
+      # product check is left intact rather than weakened for the fixture.
+      - name: Match a normal Ubuntu package parent on the ephemeral runner
+        run: |
+          set -euo pipefail
+          test ! -L /opt
+          test "$(stat -c '%F %U:%G' /opt)" = "directory root:root"
+          case "$(stat -c '%a' /opt)" in
+            755) ;;
+            775|777) sudo chmod 0755 /opt ;;
+            *) echo "Unexpected /opt mode: $(stat -c '%a' /opt)" >&2; exit 1 ;;
+          esac
+          test "$(stat -c '%U:%G %a' /opt)" = "root:root 755"
+      - name: Prove the job carries no desktop or login session
+        run: |
+          set -euo pipefail
+          for key in DISPLAY WAYLAND_DISPLAY WAYLAND_SOCKET XDG_SESSION_TYPE XDG_SESSION_ID \
+                    XDG_CURRENT_DESKTOP DESKTOP_SESSION XDG_SEAT XDG_RUNTIME_DIR \
+                    DBUS_SESSION_BUS_ADDRESS DBUS_SYSTEM_BUS_ADDRESS GNOME_KEYRING_CONTROL SSH_AUTH_SOCK; do
+            test -z "${!key:-}" || { echo "$key is set to '${!key}'" >&2; exit 1; }
+          done
+          echo "no inherited display, seat, bus or login session"
+
+      # Both artifacts come from this run's own packaging job. No run id is
+      # pinned, nothing is fetched from a finished run elsewhere, and no
+      # artifact has to stay reachable past its own retention to be provable.
+      - name: Fetch the candidate packages this run built
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.candidate-artifact }}
+          path: ${{ runner.temp }}/inputs/candidate
+
+      - name: Fetch the producer's handover record for those packages
+        # Uploaded separately, and to a directory of its own, because the
+        # candidate directory has to hold exactly the six supported files: a
+        # manifest written inside it would be a seventh, and the shared release
+        # validator rejects that.
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.candidate-manifest-artifact }}
+          path: ${{ runner.temp }}/inputs/handover
+
+      - name: Hold the candidate bytes to this checkout's source and the producer's record
+        # Three inputs, three directions: this checkout's own commit, the version
+        # the producer published, and the record the producer wrote about the
+        # files it uploaded. The record is never recomputed here — a manifest
+        # derived from the download would agree with a repack by construction.
+        env:
+          CANDIDATE_ASSETS: ${{ runner.temp }}/inputs/candidate
+          CANDIDATE_RECORD: ${{ runner.temp }}/inputs/handover/candidate-manifest.json
+          CANDIDATE_VERSION: ${{ inputs.candidate-version }}
+          CANDIDATE_SOURCE_SHA: ${{ inputs.candidate-source-sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SOURCE_SHA" || {
+            echo "::error::this checkout is $(git rev-parse HEAD), not the reviewed $CANDIDATE_SOURCE_SHA"
+            exit 1
+          }
+          node scripts/linux-candidate-manifest.mjs check \
+            --assets "$CANDIDATE_ASSETS" \
+            --manifest "$CANDIDATE_RECORD" \
+            --version "$CANDIDATE_VERSION" \
+            --source-sha "$CANDIDATE_SOURCE_SHA"
+
+      - name: Drive the installed native folder picker
+        timeout-minutes: 15
+        env:
+          OMB_RECOVERY_CANDIDATE_DIR: ${{ runner.temp }}/inputs/candidate
+          OMB_RECOVERY_CANDIDATE_MANIFEST: ${{ runner.temp }}/inputs/handover/candidate-manifest.json
+          OMB_RECOVERY_CANDIDATE_SHA: ${{ inputs.candidate-source-sha }}
+          OMB_KEEP_RECOVERY_FIXTURE: "1"
+        run: node scripts/verify-installed-desktop-recovery.mjs
+
+      # The journey reaps its owned processes and removes the package even on
+      # failure. Keep only its files until evidence and diagnostic uploads finish.
+      - name: Upload the recovery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-desktop-recovery-evidence
+          path: |
+            ${{ runner.temp }}/omb-installed-recovery-*/evidence.json
+            ${{ runner.temp }}/omb-installed-recovery-*/evidence/
+            ${{ runner.temp }}/inputs/handover/candidate-manifest.json
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 14
+
+      - name: Upload recovery diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-desktop-recovery-diagnostics
+          path: |
+            ${{ runner.temp }}/omb-installed-recovery-*/logs/
+            ${{ runner.temp }}/omb-installed-recovery-*/home/.config/
+            /var/log/dpkg.log
+            /var/log/apt/term.log
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 7
+
+      - name: Remove the installed package and prove nothing of the fixture is left
+        if: always()
+        run: |
+          # Purging a package dpkg never installed is the state this step exists
+          # to reach, so a refusal is not a failure. What is a failure is the
+          # package still being installed afterwards, which is checked below
+          # rather than inferred from the purge's exit code.
+          sudo dpkg --purge crewbot || echo "::notice::dpkg declined to purge crewbot; its absence is checked below"
+          sudo rm -rf /opt/crewbot
+          rm -rf "$RUNNER_TEMP"/omb-installed-recovery-*
+          problems=()
+          # The fixture owns its display, bus, window manager, app process group
+          # and temp root. A leftover here means teardown skipped one, and the
+          # run cannot claim otherwise, so survivors fail the job instead of
+          # being annotated and left behind.
+          for pattern in 'Xvfb :9[1-9]' 'Xvfb :1[0-2][0-9]' openbox "dbus-daemon --session --fork" /opt/crewbot/crewbot; do
+            survivors="$(pgrep -a -f "$pattern" 2>/dev/null | grep -v pgrep || true)"
+            if [ -n "$survivors" ]; then
+              problems+=("something the fixture owned survived teardown: $pattern")
+              echo "$survivors"
+            fi
+          done
+          # Absence is read back from dpkg rather than inferred from the purge's
+          # exit code. ${db:Status-Abbrev} is wanted/actual/errors, and only `n`
+          # in the second column means not installed: `iU` and `iF` are unpacked
+          # and half-configured, `iR` needs reinstalling, and `uc`/`rc` are
+          # uninstalled but still keep files. dpkg-query failing is absence only
+          # when dpkg says so in as many words; any other failure is a question
+          # this step could not answer, so it is reported rather than passed. A
+          # query that succeeds with nothing on stdout is silence, which is not a
+          # dpkg verdict either, so it is reported too.
+          package_absence_problem() {
+            local status queried
+            status="$(dpkg-query -W -f='${db:Status-Abbrev}\n' crewbot 2>&1)" && queried=true || queried=false
+            case "$status" in
+              *"no packages found matching"*|*"is not installed"*)
+                echo "the candidate package is not installed"
+                return 0
+                ;;
+            esac
+            if [ "$queried" != true ]; then
+              echo "dpkg could not report whether crewbot is installed: $status"
+              return 0
+            fi
+            status="$(printf '%s' "$status" | tr -d '[:space:]')"
+            if [ -z "$status" ]; then
+              echo "dpkg reported whether crewbot is installed with no status and no complaint"
+              return 0
+            fi
+            if [ "${#status}" -ge 2 ] && [ "${status:1:1}" = "n" ]; then
+              echo "the candidate package is not installed"
+              return 0
+            fi
+            echo "the candidate package is still present: ${status:-unknown status}"
+          }
+          package_absence="$(package_absence_problem)"
+          if printf '%s' "$package_absence" | grep -q '^the candidate package is not installed$'; then
+            echo "$package_absence"
+          else
+            problems+=("$package_absence")
+          fi
+          if [ -e /opt/crewbot ]; then
+            problems+=("/opt/crewbot is still present")
+          fi
+          ls /tmp/.X11-unix 2>/dev/null || echo "no X sockets remain"
+          if [ ${#problems[@]} -gt 0 ]; then
+            for problem in "${problems[@]}"; do
+              echo "::error::$problem"
+            done
+            exit 1
+          fi

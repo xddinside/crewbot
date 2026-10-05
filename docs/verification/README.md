@@ -9,6 +9,8 @@ redaction as external MCP clients.
 
 Linux is the required platform for current delivery. Read the [platform support guide](../platform-support.md) before making a support claim. Arch is the daily development target; Ubuntu 24.04 x86_64 is the package and CI reference. Linux installed data/attachment/credential continuity, stable/development isolation, service rollback, and exact failed-turn folder-picker recovery remain pending until the required isolated fixtures pass.
 
+Those two installed fixtures need a real installed package, so `Linux installed acceptance` builds one candidate in the same workflow run that drives them: `Package Ubuntu` builds it at the commit under review, and both jobs receive those six files plus that run's handover record as separate artifacts. Each job compares the record against its own checkout's source SHA and the producer's published version, never recomputing a manifest from the download it is checking. See [`CONTRIBUTING.md`](../../CONTRIBUTING.md#installed-acceptance-candidate-handoff). This records the candidate's availability only; it is not itself evidence that the installed behaviors pass. Coverage is Ubuntu 24.04 x86_64 X11 under an owned Xvfb, session bus and keyring, and nothing more.
+
 Native Android, iOS, macOS, and Windows recipes below remain useful historical instructions. Their current acceptance is parked and recorded as deferred, never passed. They do not gate Linux delivery. Keep shared protocol and security coverage that Linux uses. Xvfb or synthetic checks prove only the behavior they exercise.
 
 ## Launch

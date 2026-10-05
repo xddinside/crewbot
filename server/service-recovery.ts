@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 
 import { inspectLegacyDataDirServiceRecovery, recoverLegacyDataDirForService } from "../electron/legacy-data-dir.mjs";
-import { servicePlan } from "./service-unit.ts";
+import { LEGACY_SYSTEMD_UNIT_NAME, SYSTEMD_UNIT_NAME, servicePlan } from "./service-unit.ts";
 
 export interface ServiceRecoveryInput {
   dataDir: string;
@@ -13,6 +13,12 @@ export interface ServiceRecoveryInput {
   plan?: ReturnType<typeof servicePlan>;
   /** Injectable system command runner for isolated recovery proofs. */
   runCommand?: (command: string, args: string[]) => void;
+  /**
+   * Injectable probe for a unit's systemd load state. "not-found" means systemd
+   * has no such unit; null means the probe itself could not answer, which the
+   * recovery treats as "maybe installed" so it never skips a real stop.
+   */
+  unitLoadState?: (unit: string) => string | null;
 }
 
 export interface ServiceRecoveryIo {
@@ -22,6 +28,19 @@ export interface ServiceRecoveryIo {
 
 function systemCommand(command: string, args: string[]): void {
   execFileSync(command, args, { stdio: "ignore" });
+}
+
+/** systemd's own view of whether a unit exists. Read-only, so it needs no sudo. */
+function systemUnitLoadState(unit: string): string | null {
+  try {
+    const value = execFileSync("systemctl", ["show", "-p", "LoadState", "--value", unit], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return value || null;
+  } catch {
+    return null;
+  }
 }
 
 function isRegularFile(path: string): boolean {
@@ -173,7 +192,17 @@ export function runServiceRollback(input: ServiceRecoveryInput, io: ServiceRecov
 
   const run = input.runCommand ?? systemCommand;
   try {
-    run("sudo", ["systemctl", "disable", "--now", "crewbot.service"]);
+    // A cutover that never got as far as installing crewbot.service still has
+    // to be recoverable: `systemctl disable` fails outright for a unit file
+    // systemd does not have, which used to abort the whole advertised recovery
+    // before it republished any data. Only a confirmed "not-found" skips it; a
+    // probe that cannot answer keeps the stop.
+    const crewbotUnit = SYSTEMD_UNIT_NAME;
+    if ((input.unitLoadState ?? systemUnitLoadState)(crewbotUnit) === "not-found") {
+      io.log(`${crewbotUnit} was never installed, so there is nothing to disable; continuing the recovery`);
+    } else {
+      run("sudo", ["systemctl", "disable", "--now", crewbotUnit]);
+    }
     if (recovery) recoverLegacyDataDirForService(input.dataDir);
     if (!legacyExists && backupExists) {
       run("sudo", ["cp", "--no-clobber", "--preserve=all", plan.legacyBackup, plan.legacyUnit]);
@@ -182,8 +211,15 @@ export function runServiceRollback(input: ServiceRecoveryInput, io: ServiceRecov
       }
     }
     run("sudo", ["systemctl", "daemon-reload"]);
-    run("sudo", ["systemctl", "enable", "--now", "openmausbot.service"]);
-    run("sudo", ["systemctl", "is-active", "--quiet", "openmausbot.service"]);
+    run("sudo", ["systemctl", "enable", LEGACY_SYSTEMD_UNIT_NAME]);
+    // `restart`, not `enable --now`. A legacy service left running by a failed
+    // legacy stop still holds its database and attachment handles open on the
+    // migrated tree, so `is-active` on that process would report a recovery for
+    // a server that is not reading the restored root at all. Restarting makes
+    // the process reopen the republished one; `restart` also starts an inactive
+    // unit, so this replaces the old `enable --now` outright.
+    run("sudo", ["systemctl", "restart", LEGACY_SYSTEMD_UNIT_NAME]);
+    run("sudo", ["systemctl", "is-active", "--quiet", LEGACY_SYSTEMD_UNIT_NAME]);
   } catch (error) {
     io.error(`service rollback stopped before declaring the legacy service ready: ${error instanceof Error ? error.message : String(error)}. CrewBot remains disabled; preserve both data directories and resolve the reported step before continuing.`);
     return 1;
