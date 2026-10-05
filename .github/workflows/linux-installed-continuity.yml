@@ -1,0 +1,192 @@
+name: Linux installed continuity
+
+# The installed old-to-new upgrade cannot be proven anywhere else: it needs
+# `dpkg`, a synthetic X server, an owned DBus session and an owned unlocked
+# keyring, and it mutates real packages.
+#
+# This file is the consumer half of `Linux installed acceptance`, which builds
+# the candidate in this same run and hands over both the six package files and
+# the packaging run's handover record. That wrapper carries the `pull_request`
+# trigger, so this proof still runs before these files reach the default branch,
+# and it no longer depends on a packaging run from another run — or on that
+# run's artifact outliving its expiry date.
+on:
+  workflow_call:
+    inputs:
+      candidate-source-sha:
+        description: "Commit this checkout is pinned to, and the candidate must have been built from"
+        required: true
+        type: string
+      candidate-version:
+        description: "Release version the producer published for those files"
+        required: true
+        type: string
+      candidate-artifact:
+        description: "Same-run artifact holding the six candidate files"
+        required: true
+        type: string
+      candidate-manifest-artifact:
+        description: "Same-run artifact holding the producer's handover record for those files"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  # The genuine released predecessor, verified against the digest recorded when
+  # it was first fetched. The fixture re-verifies it after download and fails
+  # closed; these are the expected values, not a substitute for that check.
+  # This one download stays: it is a published release, not a build output.
+  OLD_PACKAGE_URL: https://github.com/milind-soni/OpenMausBot/releases/download/v0.1.83/OpenMausBot-0.1.83-amd64.deb
+  OLD_PACKAGE_SHA256: c34b4d95c26b6edb4992ec6766ebfa9e47b0a740d172ea8aec5df1d14968d017
+  OLD_PACKAGE_BYTES: "231300320"
+
+jobs:
+  installed-continuity:
+    # Ubuntu 24.04 x64 is the packaging and CI reference for Linux. Every value
+    # that would attach this run to a desktop, a login keyring or a service
+    # session is cleared here and re-checked inside the fixture.
+    name: installed old-to-new continuity (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      DISPLAY: ""
+      WAYLAND_DISPLAY: ""
+      WAYLAND_SOCKET: ""
+      XDG_SESSION_TYPE: ""
+      XDG_SESSION_ID: ""
+      XDG_SEAT: ""
+      XDG_RUNTIME_DIR: ""
+      DBUS_SESSION_BUS_ADDRESS: ""
+      DBUS_SYSTEM_BUS_ADDRESS: ""
+      GNOME_KEYRING_CONTROL: ""
+      SSH_AUTH_SOCK: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install the owned session, package and keyring tools
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          dbus dbus-x11 gnome-keyring libglib2.0-bin libsecret-tools x11-utils xvfb
+          libnotify4 libsecret-1-0 libnss3 libasound2t64 libgbm1 libgtk-3-0 libxss1
+          libxtst6 xdg-utils libdrm2
+      # The package's own post-install refuses to run unless /opt is a real
+      # root-owned 0755 directory: it treats anything else as an unsafe ancestor
+      # for a root-owned install root. GitHub's runner image ships /opt as 0775,
+      # so install on a parent that matches a normal Ubuntu machine. Same recipe
+      # `ci.yml` and `package-linux.yml` already use; the product check stands.
+      - name: Match a normal Ubuntu package parent on the ephemeral runner
+        run: |
+          set -euo pipefail
+          test ! -L /opt
+          test "$(stat -c '%F %U:%G' /opt)" = "directory root:root"
+          case "$(stat -c '%a' /opt)" in
+            755) ;;
+            775|777) sudo chmod 0755 /opt ;;
+            *) echo "Unexpected /opt mode: $(stat -c '%a' /opt)" >&2; exit 1 ;;
+          esac
+          test "$(stat -c '%U:%G %a' /opt)" = "root:root 755"
+
+      # The workflow clears every session variable, so this process inherits no
+      # display, no session bus and no keyring. The fixture starts its own Xvfb
+      # and its own dbus-daemon with a socket inside its own root, then its own
+      # unlocked keyring on that bus. Nothing here can reach the runner's login
+      # session.
+      - name: Download and verify the pinned old package
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/inputs"
+          curl --fail --location --silent --show-error \
+            --output "$RUNNER_TEMP/inputs/OpenMausBot-0.1.83-amd64.deb" \
+            "$OLD_PACKAGE_URL"
+          cd "$RUNNER_TEMP/inputs"
+          echo "${OLD_PACKAGE_SHA256}  OpenMausBot-0.1.83-amd64.deb" | sha256sum -c -
+          test "$(stat -c '%s' OpenMausBot-0.1.83-amd64.deb)" = "$OLD_PACKAGE_BYTES"
+
+      # Both artifacts come from this run's own packaging job. No run id is
+      # pinned, nothing is fetched from a finished run elsewhere, and no
+      # artifact has to stay reachable past its own retention to be provable.
+      - name: Fetch the candidate packages this run built
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.candidate-artifact }}
+          path: ${{ runner.temp }}/inputs/candidate
+
+      - name: Fetch the producer's handover record for those packages
+        # Uploaded separately, and to a directory of its own, because the
+        # candidate directory has to hold exactly the six supported files: a
+        # manifest written inside it would be a seventh, and the shared release
+        # validator rejects that.
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.candidate-manifest-artifact }}
+          path: ${{ runner.temp }}/inputs/handover
+
+      - name: Hold the candidate bytes to this checkout's source and the producer's record
+        # Three inputs, three directions: this checkout's own commit, the version
+        # the producer published, and the record the producer wrote about the
+        # files it uploaded. The record is never recomputed here — a manifest
+        # derived from the download would agree with a repack by construction.
+        env:
+          CANDIDATE_ASSETS: ${{ runner.temp }}/inputs/candidate
+          CANDIDATE_RECORD: ${{ runner.temp }}/inputs/handover/candidate-manifest.json
+          CANDIDATE_VERSION: ${{ inputs.candidate-version }}
+          CANDIDATE_SOURCE_SHA: ${{ inputs.candidate-source-sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SOURCE_SHA" || {
+            echo "::error::this checkout is $(git rev-parse HEAD), not the reviewed $CANDIDATE_SOURCE_SHA"
+            exit 1
+          }
+          node scripts/linux-candidate-manifest.mjs check \
+            --assets "$CANDIDATE_ASSETS" \
+            --manifest "$CANDIDATE_RECORD" \
+            --version "$CANDIDATE_VERSION" \
+            --source-sha "$CANDIDATE_SOURCE_SHA"
+
+      - name: Prove private keyring startup and installed-app exit regressions
+        env:
+          OMB_NATIVE_KEYRING_TEST: "1"
+        run: node --test scripts/installed-keyring.node-test.mjs
+
+      - name: Drive the installed old-to-new upgrade
+        env:
+          OMB_CONTINUITY_OLD_DEB: ${{ runner.temp }}/inputs/OpenMausBot-0.1.83-amd64.deb
+          OMB_CONTINUITY_CANDIDATE_DIR: ${{ runner.temp }}/inputs/candidate
+          OMB_CONTINUITY_CANDIDATE_MANIFEST: ${{ runner.temp }}/inputs/handover/candidate-manifest.json
+          OMB_CONTINUITY_CANDIDATE_SHA: ${{ inputs.candidate-source-sha }}
+          OMB_KEEP_CONTINUITY_FIXTURE: "1"
+        run: node scripts/verify-linux-installed-continuity.mjs
+
+      # Only upload proof and recovery metadata. The installed app can create
+      # nested user-namespace container storage that the runner cannot traverse.
+      - name: Upload the continuity evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-installed-continuity-evidence
+          path: |
+            ${{ runner.temp }}/omb-installed-continuity-*/logs/
+            ${{ runner.temp }}/omb-installed-continuity-*/home/.crewbot/.crewbot-migration/
+            ${{ runner.temp }}/omb-installed-continuity-*/home/.crewbot/attachments/
+            ${{ runner.temp }}/inputs/handover/candidate-manifest.json
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 14
+
+      - name: Remove the installed packages
+        if: always()
+        run: |
+          sudo dpkg --purge crewbot || true
+          sudo dpkg --purge openmausbot || true
+          sudo rm -rf /opt/crewbot /opt/OpenMausBot
+          sudo rm -rf "$RUNNER_TEMP"/omb-installed-continuity-*

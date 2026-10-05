@@ -15,7 +15,7 @@ function fail(message) {
   throw new Error(message);
 }
 
-export function verifyLinuxReleaseAssets(directory, version, { allowNpm = false } = {}) {
+export function verifyLinuxReleaseAssets(directory, version, { allowNpm = false, quiet = false } = {}) {
   if (!/^\d+\.\d+\.\d+$/.test(version)) fail(`invalid release version: ${version}`);
   const root = resolve(directory);
   const appImage = `crewbot-${version}-x86_64.AppImage`;
@@ -93,7 +93,7 @@ export function verifyLinuxReleaseAssets(directory, version, { allowNpm = false 
   if (/latest-(?:mac|win)\.yml|\bcrewbot-[^\s"']+\.(?:dmg|zip|exe)\b/.test(feed)) {
     fail("Linux updater feed advertises an unsupported platform asset");
   }
-  console.log(`ok: ${version} Linux release assets, checksums, and updater feed match (${files.length} files)`);
+  if (!quiet) console.log(`ok: ${version} Linux release assets, checksums, and updater feed match (${files.length} files)`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

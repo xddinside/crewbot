@@ -1,0 +1,63 @@
+name: Linux installed acceptance
+
+# The installed proofs need a real Ubuntu package under `dpkg`, and they cannot
+# use a source tree or an unpacked build. That package used to come from one
+# finished packaging run pinned by hand, which made a PR's proof depend on an
+# artifact with an expiry date: after it lapsed, nothing could prove the
+# installed behaviour without republishing.
+#
+# This workflow removes the pinned run. One `Package Ubuntu` invocation builds
+# the candidate at the commit under review in this very run, and both installed
+# jobs receive those six files plus that run's handover record as ordinary
+# same-run artifacts. Both consumers therefore prove the bytes of the exact
+# reviewed source, and the proof is renewable by rerunning this workflow.
+#
+# `pull_request` is the trigger that lets all of it run before any of these
+# files reaches the default branch; a `workflow_dispatch`-only file could never
+# do that. The packaging recipe is not duplicated here: it is the same
+# reusable `Package Ubuntu` workflow a release candidate is built with, and the
+# standard CI package job in `ci.yml` stays independent of all of it.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-installed-acceptance-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  package:
+    name: build the candidate packages (Ubuntu 24.04 x64)
+    # Exactly the commit this workflow checked out. Building a ref instead would
+    # let the bytes under test drift away from the source under review, and the
+    # handover record would then be describing something nobody reviewed.
+    uses: ./.github/workflows/package-linux.yml
+    with:
+      ref: ${{ github.sha }}
+
+  installed-continuity:
+    name: installed old-to-new continuity (Ubuntu 24.04)
+    needs: package
+    uses: ./.github/workflows/linux-installed-continuity.yml
+    with:
+      # The expectation comes from this workflow's own checkout, not from the
+      # producer's record: a record cannot vouch for itself.
+      candidate-source-sha: ${{ github.sha }}
+      candidate-version: ${{ needs.package.outputs.candidate-version }}
+      candidate-artifact: ${{ needs.package.outputs.candidate-artifact }}
+      candidate-manifest-artifact: ${{ needs.package.outputs.candidate-manifest-artifact }}
+
+  installed-desktop-recovery:
+    name: installed native picker recovery (Ubuntu 24.04)
+    needs: package
+    uses: ./.github/workflows/linux-desktop-recovery.yml
+    with:
+      candidate-source-sha: ${{ github.sha }}
+      candidate-version: ${{ needs.package.outputs.candidate-version }}
+      candidate-artifact: ${{ needs.package.outputs.candidate-artifact }}
+      candidate-manifest-artifact: ${{ needs.package.outputs.candidate-manifest-artifact }}

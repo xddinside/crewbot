@@ -240,3 +240,105 @@ it("refuses to restart a task while its provider session is live", async () => {
     }
   }
 }, 90_000);
+
+it("clears only the failed thread's continuation and leaves a sibling thread's alone", async () => {
+  // The installed journey's core claim: recovering a missing working folder
+  // clears the provider continuation of the pinned task and nothing else. A
+  // second thread with its own live continuation is what makes "only" checkable.
+  const fixture = await launchVerificationServer();
+  const missingCwd = mkdtempSync(join(tmpdir(), "crewbot-sibling-missing-"));
+  const replacementCwd = mkdtempSync(join(tmpdir(), "crewbot-sibling-replacement-"));
+  const control = (args: string[]) => runControlOmb([...args, "--url", fixture.info.url]) as Promise<any>;
+  const storedTasks = (botId: string) => {
+    const bots = JSON.parse(readFileSync(join(fixture.info.dataDir, "bots.json"), "utf8")) as any[];
+    return new Map<string, any>(
+      (bots.find((bot: any) => bot.id === botId)?.tasks ?? []).map((task: any) => [task.threadId, task]),
+    );
+  };
+
+  try {
+    const { bot } = await control(["new-bot", "--name", "Sibling continuation fixture"]);
+    const failedThread = bot.activeTaskId;
+    const sibling = await fetch(`${fixture.info.url}/api/bots/${bot.id}/tasks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Sibling thread" }),
+    });
+    expect(sibling.status, await sibling.clone().text()).toBe(201);
+    const siblingThread = ((await sibling.json()) as any).task.threadId as string;
+    expect(siblingThread).not.toBe(failedThread);
+
+    // The sibling gets a real provider session first, so its continuation exists
+    // before anything is recovered on the failed thread.
+    await control(["send", "--bot", bot.id, "--task", siblingThread, "--text", "Answer in the sibling thread"]);
+    expect((await control(["wait", "--bot", bot.id, "--task", siblingThread, "--timeout", "30"])).status).toBe("settled");
+    const siblingBefore = storedTasks(bot.id).get(siblingThread);
+    expect(Object.keys(siblingBefore.resumeCursors).length).toBeGreaterThan(0);
+    expect(siblingBefore.lastInstanceId).toBeDefined();
+    const siblingMessagesBefore = await control(["messages", "--bot", bot.id, "--task", siblingThread, "--limit", "20"]);
+
+    // The folder is pinned at the bot level, so the unpinned task inherits it
+    // for its next turn — the same path a real user's missing folder takes.
+    const pinned = await fetch(`${fixture.info.url}/api/bots/${bot.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cwd: missingCwd }),
+    });
+    expect(pinned.ok, await pinned.text()).toBe(true);
+    rmSync(missingCwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    await control(["send", "--bot", bot.id, "--task", failedThread, "--text", "Run the fixture check"]);
+    const failedWait = await control(["wait", "--bot", bot.id, "--task", failedThread, "--timeout", "30"]);
+    const failedMessages = await control(["messages", "--bot", bot.id, "--task", failedThread, "--limit", "20"]);
+    const failedUser = failedMessages.messages.find((message: any) => message.role === "user");
+    const failedError = failedMessages.messages.find((message: any) =>
+      message.role === "bot" && message.kind === "activity" && message.tool?.ok === false);
+    expect(failedWait.status).toBe("failed");
+    expect(failedUser).toBeDefined();
+    expect(failedError?.tool.name).toBe(`error: the working folder no longer exists: ${missingCwd}`);
+
+    const restart = await fetch(`${fixture.info.url}/api/bots/${bot.id}/tasks/${failedThread}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        restartAtCwd: replacementCwd,
+        expectedErrorMessageId: failedError.id,
+        expectedUserMessageId: failedUser.id,
+      }),
+    });
+    expect(restart.status, await restart.clone().text()).toBe(200);
+    const body = await restart.json() as any;
+    // The pinned task is the one that changed, and the bot keeps whichever
+    // thread it had selected — recovery does not move the user.
+    expect(body.bot.tasks.find((task: any) => task.threadId === failedThread).cwd).toBe(replacementCwd);
+    expect(body.bot.tasks.find((task: any) => task.threadId === siblingThread).cwd).toBe(siblingBefore.cwd);
+
+    const after = storedTasks(bot.id);
+    const failedAfter = after.get(failedThread);
+    const siblingAfter = after.get(siblingThread);
+    expect(failedAfter.cwd).toBe(replacementCwd);
+    expect(failedAfter.resumeCursors).toEqual({});
+    expect(failedAfter.lastInstanceId).toBeUndefined();
+    // The sibling thread's provider work is untouched: same cursors, same
+    // instance, same handed messages, same folder.
+    expect(siblingAfter.cwd).toBe(siblingBefore.cwd);
+    expect(siblingAfter.resumeCursors).toEqual(siblingBefore.resumeCursors);
+    expect(siblingAfter.lastInstanceId).toBe(siblingBefore.lastInstanceId);
+    expect(siblingAfter.handedMessages).toEqual(siblingBefore.handedMessages);
+    const siblingMessagesAfter = await control(["messages", "--bot", bot.id, "--task", siblingThread, "--limit", "20"]);
+    expect(siblingMessagesAfter.messages).toEqual(siblingMessagesBefore.messages);
+
+    // The failed thread keeps every row, including the error the recovery acts on.
+    const failedMessagesAfter = await control(["messages", "--bot", bot.id, "--task", failedThread, "--limit", "20"]);
+    for (const message of failedMessages.messages) {
+      expect(failedMessagesAfter.messages.some((candidate: any) => candidate.id === message.id)).toBe(true);
+    }
+  } finally {
+    try {
+      await fixture.close();
+    } finally {
+      for (const cwd of [missingCwd, replacementCwd]) {
+        rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      }
+    }
+  }
+}, 120_000);
