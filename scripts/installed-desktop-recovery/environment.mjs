@@ -79,18 +79,52 @@ export function createFixtureEnvironment(runnerTemp, label = "omb-installed-reco
     ...directories,
     stopped: [],
     /** Register teardown in reverse order, so the app dies before the display it
-     * draws on and the display dies before the bus it registered with. */
-    own(restore) {
-      this.stopped.push(restore);
+     * draws on and the display dies before the bus it registered with.
+     *
+     * `label` names the obligation for the run's cleanup evidence. */
+    own(restore, label = "an owned fixture resource") {
+      this.stopped.push({ label, restore });
     },
+    /** Run every registered teardown, then report.
+     *
+     * Every callback is attempted even after an earlier one failed, and the
+     * failures are thrown together: an obligation this fixture could not meet is
+     * a failed run, not a warning, because the leftover is still there after the
+     * run reports success.
+     *
+     * The root is removed only when the teardown finished. A failed callback
+     * keeps it — the caller could not have known in advance, and the evidence
+     * naming what was left behind is the only record of it. */
     async stop({ keep = false } = {}) {
-      for (const restore of this.stopped.reverse()) {
-        try { await restore(); } catch (error) {
-          console.error(`[desktop-recovery] WARNING owned fixture cleanup failed: ${error?.message ?? error}`);
+      const failures = [];
+      for (const { label, restore } of this.stopped.splice(0).reverse()) {
+        try {
+          await restore();
+        } catch (error) {
+          const detail = error?.message ?? String(error);
+          console.error(`[desktop-recovery] owned fixture cleanup failed (${label}): ${detail}`);
+          failures.push({ obligation: label, detail, stack: error?.stack ?? null });
         }
       }
-      this.stopped.length = 0;
-      if (!keep) rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      if (!keep && failures.length === 0) {
+        try {
+          rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+        } catch (error) {
+          const detail = error?.message ?? String(error);
+          console.error(`[desktop-recovery] owned fixture cleanup failed (the fixture root): ${detail}`);
+          failures.push({ obligation: "the fixture root is removed", detail, stack: error?.stack ?? null });
+        }
+      }
+      if (failures.length) {
+        const error = new Error(
+          `${failures.length} owned fixture cleanup obligation(s) failed: ${failures.map((one) => `${one.obligation}: ${one.detail}`).join("; ")}`,
+        );
+        error.cleanupFailures = failures;
+        // Named so a caller that has finished reading the evidence can still take
+        // the root away, rather than being left a fixture nobody can remove.
+        error.rootKept = root;
+        throw error;
+      }
     },
   };
 }
@@ -132,6 +166,61 @@ export function fixtureBaseEnv(fixture, { display, dbusAddress, windowManager } 
   return env;
 }
 
+/** dpkg's answer about a package, as a status abbreviation or `null`.
+ *
+ * `query` runs the query and behaves like `execFileSync`: it returns stdout, or
+ * throws carrying `status`, `stdout` and `stderr`. It is a parameter so the
+ * caller decides what runs it — the journey queries through sudo, a regression
+ * queries its own executable — without this function knowing about either.
+ *
+ * `null` means dpkg named the package as not installed. Exit status 1 and that
+ * diagnostic together are the only route to it: a missing query, a locked
+ * database, an unrelated failure and silence all throw, because a check nobody
+ * could complete has not found anything gone. */
+export function readPackageStatus(query, packageName = "crewbot") {
+  let stdout;
+  let failed = false;
+  let failure;
+  try {
+    stdout = query(["-W", "-f=${db:Status-Abbrev}", packageName]);
+  } catch (error) {
+    failed = true;
+    failure = error;
+    stdout = error?.stdout ?? "";
+  }
+  const status = String(stdout).trim();
+  if (failed) {
+    const diagnostic = `${failure?.stderr ?? ""} ${failure?.message ?? String(failure)}`;
+    if (failure?.status === 1 && new RegExp(`(?:no packages found matching|is not installed)[^\\n]*${packageName}|${packageName}[^\\n]*(?:no packages found matching|is not installed)`, "i").test(diagnostic)) {
+      return null;
+    }
+    throw new Error(`dpkg could not report whether ${packageName} is installed: ${diagnostic.trim() || `exit ${failure?.status}`}`);
+  }
+  if (!status) {
+    throw new Error(`dpkg reported whether ${packageName} is installed with no status and no complaint`);
+  }
+  return status;
+}
+
+/** Whether dpkg's answer proves nothing of a package is left installed.
+ *
+ * `${db:Status-Abbrev}` is wanted/actual/errors. Only `n` in the actual column
+ * means not installed, so `iU` (unpacked), `iF` (half-configured), `iR` (reinstall
+ * required) and `uc`/`rc` (uninstalled but keeping configuration) all fail. */
+export function packageAbsent(status) {
+  if (status === null) return true;
+  const [, actual] = status.replace(/\s+/g, "");
+  return actual === "n";
+}
+
+/** Whether a run must leave its fixture root on disk.
+ *
+ * A run with unmet cleanup obligations keeps it: the evidence naming what was
+ * left behind is the only record of it. Cleanup still runs either way. */
+export function keepFixtureRoot({ requested, unmetObligations }) {
+  return requested || unmetObligations > 0;
+}
+
 /** This fixture's own X server.
  *
  * The workflow starts the job with no `DISPLAY` at all, so there is no runner
@@ -169,10 +258,10 @@ export async function startOwnedDisplay(fixture) {
         pid: child.pid,
         socket,
         async stop() {
-          await terminate(child, socket);
+          await terminate(child, socket, `the owned Xvfb on :${number}`);
         },
       };
-      fixture.own(() => owned.stop());
+      fixture.own(() => owned.stop(), `the owned Xvfb on :${number}`);
       return owned;
     }
     try { child.kill("SIGKILL"); } catch { /* already gone */ }
@@ -224,10 +313,10 @@ export function startOwnedSessionBus(fixture) {
     pid: child.pid,
     socket,
     stop() {
-      return terminate(child, socket);
+      return terminate(child, socket, "the owned dbus-daemon");
     },
   };
-  fixture.own(() => owned.stop());
+  fixture.own(() => owned.stop(), "the owned dbus-daemon");
   return owned;
 }
 
@@ -268,28 +357,59 @@ export async function startOwnedWindowManager(fixture, display) {
     name: binary,
     pid: child.pid,
     stop() {
-      return terminate(child);
+      return terminate(child, undefined, `the owned ${binary}`);
     },
   };
-  fixture.own(() => owned.stop());
+  fixture.own(() => owned.stop(), `the owned ${binary}`);
   return owned;
 }
 
-/** Bounded teardown for the display: ask, then insist, then report the socket
- * still standing rather than leaving another run's display behind. */
-async function terminate(child, socket) {
-  const gone = () => (child.exitCode !== null || child.signalCode !== null) && (!socket || !existsSync(socket));
-  if (gone()) return;
+/** Whether an owned pid still names a live process.
+ *
+ * `exitCode` alone cannot answer that: a killed child can be reaped while its
+ * close event is still pending, and one that ignored SIGKILL never reports an
+ * exit. A reused pid can only delay the report by the bounded deadline. */
+export function ownedProcessAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM means the pid exists but belongs to somebody else, which is still
+    // "something is running under that pid".
+    return error?.code === "EPERM";
+  }
+}
+
+/** Bounded teardown for one owned process: ask, then insist, then report.
+ *
+ * The process must be gone, not merely unobserved. A socket is checked too,
+ * because a dead server can leave the path behind for a later run to reuse. */
+export async function terminate(child, socket, label = "owned process", { graceMs = 8_000, killMs = 5_000 } = {}) {
+  const exited = () => child.exitCode !== null || child.signalCode !== null;
+  const gone = () => exited() || !ownedProcessAlive(child.pid);
+  const settled = () => gone() && (!socket || !existsSync(socket));
+  if (settled()) return;
   try { child.kill("SIGTERM"); } catch { /* already gone */ }
-  const deadline = Date.now() + 8_000;
+  const deadline = Date.now() + graceMs;
   while (Date.now() < deadline) {
-    if (gone()) return;
+    if (settled()) return;
     await delay(100);
   }
   try { child.kill("SIGKILL"); } catch { /* already gone */ }
-  await delay(300);
-  if (socket && existsSync(socket)) {
-    throw new Error(`Xvfb left its socket behind after SIGKILL: ${socket}`);
+  // SIGKILL is not observable: the pid can survive a moment while the signal is
+  // delivered, and the exit event can lag the reap. Give it a bounded window
+  // and then decide.
+  const killDeadline = Date.now() + killMs;
+  while (Date.now() < killDeadline) {
+    if (settled()) return;
+    await delay(100);
+  }
+  const problems = [];
+  if (!gone()) problems.push(`pid ${child.pid} is still running`);
+  if (socket && existsSync(socket)) problems.push(`socket ${socket} is still present`);
+  if (problems.length) {
+    throw new Error(`${label} survived SIGKILL: ${problems.join(", ")}`);
   }
 }
 
@@ -300,8 +420,22 @@ async function terminate(child, socket) {
  * every log line here belongs to this run. Anything outside the fixture root is
  * refused rather than copied: a fixture that reaches further than it owns would
  * be reading somebody else's machine.
+ *
+ * A failure is returned rather than thrown: this runs during teardown, and
+ * throwing would skip the package removal and the display, bus and window
+ * manager teardowns that follow it.
  */
 export function collectFixtureLogs(fixture, evidenceDir) {
+  try {
+    return { saved: copyFixtureLogs(fixture, evidenceDir), failure: null };
+  } catch (error) {
+    const detail = error?.message ?? String(error);
+    console.error(`[desktop-recovery] owned fixture cleanup failed (its logs are collected): ${detail}`);
+    return { saved: [], failure: { obligation: "the fixture logs are collected", detail, stack: error?.stack ?? null } };
+  }
+}
+
+function copyFixtureLogs(fixture, evidenceDir) {
   const copied = [];
   const walk = (directory, depth = 0) => {
     if (depth > 6) return;

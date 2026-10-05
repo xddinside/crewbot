@@ -50,8 +50,6 @@ const ATTACHMENT_BYTES = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
   "base64",
 );
-const CANDIDATE_ARTIFACT_ID = "11215642565";
-const CANDIDATE_RUN = "36982252699";
 const OLD_PACKAGE_SHA256 = "c34b4d95c26b6edb4992ec6766ebfa9e47b0a740d172ea8aec5df1d14968d017";
 
 const evidence = { steps: [], assertions: [], cleanup: null, environment: null, legacyUnit: null, inputs: null };
@@ -848,8 +846,7 @@ async function main() {
 
   evidence.inputs = {
     sourceSha: process.env.OMB_FIXTURE_SOURCE_SHA ?? "unset",
-    candidateArtifactId: CANDIDATE_ARTIFACT_ID,
-    candidateRun: CANDIDATE_RUN,
+    candidateBuild: "standalone production server from the fixture checkout",
     oldPackage: verifyOldPackageDigest(),
   };
   record("recorded the exact inputs", evidence.inputs);

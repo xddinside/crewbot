@@ -1,16 +1,16 @@
 // Pinned package inputs for the installed desktop recovery fixture.
 //
 // The candidate artifact is the same six files the release validator accepts,
-// produced by one already-finished packaging run of the pinned source SHA. Every
-// file is held to a pinned digest and byte count before anything is installed:
-// a repacked or repinned artifact fails closed rather than proving something
-// about bytes nobody can name.
+// built by this run's packaging job from the exact commit under review and
+// described by that job's own handover record. Every file is held to the
+// record's size and SHA-256 before anything is installed: a repacked artifact
+// fails closed rather than proving something about bytes nobody can name.
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { verifyLinuxReleaseAssets } from "../verify-linux-release-assets.mjs";
+import { parseCandidateManifest, verifyCandidateHandover } from "../linux-candidate-manifest.mjs";
 
 export const CANDIDATE_PACKAGE = {
   name: "crewbot",
@@ -43,40 +43,43 @@ export function assertPinnedFile(path, pinned, label = path) {
 /**
  * Verify the candidate artifact this fixture is about to install.
  *
- * The shared release validator runs first, so the six files are the supported
- * set with a self-consistent `latest-linux.yml`; then the pinned manifest holds
- * each of them to the reviewed bytes. A run id or an artifact name proves
- * nothing on its own, so the manifest is the contract.
+ * The handover record is read first and has to carry its producer provenance,
+ * the schema it claims, and the source SHA this run was pinned to — a record
+ * that does not is refused rather than partially believed. Then the shared
+ * check runs the release validator on the six files and holds each of them to
+ * the record's size and digest. The record is never rebuilt from the download:
+ * one derived from the bytes it vouches for would agree with a repack by
+ * construction.
  *
  * @param options.candidateDir - The directory holding exactly the six files.
- * @param options.manifestPath - The pinned manifest JSON.
+ * @param options.manifestPath - The producer's handover record JSON.
  * @param options.expectedSha - The candidate source SHA this fixture claims.
  */
 export function verifyCandidateArtifact({ candidateDir, manifestPath, expectedSha }) {
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  if (manifest.sha !== expectedSha) {
-    throw new Error(`candidate manifest is for ${manifest.sha}, not the claimed ${expectedSha}`);
+  const record = parseCandidateManifest(readFileSync(manifestPath, "utf8"));
+  if (record.sha !== expectedSha) {
+    throw new Error(`candidate manifest is for ${record.sha}, not the claimed ${expectedSha}`);
   }
   const version = JSON.parse(readFileSync(join(repoRoot(), "package.json"), "utf8")).version;
+  let files;
   try {
-    verifyLinuxReleaseAssets(resolve(candidateDir), version);
+    ({ files } = verifyCandidateHandover({
+      manifest: record,
+      assets: candidateDir,
+      version,
+      sourceSha: expectedSha,
+    }));
   } catch (error) {
-    // The candidate artifact is pinned by SHA-256, so the usual cause of this
-    // failure is a checkout whose package.json has moved past the artifact.
-    // Say so rather than leaving a digest-shaped complaint to be misread.
+    // The candidate artifact is held to this checkout's source, so the usual
+    // cause of this failure is a checkout whose package.json has moved past the
+    // artifact. Say so rather than leaving a digest-shaped complaint to be
+    // misread.
     throw new Error(
-      `${error?.message ?? error} (this checkout declares version ${version}; the pinned candidate ` +
-      `artifact ${manifest.artifactName} was built from ${manifest.sha})`,
+      `${error?.message ?? error} (this checkout declares version ${version}; the candidate ` +
+      `artifact ${record.artifactName} was built from ${record.sha})`,
     );
   }
-  const pinned = new Map(manifest.files.map((file) => [file.name, file]));
-  const onDisk = readdirSync(resolve(candidateDir)).sort();
-  const expected = [...pinned.keys()].sort();
-  if (onDisk.join(",") !== expected.join(",")) {
-    throw new Error(`candidate artifact contents differ: found ${onDisk.join(", ") || "(empty)"}`);
-  }
-  const files = expected.map((name) => assertPinnedFile(join(resolve(candidateDir), name), pinned.get(name), `candidate ${name}`));
-  return { ...manifest, version, files };
+  return { ...record, version, files };
 }
 
 /** The candidate `.deb` inside a verified artifact. Both the versioned and the

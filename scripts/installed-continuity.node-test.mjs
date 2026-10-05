@@ -92,9 +92,9 @@ describe("pinned package inputs", () => {
     const manifest = { version: "0.1.84", files: [{ name: "crewbot-amd64.deb", bytes: 3, sha256: pinnedDigest(Buffer.from("abc")) }] };
     // The shared release validator runs first, so a one-file directory fails
     // before the per-file comparison is even reached.
-    assert.throws(() => verifyCandidateArtifact(directory, manifest), /release asset/i);
+    assert.throws(() => verifyCandidateArtifact(directory, manifest, "1".repeat(40)), /release asset/i);
     writeFileSync(join(directory, "crewbot-amd64.deb"), "abc");
-    assert.throws(() => verifyCandidateArtifact(directory, manifest), /release asset/i);
+    assert.throws(() => verifyCandidateArtifact(directory, manifest, "1".repeat(40)), /release asset/i);
   });
 
   it("refuses to run with a display, session bus or keyring it does not own", () => {

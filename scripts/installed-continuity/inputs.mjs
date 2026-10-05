@@ -2,17 +2,19 @@
 //
 // The old side is a genuine released predecessor build, downloaded inside the
 // disposable runner and verified against the digest recorded when it was first
-// fetched. The new side is the candidate six-file artifact produced by the
-// exact-source packaging run, verified with the same fail-closed rule.
+// fetched. The new side is the candidate six-file artifact this run's packaging
+// job built from the exact commit under review, described by that job's own
+// handover record.
 //
 // Nothing here is fetched from the developer's machine and nothing is trusted
 // because a file merely exists: every comparison is against a pinned digest,
 // and a mismatch throws before a package is installed.
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { verifyLinuxReleaseAssets } from "../verify-linux-release-assets.mjs";
+import { verifyCandidateHandover } from "../linux-candidate-manifest.mjs";
 
 /** The released predecessor. Its package name differs from the candidate's, so
  * both are installed on the runner: the old app must produce the state that
@@ -77,19 +79,36 @@ export function assertPinnedFile(path, { sha256, bytes }, label = path) {
   return { path, bytes: stat.size, sha256: digest };
 }
 
-/** The candidate artifact is the same six files the release validator accepts.
- * Run the shared validator first, then hold every file to the pinned manifest
- * so a differently-built artifact cannot pass as the reviewed candidate. */
-export function verifyCandidateArtifact(directory, manifest) {
-  const root = resolve(directory);
-  verifyLinuxReleaseAssets(root, manifest.version);
-  const files = new Map(manifest.files.map((file) => [file.name, file]));
-  const onDisk = readdirSync(root).sort();
-  const expected = [...files.keys()].sort();
-  if (onDisk.join(",") !== expected.join(",")) {
-    throw new Error(`candidate artifact contents differ: found ${onDisk.join(", ") || "(empty)"}`);
+/**
+ * The candidate artifact is the same six files the release validator accepts,
+ * and this run's packaging job described them in its own handover record. The
+ * shared check runs the release validator first, then holds every file to that
+ * record, so a repacked or repinned artifact fails closed.
+ *
+ * `expectedSha` is the commit this run is pinned to. It is required, and this
+ * checkout's own `package.json` is a second independent witness that both the
+ * record and the caller name the version actually under test.
+ *
+ * @param {string} directory - The directory holding exactly the six files.
+ * @param {object} manifest - The producer's handover record.
+ * @param {string} expectedSha - The build source SHA this run claims.
+ * @returns {object[]} Each candidate file's verified path, size and digest.
+ */
+export function verifyCandidateArtifact(directory, manifest, expectedSha) {
+  const { record, files } = verifyCandidateHandover({
+    manifest,
+    assets: directory,
+    version: manifest?.version,
+    sourceSha: expectedSha,
+  });
+  const checkoutVersion = JSON.parse(readFileSync(join(repoRoot(), "package.json"), "utf8")).version;
+  if (record.version !== checkoutVersion) {
+    throw new Error(
+      `the candidate describes version ${record.version}, but this checkout declares ${checkoutVersion}; ` +
+      "the two must be the same source for the proof to mean anything",
+    );
   }
-  return expected.map((name) => assertPinnedFile(join(root, name), files.get(name), `candidate ${name}`));
+  return files;
 }
 
 /** Refuse to run inside a session this fixture does not own. Empty values are
@@ -103,4 +122,8 @@ export function assertIsolatedSessionEnv(env) {
     );
   }
   return leaked;
+}
+
+function repoRoot() {
+  return fileURLToPath(new URL("../../", import.meta.url));
 }

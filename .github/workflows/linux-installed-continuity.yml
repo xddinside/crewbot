@@ -2,40 +2,45 @@ name: Linux installed continuity
 
 # The installed old-to-new upgrade cannot be proven anywhere else: it needs
 # `dpkg`, a synthetic X server, an owned DBus session and an owned unlocked
-# keyring, and it mutates real packages. `pull_request` is the trigger that lets
-# this proof run before the workflow file reaches the default branch; a
-# workflow_dispatch-only file could never do that.
+# keyring, and it mutates real packages.
+#
+# This file is the consumer half of `Linux installed acceptance`, which builds
+# the candidate in this same run and hands over both the six package files and
+# the packaging run's handover record. That wrapper carries the `pull_request`
+# trigger, so this proof still runs before these files reach the default branch,
+# and it no longer depends on a packaging run from another run — or on that
+# run's artifact outliving its expiry date.
 on:
-  workflow_dispatch:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_call:
+    inputs:
+      candidate-source-sha:
+        description: "Commit this checkout is pinned to, and the candidate must have been built from"
+        required: true
+        type: string
+      candidate-version:
+        description: "Release version the producer published for those files"
+        required: true
+        type: string
+      candidate-artifact:
+        description: "Same-run artifact holding the six candidate files"
+        required: true
+        type: string
+      candidate-manifest-artifact:
+        description: "Same-run artifact holding the producer's handover record for those files"
+        required: true
+        type: string
 
 permissions:
   contents: read
-  # The candidate package comes from one already-finished packaging run in this
-  # repository rather than a second packaging job, so the fixture is provable
-  # against exact reviewed bytes at low cost.
-  actions: read
-
-concurrency:
-  group: linux-installed-continuity-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # The genuine released predecessor, verified against the digest recorded when
   # it was first fetched. The fixture re-verifies it after download and fails
   # closed; these are the expected values, not a substitute for that check.
+  # This one download stays: it is a published release, not a build output.
   OLD_PACKAGE_URL: https://github.com/milind-soni/OpenMausBot/releases/download/v0.1.83/OpenMausBot-0.1.83-amd64.deb
   OLD_PACKAGE_SHA256: c34b4d95c26b6edb4992ec6766ebfa9e47b0a740d172ea8aec5df1d14968d017
   OLD_PACKAGE_BYTES: "231300320"
-  # One artifact handover, reused rather than a second packaging system. Both
-  # values point at run 36982252699, whose source SHA is the pinned candidate.
-  CANDIDATE_RUN_ID: "36982252699"
-  CANDIDATE_ARTIFACT: crewbot-ubuntu-0.1.84-x64
-  # A run id proves nothing by itself. The fixture also holds every candidate
-  # file to this SHA-256, so a repacked or repinned artifact fails closed.
-  CANDIDATE_SOURCE_SHA: 7fb1e45327d7e204cdcec681d96012f851976e13
 
 jobs:
   installed-continuity:
@@ -107,53 +112,46 @@ jobs:
           echo "${OLD_PACKAGE_SHA256}  OpenMausBot-0.1.83-amd64.deb" | sha256sum -c -
           test "$(stat -c '%s' OpenMausBot-0.1.83-amd64.deb)" = "$OLD_PACKAGE_BYTES"
 
-      - name: Fetch the pinned candidate artifact
+      # Both artifacts come from this run's own packaging job. No run id is
+      # pinned, nothing is fetched from a finished run elsewhere, and no
+      # artifact has to stay reachable past its own retention to be provable.
+      - name: Fetch the candidate packages this run built
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.candidate-artifact }}
+          path: ${{ runner.temp }}/inputs/candidate
+
+      - name: Fetch the producer's handover record for those packages
+        # Uploaded separately, and to a directory of its own, because the
+        # candidate directory has to hold exactly the six supported files: a
+        # manifest written inside it would be a seventh, and the shared release
+        # validator rejects that.
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.candidate-manifest-artifact }}
+          path: ${{ runner.temp }}/inputs/handover
+
+      - name: Hold the candidate bytes to this checkout's source and the producer's record
+        # Three inputs, three directions: this checkout's own commit, the version
+        # the producer published, and the record the producer wrote about the
+        # files it uploaded. The record is never recomputed here — a manifest
+        # derived from the download would agree with a repack by construction.
         env:
-          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_ASSETS: ${{ runner.temp }}/inputs/candidate
+          CANDIDATE_RECORD: ${{ runner.temp }}/inputs/handover/candidate-manifest.json
+          CANDIDATE_VERSION: ${{ inputs.candidate-version }}
+          CANDIDATE_SOURCE_SHA: ${{ inputs.candidate-source-sha }}
         run: |
           set -euo pipefail
-          test "$GITHUB_SHA" = "$CANDIDATE_SOURCE_SHA" || \
-            echo "note: this run checks out $GITHUB_SHA; the candidate bytes come from the pinned packaging run and are digest-checked below"
-          mkdir -p "$RUNNER_TEMP/inputs/candidate"
-          gh run download "$CANDIDATE_RUN_ID" -R xddinside/crewbot \
-            --name "$CANDIDATE_ARTIFACT" --dir "$RUNNER_TEMP/inputs/candidate"
-          # The artifact may carry one directory level. Flatten it so the driver
-          # sees exactly the six supported files and nothing else.
-          if [ ! -f "$RUNNER_TEMP/inputs/candidate/SHA256SUMS-ubuntu-x64.txt" ]; then
-            inner="$(dirname "$(find "$RUNNER_TEMP/inputs/candidate" -maxdepth 3 -name SHA256SUMS-ubuntu-x64.txt -print -quit)")"
-            test -n "$inner"
-            mv "$inner"/* "$RUNNER_TEMP/inputs/candidate/"
-          fi
-          ls -1 "$RUNNER_TEMP/inputs/candidate"
-
-      - name: Write the pinned candidate manifest
-        # Inlined rather than fetched: the handover values are the contract, and
-        # this keeps the run independent of any scratch path on any branch.
-        run: |
-          cat > "$RUNNER_TEMP/inputs/candidate-hashes.json" <<'JSON'
-          {
-            "sha": "7fb1e45327d7e204cdcec681d96012f851976e13",
-            "tree": "ea869419a454c6e01e38e64662de245c6653505a",
-            "run": 36982252699,
-            "artifactId": 11215642565,
-            "artifactName": "crewbot-ubuntu-0.1.84-x64",
-            "apiArtifactDigest": "sha256:6a3384753c37b5a7eab3d717b48763c7eb9f69b540c61b3b9689d5ae2582ae8f",
-            "files": [
-              { "name": "SHA256SUMS-ubuntu-x64.txt", "bytes": 355, "sha256": "f0fc1baca3729d169ea1b4acd83cfaeb6ba749ce26147806735488f5baafb84c" },
-              { "name": "crewbot-0.1.84-amd64.deb", "bytes": 231693316, "sha256": "65552b3c0b3da81efa394025155cbcab7286f082a8c5bf43671b1df43e08e410" },
-              { "name": "crewbot-0.1.84-x86_64.AppImage", "bytes": 273351218, "sha256": "fa597b4bd8b57b710b1f3cb47b42b4202c8522caf0547abe4b333d7a6c23d432" },
-              { "name": "crewbot-amd64.deb", "bytes": 231693316, "sha256": "65552b3c0b3da81efa394025155cbcab7286f082a8c5bf43671b1df43e08e410" },
-              { "name": "crewbot.AppImage", "bytes": 273351218, "sha256": "fa597b4bd8b57b710b1f3cb47b42b4202c8522caf0547abe4b333d7a6c23d432" },
-              { "name": "latest-linux.yml", "bytes": 538, "sha256": "c2a49f8db8da943268165c6e357d88f6e0ec9e3dc3364013065a8f5d0c1abf7c" }
-            ]
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SOURCE_SHA" || {
+            echo "::error::this checkout is $(git rev-parse HEAD), not the reviewed $CANDIDATE_SOURCE_SHA"
+            exit 1
           }
-          JSON
-          node -e '
-            const fs = require("node:fs");
-            const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-            if (manifest.sha !== process.argv[2]) throw new Error(`manifest ${manifest.sha} is not the pinned ${process.argv[2]}`);
-            console.log(`[continuity] pinned manifest for ${manifest.sha}, artifact ${manifest.artifactId} of run ${manifest.run}`);
-          ' "$RUNNER_TEMP/inputs/candidate-hashes.json" "$CANDIDATE_SOURCE_SHA"
+          node scripts/linux-candidate-manifest.mjs check \
+            --assets "$CANDIDATE_ASSETS" \
+            --manifest "$CANDIDATE_RECORD" \
+            --version "$CANDIDATE_VERSION" \
+            --source-sha "$CANDIDATE_SOURCE_SHA"
 
       - name: Prove private keyring startup and installed-app exit regressions
         env:
@@ -164,8 +162,8 @@ jobs:
         env:
           OMB_CONTINUITY_OLD_DEB: ${{ runner.temp }}/inputs/OpenMausBot-0.1.83-amd64.deb
           OMB_CONTINUITY_CANDIDATE_DIR: ${{ runner.temp }}/inputs/candidate
-          OMB_CONTINUITY_CANDIDATE_MANIFEST: ${{ runner.temp }}/inputs/candidate-hashes.json
-          OMB_CONTINUITY_CANDIDATE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
+          OMB_CONTINUITY_CANDIDATE_MANIFEST: ${{ runner.temp }}/inputs/handover/candidate-manifest.json
+          OMB_CONTINUITY_CANDIDATE_SHA: ${{ inputs.candidate-source-sha }}
           OMB_KEEP_CONTINUITY_FIXTURE: "1"
         run: node scripts/verify-linux-installed-continuity.mjs
 
@@ -180,7 +178,7 @@ jobs:
             ${{ runner.temp }}/omb-installed-continuity-*/logs/
             ${{ runner.temp }}/omb-installed-continuity-*/home/.crewbot/.crewbot-migration/
             ${{ runner.temp }}/omb-installed-continuity-*/home/.crewbot/attachments/
-            ${{ runner.temp }}/inputs/candidate-hashes.json
+            ${{ runner.temp }}/inputs/handover/candidate-manifest.json
           if-no-files-found: warn
           include-hidden-files: true
           retention-days: 14

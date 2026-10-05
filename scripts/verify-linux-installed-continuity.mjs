@@ -235,17 +235,17 @@ async function main() {
   }
   const candidateVersionFromArtifact = /crewbot-ubuntu-(\d+\.\d+\.\d+)-x\d+$/.exec(manifest.artifactName ?? "")?.[1];
   if (!candidateVersionFromArtifact) throw new Error(`the pinned artifact name does not carry a version: ${manifest.artifactName}`);
-  const candidateFiles = verifyCandidateArtifact(candidateDir, { ...manifest, version: candidateVersionFromArtifact });
+  const candidateFiles = verifyCandidateArtifact(candidateDir, { ...manifest, version: candidateVersionFromArtifact }, process.env.OMB_CONTINUITY_CANDIDATE_SHA);
   const candidateDeb = candidateFiles.find((file) => basename(file.path) === `crewbot-${candidateVersionFromArtifact}-amd64.deb`);
   if (!candidateDeb) throw new Error(`the candidate artifact has no crewbot-${manifest.version}-amd64.deb`);
   evidence.inputs = {
     old: { ...oldDigest, source: OLD_PACKAGE.url },
     candidate: {
       sourceSha: manifest.sha,
-      run: manifest.run,
-      artifactId: manifest.artifactId,
+      version: manifest.version,
+      producer: manifest.producer,
       deb: basename(candidateDeb.path),
-      files: candidateFiles.map((file) => basename(file.path)),
+      files: candidateFiles.map(({ name, bytes, sha256 }) => ({ name, bytes, sha256 })),
     },
   };
   step("inputs", `old ${oldDigest.sha256.slice(0, 16)}… and candidate ${manifest.sha?.slice(0, 12) ?? "?"} verified`);

@@ -2,8 +2,10 @@
 
 Linux is the only supported platform during active development. Ubuntu 24.04 LTS x86_64 is the package and CI
 reference. Package checks run through the required [Linux CI gate](../CONTRIBUTING.md#ci-in-one-glance) and the
-manual [Linux package workflow](../.github/workflows/package-linux.yml). Linux installed continuity and recovery
-acceptance remains pending. The Electron package embeds the harness server, so installed builds do not require Node,
+[Linux package workflow](../.github/workflows/package-linux.yml), which is dispatched by hand for a release candidate
+and called by [Linux installed acceptance](../CONTRIBUTING.md#installed-acceptance-candidate-handoff) to build the
+candidate its two installed jobs prove on Ubuntu 24.04 x86_64 X11. Linux installed continuity and recovery acceptance
+remains pending. The Electron package embeds the harness server, so installed builds do not require Node,
 pnpm, or a terminal at runtime. See the [platform support guide](platform-support.md) for scope and limits. For a bot's
 Linux desktop on your own server, see [byo-vps.md](byo-vps.md).
 
@@ -33,7 +35,7 @@ CUA supply-chain work is tracked in [issue #113](https://github.com/xddinside/cr
 
 ## Linux package artifacts
 
-The manual [Linux package workflow](../.github/workflows/package-linux.yml) produces the
+The [Linux package workflow](../.github/workflows/package-linux.yml) produces the
 `crewbot-ubuntu-${version}-x64` artifact with `crewbot-${version}-amd64.deb`,
 `crewbot-${version}-x86_64.AppImage`, stable names `crewbot-amd64.deb` and `crewbot.AppImage`, and
 `SHA256SUMS-ubuntu-x64.txt`. The release updater feed is `latest-linux.yml`; it records versioned package names,

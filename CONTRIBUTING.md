@@ -67,7 +67,20 @@ For Ubuntu installation and real desktop checks, see [`docs/linux-desktop.md`](d
 
 ## Linux package workflow
 
-The manual `.github/workflows/package-linux.yml` workflow builds Ubuntu 24.04 x86_64 artifacts from an exact revision. Its `crewbot-ubuntu-${version}-x64` artifact contains `crewbot-${version}-amd64.deb`, `crewbot-${version}-x86_64.AppImage`, stable names `crewbot-amd64.deb` and `crewbot.AppImage`, a four-row `SHA256SUMS-ubuntu-x64.txt`, and `latest-linux.yml`. The update feed records versioned artifact names, SHA-512, and sizes. Verify the workflow's checksum report and installed-package evidence before publishing. Linux installed acceptance in [platform support](docs/platform-support.md) remains pending until its continuity, credentials, isolation, rollback, and recovery fixtures pass. Record pending proof as pending.
+The `.github/workflows/package-linux.yml` workflow builds Ubuntu 24.04 x86_64 artifacts from an exact revision, and it runs two ways. `workflow_dispatch` builds a release candidate by hand. `workflow_call` runs the same recipe for another workflow in the same run, which is how the installed acceptance jobs get their candidate. Either way it uploads a `crewbot-ubuntu-${version}-x64` artifact containing `crewbot-${version}-amd64.deb`, `crewbot-${version}-x86_64.AppImage`, stable names `crewbot-amd64.deb` and `crewbot.AppImage`, a four-row `SHA256SUMS-ubuntu-x64.txt`, and `latest-linux.yml`. The update feed records versioned artifact names, SHA-512, and sizes. Verify the workflow's checksum report and installed-package evidence before publishing. Linux installed acceptance in [platform support](docs/platform-support.md) remains pending until its continuity, credentials, isolation, rollback, and recovery fixtures pass. Record pending proof as pending.
+
+## Installed acceptance candidate handoff
+
+`Linux installed acceptance` (`.github/workflows/linux-installed-acceptance.yml`) is the entry point for both installed proofs on Ubuntu 24.04 x86_64 X11: installed old-to-new continuity, and installed native folder-picker recovery. It runs on `pull_request`, so the installed proof is available before any of this reaches the default branch.
+
+It calls `Package Ubuntu` once, at `github.sha`, and hands the result to both jobs:
+
+- The six release files, as a normal same-run artifact downloaded with `actions/download-artifact`.
+- The packaging run's own **handover record** — build source SHA, version, run and job, and each file's size and SHA-256 — as a *separate* artifact. It has to stay outside the six files, because the release validator only accepts exactly those six.
+
+The record is never rebuilt by a consumer. A manifest derived from the very download it vouches for agrees with a repack by construction, so each consumer instead compares three independent expectations: the source SHA of its own checkout, the version the producer published, and the bytes against the producer's record. `node scripts/linux-candidate-manifest.mjs check` performs that comparison, and the fixture repeats it before it installs anything. When a consumer runs inside Actions, the record must also name this run, which is what makes a handover from an older packaging run impossible rather than merely unlikely.
+
+Consequences worth keeping: no installed job depends on a packaging run from another run, so no artifact has to outlive its own retention deadline for the proof to remain available; nothing is published and no release credentials are involved; and `ci.yml`'s own package job is untouched, so the required `Linux CI gate` does not depend on any of this. Record the native coverage as Ubuntu 24.04 x86_64 X11 under an owned Xvfb and session bus only — it is not evidence for Wayland seats or any other distro or architecture.
 
 ## Repo map
 
@@ -257,7 +270,7 @@ out of its commits and screenshots.
 
 ## CI, in one glance
 
-Normal CI requires Linux jobs and reports one aggregate gate named `Linux CI gate`. The gate depends on static checks, four Ubuntu Vitest shards, packaged-server smoke, Electron smokes, FOSS checks, control-plane checks, UI smoke, and Linux package validation. A failed required job fails the gate. The ARM64 Cloudflare connector installer smoke checks that installer only; it does not establish ARM64 desktop support. Native Android, iOS, macOS, and Windows jobs are manual historical recipes; their proof is deferred and does not gate Linux delivery.
+Normal CI requires Linux jobs and reports one aggregate gate named `Linux CI gate`. The gate depends on static checks, four Ubuntu Vitest shards, packaged-server smoke, Electron smokes, FOSS checks, control-plane checks, UI smoke, and Linux package validation. A failed required job fails the gate. Separately, `Linux installed acceptance` builds one candidate package in its own run and hands it to the two installed jobs; it is not part of the aggregate gate and does not publish anything. The ARM64 Cloudflare connector installer smoke checks that installer only; it does not establish ARM64 desktop support. Native Android, iOS, macOS, and Windows jobs are manual historical recipes; their proof is deferred and does not gate Linux delivery.
 
 Read [platform support](docs/platform-support.md) for the Linux claims each job can establish and the installed-app acceptance that remains pending. The four shards are `pnpm exec vitest run --shard=1/4` through `4/4`. `pre-push` runs lint, typecheck, and locale checks when installed. For focused local checks, run `pnpm lint`, `pnpm typecheck`, and `pnpm i18n:check`. To wait for the pull request checks, use `gh pr checks <number> -R xddinside/crewbot --watch --interval 30`. Do not use helpers from another checkout.
 

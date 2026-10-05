@@ -2,34 +2,36 @@ name: Linux desktop recovery
 
 # The installed native folder picker cannot be proven anywhere else: it needs
 # `dpkg`, a synthetic X server, an owned DBus session, and the real GTK chooser
-# that only a real package under a real display can open. `pull_request` is the
-# trigger that lets this proof run before the workflow file reaches the default
-# branch; a workflow_dispatch-only file could never do that.
+# that only a real package under a real display can open.
+#
+# This file is the consumer half of `Linux installed acceptance`, which builds
+# the candidate in this same run and hands over both the six package files and
+# the packaging run's handover record. That wrapper carries the `pull_request`
+# trigger, so this proof still runs before these files reach the default branch,
+# and it no longer depends on a packaging run from another run — or on that
+# run's artifact outliving its expiry date.
 on:
-  workflow_dispatch:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_call:
+    inputs:
+      candidate-source-sha:
+        description: "Commit this checkout is pinned to, and the candidate must have been built from"
+        required: true
+        type: string
+      candidate-version:
+        description: "Release version the producer published for those files"
+        required: true
+        type: string
+      candidate-artifact:
+        description: "Same-run artifact holding the six candidate files"
+        required: true
+        type: string
+      candidate-manifest-artifact:
+        description: "Same-run artifact holding the producer's handover record for those files"
+        required: true
+        type: string
 
 permissions:
   contents: read
-  # The candidate package comes from one already-finished packaging run in this
-  # repository rather than a second packaging job, so the fixture is provable
-  # against exact reviewed bytes at low cost.
-  actions: read
-
-concurrency:
-  group: linux-desktop-recovery-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-env:
-  # One artifact handover, reused rather than a second packaging system. Both
-  # values point at run 36982252699, whose source SHA is the pinned candidate.
-  CANDIDATE_RUN_ID: "36982252699"
-  CANDIDATE_ARTIFACT: crewbot-ubuntu-0.1.84-x64
-  # A run id proves nothing by itself. The fixture also holds every candidate
-  # file to this SHA-256, so a repacked or repinned artifact fails closed.
-  CANDIDATE_SOURCE_SHA: 7fb1e45327d7e204cdcec681d96012f851976e13
 
 jobs:
   installed-desktop-recovery:
@@ -107,55 +109,53 @@ jobs:
           done
           echo "no inherited display, seat, bus or login session"
 
-      - name: Fetch the pinned candidate artifact
+      # Both artifacts come from this run's own packaging job. No run id is
+      # pinned, nothing is fetched from a finished run elsewhere, and no
+      # artifact has to stay reachable past its own retention to be provable.
+      - name: Fetch the candidate packages this run built
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.candidate-artifact }}
+          path: ${{ runner.temp }}/inputs/candidate
+
+      - name: Fetch the producer's handover record for those packages
+        # Uploaded separately, and to a directory of its own, because the
+        # candidate directory has to hold exactly the six supported files: a
+        # manifest written inside it would be a seventh, and the shared release
+        # validator rejects that.
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.candidate-manifest-artifact }}
+          path: ${{ runner.temp }}/inputs/handover
+
+      - name: Hold the candidate bytes to this checkout's source and the producer's record
+        # Three inputs, three directions: this checkout's own commit, the version
+        # the producer published, and the record the producer wrote about the
+        # files it uploaded. The record is never recomputed here — a manifest
+        # derived from the download would agree with a repack by construction.
         env:
-          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_ASSETS: ${{ runner.temp }}/inputs/candidate
+          CANDIDATE_RECORD: ${{ runner.temp }}/inputs/handover/candidate-manifest.json
+          CANDIDATE_VERSION: ${{ inputs.candidate-version }}
+          CANDIDATE_SOURCE_SHA: ${{ inputs.candidate-source-sha }}
         run: |
           set -euo pipefail
-          if [ "$GITHUB_SHA" != "$CANDIDATE_SOURCE_SHA" ]; then
-            echo "note: this run checks out $GITHUB_SHA; the candidate bytes come from the pinned packaging run and are held to their SHA-256 by the fixture"
-          fi
-          mkdir -p "$RUNNER_TEMP/inputs/candidate"
-          gh run download "$CANDIDATE_RUN_ID" -R xddinside/crewbot \
-            --name "$CANDIDATE_ARTIFACT" --dir "$RUNNER_TEMP/inputs/candidate"
-          # The artifact may carry one directory level. Flatten it so the fixture
-          # sees exactly the six supported files and nothing else.
-          if [ ! -f "$RUNNER_TEMP/inputs/candidate/SHA256SUMS-ubuntu-x64.txt" ]; then
-            inner="$(dirname "$(find "$RUNNER_TEMP/inputs/candidate" -maxdepth 3 -name SHA256SUMS-ubuntu-x64.txt -print -quit)")"
-            test -n "$inner"
-            mv "$inner"/* "$RUNNER_TEMP/inputs/candidate/"
-          fi
-          ls -1 "$RUNNER_TEMP/inputs/candidate"
-
-      - name: Write the pinned candidate manifest
-        # Inlined rather than fetched: the handover values are the contract, and
-        # this keeps the run independent of any scratch path on any branch.
-        run: |
-          cat > "$RUNNER_TEMP/inputs/candidate-hashes.json" <<'JSON'
-          {
-            "sha": "7fb1e45327d7e204cdcec681d96012f851976e13",
-            "tree": "ea869419a454c6e01e38e64662de245c6653505a",
-            "run": 36982252699,
-            "artifactId": 11215642565,
-            "artifactName": "crewbot-ubuntu-0.1.84-x64",
-            "apiArtifactDigest": "sha256:6a3384753c37b5a7eab3d717b48763c7eb9f69b540c61b3b9689d5ae2582ae8f",
-            "files": [
-              { "name": "SHA256SUMS-ubuntu-x64.txt", "bytes": 355, "sha256": "f0fc1baca3729d169ea1b4acd83cfaeb6ba749ce26147806735488f5baafb84c" },
-              { "name": "crewbot-0.1.84-amd64.deb", "bytes": 231693316, "sha256": "65552b3c0b3da81efa394025155cbcab7286f082a8c5bf43671b1df43e08e410" },
-              { "name": "crewbot-0.1.84-x86_64.AppImage", "bytes": 273351218, "sha256": "fa597b4bd8b57b710b1f3cb47b42b4202c8522caf0547abe4b333d7a6c23d432" },
-              { "name": "crewbot-amd64.deb", "bytes": 231693316, "sha256": "65552b3c0b3da81efa394025155cbcab7286f082a8c5bf43671b1df43e08e410" },
-              { "name": "crewbot.AppImage", "bytes": 273351218, "sha256": "fa597b4bd8b57b710b1f3cb47b42b4202c8522caf0547abe4b333d7a6c23d432" },
-              { "name": "latest-linux.yml", "bytes": 538, "sha256": "c2a49f8db8da943268165c6e357d88f6e0ec9e3dc3364013065a8f5d0c1abf7c" }
-            ]
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SOURCE_SHA" || {
+            echo "::error::this checkout is $(git rev-parse HEAD), not the reviewed $CANDIDATE_SOURCE_SHA"
+            exit 1
           }
-          JSON
+          node scripts/linux-candidate-manifest.mjs check \
+            --assets "$CANDIDATE_ASSETS" \
+            --manifest "$CANDIDATE_RECORD" \
+            --version "$CANDIDATE_VERSION" \
+            --source-sha "$CANDIDATE_SOURCE_SHA"
 
       - name: Drive the installed native folder picker
         timeout-minutes: 15
         env:
           OMB_RECOVERY_CANDIDATE_DIR: ${{ runner.temp }}/inputs/candidate
-          OMB_RECOVERY_CANDIDATE_MANIFEST: ${{ runner.temp }}/inputs/candidate-hashes.json
-          OMB_RECOVERY_CANDIDATE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
+          OMB_RECOVERY_CANDIDATE_MANIFEST: ${{ runner.temp }}/inputs/handover/candidate-manifest.json
+          OMB_RECOVERY_CANDIDATE_SHA: ${{ inputs.candidate-source-sha }}
           OMB_KEEP_RECOVERY_FIXTURE: "1"
         run: node scripts/verify-installed-desktop-recovery.mjs
 
@@ -169,7 +169,7 @@ jobs:
           path: |
             ${{ runner.temp }}/omb-installed-recovery-*/evidence.json
             ${{ runner.temp }}/omb-installed-recovery-*/evidence/
-            ${{ runner.temp }}/inputs/candidate-hashes.json
+            ${{ runner.temp }}/inputs/handover/candidate-manifest.json
           if-no-files-found: warn
           include-hidden-files: true
           retention-days: 14
@@ -191,16 +191,71 @@ jobs:
       - name: Remove the installed package and prove nothing of the fixture is left
         if: always()
         run: |
-          sudo dpkg --purge crewbot || true
+          # Purging a package dpkg never installed is the state this step exists
+          # to reach, so a refusal is not a failure. What is a failure is the
+          # package still being installed afterwards, which is checked below
+          # rather than inferred from the purge's exit code.
+          sudo dpkg --purge crewbot || echo "::notice::dpkg declined to purge crewbot; its absence is checked below"
           sudo rm -rf /opt/crewbot
           rm -rf "$RUNNER_TEMP"/omb-installed-recovery-*
+          problems=()
           # The fixture owns its display, bus, window manager, app process group
-          # and temp root. A leftover here would mean teardown skipped one, so it
-          # is reported rather than left silent.
+          # and temp root. A leftover here means teardown skipped one, and the
+          # run cannot claim otherwise, so survivors fail the job instead of
+          # being annotated and left behind.
           for pattern in 'Xvfb :9[1-9]' 'Xvfb :1[0-2][0-9]' openbox "dbus-daemon --session --fork" /opt/crewbot/crewbot; do
-            if pgrep -a -f "$pattern" | grep -v pgrep; then
-              echo "::warning::something the fixture owned survived teardown: $pattern"
+            survivors="$(pgrep -a -f "$pattern" 2>/dev/null | grep -v pgrep || true)"
+            if [ -n "$survivors" ]; then
+              problems+=("something the fixture owned survived teardown: $pattern")
+              echo "$survivors"
             fi
           done
+          # Absence is read back from dpkg rather than inferred from the purge's
+          # exit code. ${db:Status-Abbrev} is wanted/actual/errors, and only `n`
+          # in the second column means not installed: `iU` and `iF` are unpacked
+          # and half-configured, `iR` needs reinstalling, and `uc`/`rc` are
+          # uninstalled but still keep files. dpkg-query failing is absence only
+          # when dpkg says so in as many words; any other failure is a question
+          # this step could not answer, so it is reported rather than passed. A
+          # query that succeeds with nothing on stdout is silence, which is not a
+          # dpkg verdict either, so it is reported too.
+          package_absence_problem() {
+            local status queried
+            status="$(dpkg-query -W -f='${db:Status-Abbrev}\n' crewbot 2>&1)" && queried=true || queried=false
+            case "$status" in
+              *"no packages found matching"*|*"is not installed"*)
+                echo "the candidate package is not installed"
+                return 0
+                ;;
+            esac
+            if [ "$queried" != true ]; then
+              echo "dpkg could not report whether crewbot is installed: $status"
+              return 0
+            fi
+            status="$(printf '%s' "$status" | tr -d '[:space:]')"
+            if [ -z "$status" ]; then
+              echo "dpkg reported whether crewbot is installed with no status and no complaint"
+              return 0
+            fi
+            if [ "${#status}" -ge 2 ] && [ "${status:1:1}" = "n" ]; then
+              echo "the candidate package is not installed"
+              return 0
+            fi
+            echo "the candidate package is still present: ${status:-unknown status}"
+          }
+          package_absence="$(package_absence_problem)"
+          if printf '%s' "$package_absence" | grep -q '^the candidate package is not installed$'; then
+            echo "$package_absence"
+          else
+            problems+=("$package_absence")
+          fi
+          if [ -e /opt/crewbot ]; then
+            problems+=("/opt/crewbot is still present")
+          fi
           ls /tmp/.X11-unix 2>/dev/null || echo "no X sockets remain"
-          dpkg-query -W -f='${db:Status-Abbrev}\n' crewbot 2>/dev/null || echo "the candidate package is not installed"
+          if [ ${#problems[@]} -gt 0 ]; then
+            for problem in "${problems[@]}"; do
+              echo "::error::$problem"
+            done
+            exit 1
+          fi

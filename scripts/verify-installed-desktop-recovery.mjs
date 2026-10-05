@@ -37,6 +37,9 @@ import {
   collectFixtureLogs,
   createFixtureEnvironment,
   fixtureBaseEnv,
+  keepFixtureRoot,
+  packageAbsent,
+  readPackageStatus,
   startOwnedDisplay,
   startOwnedSessionBus,
   startOwnedWindowManager,
@@ -76,7 +79,7 @@ import {
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const fakeCli = join(repoRoot, "server", "testing", "fake-claude-cli.ts");
 const installedExecutable = "/opt/crewbot/crewbot";
-const evidence = { steps: [], observations: [], screenshots: [], windows: [], logs: [] };
+const evidence = { steps: [], observations: [], screenshots: [], windows: [], logs: [], cleanup: [] };
 const started = Date.now();
 
 const BOT_NAME = "Folder recovery fixture";
@@ -123,6 +126,16 @@ const delay = (ms) => new Promise((resolveDelay) => setTimeout(resolveDelay, ms)
 
 function asRoot(args) {
   return execFileSync("sudo", args, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+}
+
+/** Record one unmet cleanup obligation.
+ *
+ * Recorded rather than only printed because the run's verdict is read from the
+ * evidence file, not from the console. Cleanup keeps going afterwards. */
+function cleanupFailed(obligation, error) {
+  const detail = error?.message ?? error?.detail ?? String(error);
+  console.error(`[desktop-recovery] owned cleanup failed (${obligation}): ${detail}`);
+  evidence.cleanup.push({ obligation, detail, stack: error?.stack ?? null, at: new Date().toISOString() });
 }
 
 async function freePort() {
@@ -319,6 +332,12 @@ async function main() {
   if (!existsSync(fakeCli)) throw new Error(`the repository's fake engine is missing: ${fakeCli}`);
 
   const manifest = verifyCandidateArtifact({ candidateDir, manifestPath, expectedSha });
+  evidence.inputs = {
+    sourceSha: manifest.sha,
+    version: manifest.version,
+    producer: manifest.producer,
+    files: manifest.files.map(({ name, bytes, sha256 }) => ({ name, bytes, sha256 })),
+  };
   step("candidate artifact verified", `${manifest.files.length} files, source ${manifest.sha}`);
   const deb = candidateDeb(manifest.files).path;
   assertPinnedFile(deb, manifest.files.find((file) => file.path === deb));
@@ -327,6 +346,108 @@ async function main() {
   let installed = false;
   let app = null;
   let renderer = null;
+
+  /** Everything this run owns, undone, with nothing left undecided.
+   *
+   * Every obligation is attempted even after an earlier one failed, and each
+   * failure is recorded rather than thrown, so one problem cannot leave three
+   * owned processes and an installed package behind, nor skip the evidence. */
+  async function teardown() {
+    try {
+      renderer?.close();
+    } catch (error) {
+      cleanupFailed("the renderer is closed", error);
+    }
+    if (app) {
+      try {
+        await app.stop();
+      } catch (error) {
+        cleanupFailed("the installed app process group is stopped", error);
+      }
+    }
+    // A failure here must not skip the package removal or the display, bus and
+    // window manager teardowns below, which leave owned processes running.
+    const collected = collectFixtureLogs(fixture, fixture.evidence);
+    evidence.logs = collected.saved;
+    if (collected.failure) cleanupFailed(collected.failure.obligation, collected.failure);
+    if (installed) {
+      // dpkg refusing to purge a package it does not consider installed is the
+      // absence reached by another route, so the exit code is not the verdict.
+      let removed = false;
+      try {
+        asRoot(["dpkg", "--purge", "crewbot"]);
+        rmSync("/opt/crewbot", { recursive: true, force: true });
+        removed = true;
+        step("installed package removed", "dpkg --purge crewbot, /opt/crewbot removed");
+      } catch (error) {
+        if (!/not installed|ignoring request to remove/i.test(error?.stderr ?? error?.message ?? String(error))) {
+          cleanupFailed("the installed package is removed", error);
+        }
+      }
+      // Read back rather than inferred from the purge's exit code. An unreadable
+      // answer fails the obligation too: an unverified cleanup is not a met one.
+      let status;
+      try {
+        status = readPackageStatus((args) => asRoot(["dpkg-query", ...args]));
+      } catch (error) {
+        cleanupFailed("the installed package's absence is verified", error);
+      }
+      if (status !== undefined && !packageAbsent(status)) {
+        cleanupFailed("the installed package is removed", new Error(`dpkg still reports crewbot as ${status}`));
+      } else if (!removed && status === null) {
+        step("installed package already absent", "dpkg reports no matching package");
+      }
+      if (existsSync("/opt/crewbot")) {
+        cleanupFailed("the installed application files are removed", new Error("/opt/crewbot is still present"));
+      }
+    }
+    // An unmet obligation keeps the root: the evidence naming what was left behind
+    // is the only record of it.
+    const requested = process.env.OMB_KEEP_RECOVERY_FIXTURE === "1";
+    const keep = keepFixtureRoot({ requested, unmetObligations: evidence.cleanup.length });
+    if (requested) {
+      step("fixture kept", fixture.root);
+      // Keep the evidence on disk but stop the owned display, bus and app. Left
+      // running they hold this process's event loop open, so the job hangs to
+      // its timeout and the real failure is never reported.
+    } else if (keep) {
+      step("fixture kept for the cleanup evidence", fixture.root);
+    }
+    // Written before teardown, which removes the root holding it, and again after
+    // when teardown itself had something to report. Best effort: throwing here
+    // would skip the teardown and the verdict below.
+    const writeEvidence = () => {
+      try {
+        if (!existsSync(fixture.root)) return;
+        writeFileSync(join(fixture.root, "evidence.json"), JSON.stringify({
+          startedAt: new Date(started).toISOString(),
+          durationMs: Date.now() - started,
+          failure: evidence.failure ?? null,
+          inputs: evidence.inputs,
+          cleanup: evidence.cleanup,
+          observations: evidence.observations,
+          screenshots: evidence.screenshots,
+          windows: evidence.windows,
+          logs: evidence.logs,
+          steps: evidence.steps,
+        }, null, 2));
+        console.log(`[desktop-recovery] evidence: ${fixture.root}`);
+      } catch (error) {
+        cleanupFailed("the evidence file is written", error);
+      }
+    };
+    writeEvidence();
+    try {
+      await fixture.stop({ keep: keepFixtureRoot({ requested, unmetObligations: evidence.cleanup.length }) });
+    } catch (error) {
+      for (const failure of error.cleanupFailures ?? [{ obligation: "the fixture is torn down", detail: error?.message ?? String(error), stack: error?.stack ?? null }]) {
+        cleanupFailed(failure.obligation, failure);
+      }
+    }
+    if (evidence.cleanup.length) writeEvidence();
+    return evidence.cleanup;
+  }
+
   try {
     const display = await startOwnedDisplay(fixture);
     const bus = startOwnedSessionBus(fixture);
@@ -421,7 +542,7 @@ async function main() {
       logPath: join(fixture.logs, "app.log"),
     });
     const ownedApp = app;
-    fixture.own(() => ownedApp.stop());
+    fixture.own(() => ownedApp.stop(), "the installed app process group");
     step("installed app launched", `pid ${app.pid}, devtools on 127.0.0.1:${debugPort}`);
 
     renderer = await connectToRenderer({ port: debugPort, child: app.child, log: console.log });
@@ -827,41 +948,14 @@ async function main() {
     step("journey failed", error?.message ?? String(error));
     throw error;
   } finally {
-    renderer?.close();
-    if (app) {
-      try { await app.stop(); } catch (error) {
-        console.error(`[desktop-recovery] WARNING app cleanup failed: ${error?.message ?? error}`);
-      }
-    }
-    evidence.logs = collectFixtureLogs(fixture, fixture.evidence);
-    if (installed) {
-      try {
-        asRoot(["dpkg", "--purge", "crewbot"]);
-        rmSync("/opt/crewbot", { recursive: true, force: true });
-        step("installed package removed", "dpkg --purge crewbot, /opt/crewbot removed");
-      } catch (error) {
-        console.error(`[desktop-recovery] WARNING could not purge the installed package: ${error?.message ?? error}`);
-      }
-    }
-    writeFileSync(join(fixture.root, "evidence.json"), JSON.stringify({
-      startedAt: new Date(started).toISOString(),
-      durationMs: Date.now() - started,
-      failure: evidence.failure ?? null,
-      observations: evidence.observations,
-      screenshots: evidence.screenshots,
-      windows: evidence.windows,
-      logs: evidence.logs,
-      steps: evidence.steps,
-    }, null, 2));
-    console.log(`[desktop-recovery] evidence: ${fixture.root}`);
-    const keep = process.env.OMB_KEEP_RECOVERY_FIXTURE === "1";
-    if (keep) {
-      step("fixture kept", fixture.root);
-      // Keep the evidence on disk but stop the owned display, bus and app. Left
-      // running they hold this process's event loop open, so the job hangs to
-      // its timeout and the real failure is never reported.
-    }
-    await fixture.stop({ keep });
+    await teardown();
+  }
+  // A journey that passed while its cleanup did not is not a passed run. A journey
+  // that failed keeps its own error, with the unmet cleanup recorded beside it.
+  if (evidence.cleanup.length && !evidence.failure) {
+    throw new Error(
+      `${evidence.cleanup.length} cleanup obligation(s) were not met: ${evidence.cleanup.map((one) => `${one.obligation}: ${one.detail}`).join("; ")}`,
+    );
   }
 }
 
