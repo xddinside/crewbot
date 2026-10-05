@@ -10,7 +10,10 @@ More specific `AGENTS.md` files override this note within their directories.
 
 Linux is the only supported platform during current development. Prioritize
 dependable daily use, reliable agent turns and recovery, and token/cache
-efficiency. Native Android, iOS, macOS, and Windows support is parked; retain
+efficiency **in the running app** — the tokens a user's own agents spend per
+turn, measured at runtime. That is a product quality target, not a budget on
+how we write code: never weigh a library, pattern, or migration against it.
+Native Android, iOS, macOS, and Windows support is parked; retain
 their source and adapters, but their builds and acceptance do not gate Linux
 delivery. Revisit Android after dependable Linux daily use, then the other
 platforms after public release and demonstrated demand. Resuming support is an
@@ -37,11 +40,19 @@ Run app development servers through `portless`.
 Choosing checks, or reproducing a CI failure, starts with
 [`CONTRIBUTING.md`](CONTRIBUTING.md#ci-in-one-glance): CI shards the suite four
 ways, and the `pre-push` hook already runs lint, typecheck, and the locale
-check. When available in this checkout, `pnpm run checks` runs that battery
-with bounded output, and `pnpm ci:wait` waits for CI in one blocking call.
-Otherwise run `pnpm lint`, `pnpm typecheck`, and `pnpm i18n:check` with
-checkout-local logs, then `gh pr checks <number> --watch --interval 30`.
-Never borrow root-bound unpublished helpers from another checkout.
+check. `pnpm run checks` runs that battery with bounded output, and
+`pnpm ci:wait` waits for CI in one blocking call.
+
+To wait on CI, run `pnpm ci:wait`. Never poll for it. A `bash` call that puts
+`sleep` in front of `gh run list`, `gh run watch`, or `gh pr checks` wastes a
+turn's whole budget doing nothing: one 500-second sleep costs more wall clock
+than the reasoning around it. If `pnpm ci:wait` does not cover the run you
+need, say so and move on rather than sleeping in a loop.
+
+When a check tells you nothing, stop. Re-running a fixture that already gave
+you the same answer is not verification. Record the open question as deferred,
+name what evidence would settle it, and hand the decision back to the user. A
+turn that ends on "I need more runner evidence" has run long enough.
 
 For distributing an implementation or review plan across agents, use
 [`parallel-work`](.agents/skills/parallel-work/SKILL.md) to scope tickets,
