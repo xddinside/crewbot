@@ -27,6 +27,7 @@
     "check:contrast": "node scripts/check-skin-contrast.mjs",
     "i18n:check": "node scripts/generate-locale.mjs --check",
     "dev": "node scripts/run-development.mjs portless run --name crewbot vite",
+    "dev:all": "node scripts/run-development-stack.mjs",
     "docs:dev": "pnpm --filter @openmausbot/docs dev",
     "docs:build": "pnpm --filter @openmausbot/docs build",
     "docs:preview": "pnpm --filter @openmausbot/docs preview",

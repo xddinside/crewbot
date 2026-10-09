@@ -41,6 +41,10 @@ pnpm control:omb doctor --url http://127.0.0.1:PORT
 Mutating commands refuse silent port discovery. This prevents a verification
 recipe from sending messages to the user's running app by accident.
 
+The [development stack recipe](development-stack.md) verifies `pnpm dev:all`,
+Portless routing, explicit profile/data separation, and owned-child shutdown.
+It keeps installed credential and recovery gates separate.
+
 ## Drive
 
 Use only mapped, tested commands:

@@ -19,8 +19,11 @@ const cacheDir = path.resolve(process.env.CREWBOT_DEV_CACHE_DIR || path.join(hom
 const portOffset = worktreePrefix ? Number.parseInt(createHash("sha256").update(worktreePrefix).digest("hex").slice(0, 4), 16) % 1000 : 0;
 const serverPort = process.env.CREWBOT_DEV_PORT || String(worktreePrefix ? 18000 + portOffset : 18799);
 const webhookPort = process.env.CREWBOT_DEV_WEBHOOK_PORT || String(worktreePrefix ? 19000 + portOffset : 18800);
-const proxyPort = process.env.PORTLESS_PORT?.trim();
-const startUrl = process.env.CREWBOT_DEV_START_URL || `https://${worktreePrefix ? `${worktreePrefix}.` : ""}crewbot.localhost${proxyPort ? `:${proxyPort}` : ""}`;
+// Ask the pinned Portless CLI for the same protocol/port/worktree URL that
+// `portless run` uses, including an already-running HTTP proxy.
+const startUrl = process.env.CREWBOT_DEV_START_URL || execFileSync(process.execPath, [
+  path.join(root, "node_modules", "portless", "dist", "cli.js"), "get", "crewbot",
+], { cwd: process.cwd(), env: { ...process.env, PORTLESS: "1" }, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "inherit"] }).trim();
 const command = process.argv[2];
 const args = process.argv.slice(3);
 
