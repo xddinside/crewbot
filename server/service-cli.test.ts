@@ -114,8 +114,13 @@ describe("crewbot service", () => {
   });
 
   it("refuses service changes from an isolated development launch", () => {
-    expect(runServiceCommand({ action: "uninstall", dataDir: dir, port: 8799, script: "/x", node: "/n", platform: "linux", development: true }, io)).toBe(1);
+    const unit = join(dir, "crewbot.service");
+    writeFileSync(unit, "synthetic stable service sentinel");
+    for (const action of ["install", "uninstall", "rollback"] as const) {
+      expect(runServiceCommand({ action, dataDir: dir, port: 8799, script: "/x", node: "/n", platform: "linux", development: true }, io)).toBe(1);
+      expect(readFileSync(unit, "utf8")).toBe("synthetic stable service sentinel");
+    }
     expect(err.join("\n")).toMatch(/disabled for the isolated development launch/i);
-    expect(existsSync(join(dir, "crewbot.service"))).toBe(false);
+    expect(out).toEqual([]);
   });
 });

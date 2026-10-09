@@ -106,13 +106,16 @@ configuration directory (`~/.config/crewbot` unless the environment overrides it
 
 ## Develop the desktop shell
 
-Development mode uses three processes. Keep each command running in its own terminal:
+Launch the source development stack together:
 
 ```sh
-pnpm dev:server
-pnpm dev
-pnpm dev:desktop
+pnpm dev:all
 ```
+
+Vite runs through Portless, and Electron follows that proxy's protocol and port.
+Ctrl-C stops the owned server, Vite, and Electron process groups. The shared
+Portless proxy remains running. See [development setup](../CONTRIBUTING.md#dev-setup)
+and the [disposable verification recipe](verification/development-stack.md).
 
 For a package-shaped build without creating `.deb` or AppImage artifacts:
 

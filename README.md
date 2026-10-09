@@ -251,9 +251,7 @@ The Linux desktop can pair to another Linux host over Tailscale; see [desktop-to
 git clone https://github.com/xddinside/crewbot && cd crewbot
 pnpm install
 
-pnpm dev:server    # isolated development harness → 127.0.0.1:18799 in the main checkout
-pnpm dev           # Vite through Portless → https://crewbot.localhost
-pnpm dev:desktop   # Electron shell; keep the two commands above running
+pnpm dev:all       # isolated server + Portless/Vite + Electron; Ctrl-C stops owned children
 ```
 
 Linked Git worktrees use a branch-prefixed Portless URL and separate development data, profile,

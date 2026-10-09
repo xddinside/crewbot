@@ -25,9 +25,7 @@ Linux is the only supported platform during active development. Arch Linux is th
 git clone https://github.com/xddinside/crewbot.git && cd crewbot
 pnpm install
 
-pnpm dev:server    # isolated development harness → 127.0.0.1:18799 in the main checkout
-pnpm dev           # Vite through Portless → https://crewbot.localhost
-pnpm dev:desktop   # Linux Electron shell; keep server + Vite running
+pnpm dev:all       # isolated server + Portless/Vite + Linux Electron; Ctrl-C stops owned children
 
 pnpm typecheck     # app + server
 pnpm test          # vitest suite (server unit + driver contract + API smoke)
@@ -43,12 +41,17 @@ unprivileged port and set that port for each development command:
 
 ```sh
 pnpm exec portless proxy start --port 1355 --https
-PORTLESS_PORT=1355 pnpm dev:server
-PORTLESS_PORT=1355 pnpm dev
-PORTLESS_PORT=1355 pnpm dev:desktop
+PORTLESS_PORT=1355 pnpm dev:all
 ```
 
-The desktop launcher follows Portless's selected port in its start URL.
+The desktop launcher asks Portless for its selected protocol, port, and worktree URL.
+It also follows an existing HTTP proxy. See [development verification](docs/verification/development-stack.md)
+for disposable smoke checks and the remaining installed isolation gates.
+
+`pnpm dev:server`, `pnpm dev`, and `pnpm dev:desktop` remain available for
+separate terminals. The stack supervisor stops only its owned process groups on
+Ctrl-C, SIGTERM, SIGHUP, or any child exit, then escalates after three seconds.
+The shared Portless proxy remains running. Closing Electron ends the stack.
 
 Linked Git worktrees get a branch-prefixed Portless URL and separate development data, profile,
 cache, and API ports. For example, branch `feature/search` uses
