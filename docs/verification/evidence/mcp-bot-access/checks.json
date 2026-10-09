@@ -1,0 +1,47 @@
+{
+  "sourceSha": "8143d75ffec176c764ffc9088a4a5334ca57eb90",
+  "baseSha": "7faaa8907a9d0be48f640e108de52f0628289bce",
+  "date": "2026-10-09",
+  "platform": "Arch Linux x86_64 X11",
+  "commands": [
+    {
+      "command": "pnpm lint",
+      "result": "passed"
+    },
+    {
+      "command": "pnpm typecheck",
+      "result": "passed"
+    },
+    {
+      "command": "pnpm i18n:check",
+      "result": "passed: 10 languages, 2273 English strings"
+    },
+    {
+      "command": "pnpm exec vitest run server/bot-mcp.e2e.test.ts server/mcp-access.test.ts server/mcp-server.test.ts server/request-auth.test.ts server/store.test.ts server/redact.test.ts server/permission-proxy.test.ts server/drivers/claude.test.ts server/workspace-backup-policy.test.ts server/workspace-backup.test.ts",
+      "result": "10 files passed; 396 passed, 1 skipped"
+    },
+    {
+      "command": "pnpm test:electron",
+      "result": "447 passed, 6 skipped, 0 failed (453 total)"
+    },
+    {
+      "command": "pnpm dev:all",
+      "result": "isolated source server, Portless renderer and Electron launched on fixture port 18799"
+    },
+    {
+      "command": "node --experimental-strip-types /tmp/crewbot-mcp-dev-smoke.ts",
+      "result": "real RemoteMcpClient initialized, listed one allowed bot, awaited hello from fake claude, read thread, rejected missing token (401)"
+    }
+  ],
+  "initialSmokeFailure": {
+    "error": "Bot stopped without a reply; inspect conversation d2ea93ef-4438-4fbd-99fd-d93d6b552099",
+    "cause": "Seeded fixture engine config was normalized at startup; installed CLI reported Not logged in \u00b7 Please run /login",
+    "resolution": "PATCH fixture /api/instances/claude with repository fake CLI path; reissued fixture token through Settings; next smoke passed"
+  },
+  "deferred": [
+    "create_task and delegated bot turns",
+    "public tunnel deployment",
+    "installed-package credential/data continuity and Wayland gates",
+    "parked native platforms"
+  ]
+}

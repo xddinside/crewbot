@@ -1,5 +1,7 @@
 # crewbot MCP server
 
+For optional per-client bot access over Streamable HTTP, see [external bot MCP access](mcp-bot-access.md). This document describes the owner-level stdio control interface.
+
 The crewbot desktop app includes a local stdio MCP server. It lets another MCP client coordinate your
 team while the desktop app and its harness are running.
 

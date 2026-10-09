@@ -1,0 +1,68 @@
+{
+  "url": "http://127.0.0.1:18799/mcp",
+  "initialize": {
+    "protocolVersion": "2025-06-18",
+    "capabilities": {
+      "tools": {}
+    },
+    "serverInfo": {
+      "name": "crewbot-bots",
+      "version": "1"
+    }
+  },
+  "listed": {
+    "bots": [
+      {
+        "id": "a999c119-1827-446c-9a7c-d02072990b46",
+        "name": "Otto",
+        "model": "claude-sonnet-5",
+        "description": ""
+      }
+    ]
+  },
+  "sent": {
+    "botId": "a999c119-1827-446c-9a7c-d02072990b46",
+    "threadId": "9722e073-0efb-410c-a433-9304437583b9",
+    "messageId": "390ead9f-41ce-4b98-8712-e059279653c5",
+    "reply": "hello from fake claude",
+    "truncated": false
+  },
+  "history": {
+    "botId": "a999c119-1827-446c-9a7c-d02072990b46",
+    "threadId": "9722e073-0efb-410c-a433-9304437583b9",
+    "messages": [
+      {
+        "id": "390ead9f-41ce-4b98-8712-e059279653c5",
+        "role": "user",
+        "kind": "text",
+        "at": 1791555148235,
+        "text": "MCP_DEV_SMOKE_REPLY"
+      },
+      {
+        "id": "81a0e22a-cf8b-4d0a-a46b-2a01544b5fd2",
+        "role": "bot",
+        "kind": "text",
+        "at": 1791555148372,
+        "text": "hello from fake claude"
+      },
+      {
+        "id": "6e6b48f4-594c-4d6f-bbac-80c729dc6477",
+        "role": "bot",
+        "kind": "activity",
+        "at": 1791555148374,
+        "activity": "Bash"
+      },
+      {
+        "id": "06be7ff5-e624-4498-8396-1b45ea576832",
+        "role": "bot",
+        "kind": "activity",
+        "at": 1791555148448,
+        "activity": "MCP Dev MCP verified [f4363243-2a54-4f41-a777-753c85db07c0] · tools/call:get_thread"
+      }
+    ],
+    "memorySummary": "# Memory\n\nDurable notes this bot keeps between tasks. The first 200 lines\nload at the start of every session — keep this file short and curated.\nLonger notes belong in memory/<topic>.md files, read on demand.\n"
+  },
+  "missingTokenStatus": 401,
+  "engine": "repository fake Claude CLI in disposable dev HOME",
+  "result": "passed"
+}
