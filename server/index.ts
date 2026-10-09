@@ -5,6 +5,8 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { rm as removeDirectory } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { McpAccess } from "./mcp-access.ts";
+import { createBotMcp, type BotMcpResult } from "./bot-mcp.ts";
 import { ToolResults, TOOL_RESULT_MAX_CHARS } from "./tool-results.ts";
 import { extname, join } from "node:path";
 
@@ -438,6 +440,7 @@ import {
   isProxied,
   labelFromUserAgent,
   requestOrigin,
+  isSameOrigin,
   requestSource,
   resolveRequestAuth,
   parseCookies,
@@ -1879,6 +1882,7 @@ async function botOverview(bot: BotRecord): Promise<BotOverview> {
  * threads it delegates Full too (delegatedFullAccess), so the grant the
  * person gave the Chief covers the work the Chief hands out. */
 const approvalModeForTurn = (bot: BotRecord, peerInitiated = false): ApprovalMode => {
+  if (store.taskByThread(bot.id, bot.threadId)?.mcpClientId) return "ask";
   const mode = approvalModeForOrigin(approvalModeFor(bot), { peerInitiated });
   if (!supportsApprovalMode(registry.cliTarget(bot.modelSelection.instanceId)?.driverKind, mode)) {
     return "ask";
@@ -4431,7 +4435,7 @@ bus.subscribe((event: RuntimeEvent) => {
       // always reaches the human — even Full access never invents an answer.
       const asker = bot ?? (speaker ? store.bot(speaker.botId) : undefined);
       const unattended = permission && asker && event.requestId ? isUnattended(asker.id, event.threadId) : false;
-      const effectiveApprovalMode = asker ? approvalModeForTurn(asker, isInternalTurn(event.threadId)) : "ask";
+      const effectiveApprovalMode = asker && !store.taskByThread(asker.id, event.threadId)?.mcpClientId ? approvalModeForTurn(asker, isInternalTurn(event.threadId)) : "ask";
       const verdict = permission && asker && event.requestId
         ? autoVerdict(effectiveApprovalMode, event.tool, { requiresExplicitApproval: event.requiresExplicitApproval })
         : null;
@@ -10763,6 +10767,87 @@ const workspaceBackupRoutes = createWorkspaceBackupRoutes({
   }, keepLocked),
 });
 
+const mcpAccess = new McpAccess(join(DATA_DIR, "mcp-access.json"));
+const mcpSends = new Map<string, { text: string; promise: Promise<BotMcpResult> }>();
+const botMcp = createBotMcp(mcpAccess, {
+  listBots: () => store.bots.filter(bot => !bot.hidden).map(bot => ({
+    id: bot.id, name: bot.name, model: bot.modelSelection.model, description: bot.description ?? "",
+  })),
+  audit: (client, method, botId) => {
+    const targets = store.bots.filter(bot => !bot.hidden && client.botIds.includes(bot.id) && (!botId || bot.id === botId));
+    // A denied/unknown target is recorded in allowed conversations, never in
+    // a bot the client cannot see. Arguments and bearers are not audit text.
+    const bots = targets.length ? targets : store.bots.filter(bot => !bot.hidden && client.botIds.includes(bot.id));
+    for (const bot of bots) {
+      const threadId = store.tasks(bot.id).find(task => task.mcpClientId === client.id)?.threadId ?? bot.threadId;
+      store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: `MCP ${client.name} [${client.id}] · ${method}`, ok: true } });
+    }
+  },
+  getThread: (client, botId, requestedThreadId, limit) => {
+    const bot = store.bot(botId);
+    if (!bot || bot.hidden) return { ok: false, error: "No such bot" };
+    const threadId = requestedThreadId ?? store.tasks(bot.id).find(task => task.mcpClientId === client.id)?.threadId ?? bot.threadId;
+    if (!store.taskByThread(bot.id, threadId)) return { ok: false, error: "Thread does not belong to this bot" };
+    const messages = store.activePath(threadId).slice(-limit).map(message => ({
+      id: message.id, role: message.role, kind: message.kind, at: message.at,
+      ...(message.text ? { text: message.text.slice(0, 4_000) } : {}),
+      ...(message.tool ? { activity: message.tool.name.slice(0, 500) } : {}),
+      ...(message.card?.requestId ? { approvalPending: !message.card.answered, requestId: message.card.requestId } : {}),
+    }));
+    return { ok: true, value: { botId, threadId, messages, memorySummary: readMemoryDoc(botId, MEMORY_INDEX).text.slice(0, 32_000) } };
+  },
+  sendMessage: async (client, botId, text, requestId, signal) => {
+    const bot = store.bot(botId);
+    if (!bot || bot.hidden) return { ok: false, error: "No such bot" };
+    const task = store.mcpTask(botId, client.id, client.name);
+    if (!task) return { ok: false, error: "Could not create MCP conversation" };
+    const sendId = `mcp-${createHash("sha256").update(`${client.id}:${requestId}`).digest("hex")}`;
+    const key = `${botId}:${sendId}`;
+    const existing = store.messagesFor(task.threadId).find(m => m.sendId === sendId);
+    if (existing && existing.text !== text) return { ok: false, error: "request_id already belongs to a different message" };
+    const inFlight = mcpSends.get(key);
+    if (inFlight && inFlight.text !== text) return { ok: false, error: "request_id already belongs to a different message" };
+    let pending = inFlight?.promise;
+    if (!pending && !existing) {
+      pending = (async (): Promise<BotMcpResult> => {
+        try {
+          await startTurn(botId, text, { threadId: task.threadId, sendId, sender: { name: `MCP · ${client.name}` } });
+          return { ok: true, value: null };
+        } catch (error) { return { ok: false, error: error instanceof Error ? error.message : "Bot could not start" }; }
+      })();
+      mcpSends.set(key, { text, promise: pending });
+      void pending.finally(() => mcpSends.delete(key));
+    }
+    if (pending) {
+      const admitted = await pending;
+      if (!admitted.ok) return admitted;
+    }
+    const accepted = store.messagesFor(task.threadId).find(m => m.sendId === sendId);
+    if (!accepted) return { ok: false, error: "Send was not accepted" };
+    const deadline = Date.now() + 5 * 60_000;
+    // A timeout/disconnect never resends or cancels a bot. Stop and approval
+    // remain in the UI; request_id retrieves the same durable receipt.
+    for (;;) {
+      if (signal.aborted) return { ok: false, error: "Waiting cancelled; use get_thread or Stop in crewbot" };
+      if (!mcpAccess.authenticateCurrent(client.id)) return { ok: false, error: "MCP access revoked or disabled; inspect the turn in crewbot" };
+      const current = store.taskByThread(botId, task.threadId);
+      if (!current) return { ok: false, error: "Conversation was deleted" };
+      const messages = store.activePath(task.threadId);
+      const at = messages.findIndex(m => m.id === accepted.id);
+      if (at < 0) return { ok: false, error: "Conversation branch changed; inspect it in crewbot" };
+      const nextUser = messages.findIndex((m, i) => i > at && m.role === "user" && m.kind === "text");
+      const replies = messages.slice(at + 1, nextUser < 0 ? undefined : nextUser).filter(m => m.role === "bot" && m.kind === "text" && !m.from);
+      if (!threadBusy(botId, task.threadId) || nextUser >= 0) {
+        const terminal = replies.findLast(m => m.turnTerminal) ?? replies.at(-1);
+        return terminal ? { ok: true, value: { botId, threadId: task.threadId, messageId: accepted.id, reply: (terminal.text ?? "").slice(0, 100_000), truncated: (terminal.text?.length ?? 0) > 100_000 } }
+          : { ok: false, error: `Bot stopped without a reply; inspect conversation ${task.threadId}` };
+      }
+      if (Date.now() >= deadline) return { ok: true, value: { botId, threadId: task.threadId, status: current.activity === "waiting-on-you" ? "needs-approval" : "running", messageId: accepted.id } };
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  },
+});
+
 const toolResults = new ToolResults();
 const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   let url: URL;
@@ -10777,6 +10862,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   let m: RegExpMatchArray | null = null;
   let releaseWorkspaceRequest: (() => void) | undefined;
   try {
+    if (path === "/mcp") {
+      releaseWorkspaceRequest = workspaceMaintenance.request();
+      await botMcp(req, res);
+      return;
+    }
     // Unlike the legacy reachability probe, this attests the running
     // server's portal-membership capability, including live entitlement.
     if (method === "GET" && path === "/api/health/hosted") {
@@ -10963,6 +11053,32 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // merely until the browser disconnects. A cancelled upload can still write.
     if (path.startsWith("/api/") && path !== "/api/events" && path !== "/api/health" && !path.startsWith("/api/shared-computers/") && !isWorkspaceBackupSessionControl(method, path)) {
       releaseWorkspaceRequest = workspaceMaintenance.request();
+    }
+
+    if (path === "/api/mcp-access" || path.startsWith("/api/mcp-access/clients")) {
+      res.setHeader("cache-control", "no-store");
+      if (!auth.scopes.includes("admin")) return json(res, 403, { error: "MCP access settings require admin scope" });
+      if (method !== "GET" && (!req.headers.origin || !isSameOrigin(req))) {
+        return json(res, 403, { error: "Change MCP access from the crewbot Settings UI" });
+      }
+      const settings = () => ({ ...mcpAccess.settings(), endpoint: `http://127.0.0.1:${PORT}/mcp` });
+      if (path === "/api/mcp-access" && method === "GET") return json(res, 200, settings());
+      if (path === "/api/mcp-access" && method === "PUT") {
+        const parsed = z.object({ enabled: z.boolean() }).strict().safeParse(await readBody(req));
+        if (!parsed.success) return json(res, 400, { error: "enabled must be a boolean" });
+        const saved = mcpAccess.setEnabled(parsed.data.enabled);
+        return saved.ok ? json(res, 200, settings()) : json(res, saved.status, { error: saved.error });
+      }
+      if (path === "/api/mcp-access/clients" && method === "POST") {
+        const result = mcpAccess.create(await readBody(req), store.bots.filter(b => !b.hidden).map(b => b.id));
+        return result.ok ? json(res, 201, { client: result.client, token: result.token }) : json(res, result.status, { error: result.error });
+      }
+      const clientId = /^\/api\/mcp-access\/clients\/([\w-]+)$/.exec(path)?.[1];
+      if (clientId && method === "DELETE") {
+        const result = mcpAccess.revoke(clientId);
+        return result.ok ? json(res, 200, settings()) : json(res, result.status, { error: result.error });
+      }
+      return json(res, 404, { error: "No such MCP settings route" });
     }
 
     // ── sessions: who am I, tickets, pairing and revocation ─────────────
@@ -11170,6 +11286,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           : "agents";
       if (internalCapability.kind !== requiredCapabilityKind) {
         return json(res, 403, { error: "this internal capability cannot access that service" });
+      }
+      // Direct MCP turns cannot create/delegate other turns or grant authority.
+      // TODO #25: scoped create_task/delegation with inherited MCP policy.
+      if (requiredCapabilityKind === "agents" && method !== "GET" &&
+        store.taskByThread(internalSender.id, internalCapability.threadId)?.mcpClientId &&
+        path !== "/api/internal/memory") {
+        return json(res, 403, { error: "MCP turns currently support direct bot work only; task creation and delegation are unavailable" });
       }
       if (internalCapability.roomCoordination && method === "POST" && ["/api/internal/ask-bot", "/api/internal/delegate-bot"].includes(path)) {
         return json(res, 409, { error: "Use coordinate_bots for teamwork; it queues actual teammates and resumes you automatically." });

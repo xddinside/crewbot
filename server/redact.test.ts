@@ -9,6 +9,11 @@ import { redactSecrets } from "./redact.ts";
 const flat = (value: unknown) => JSON.stringify(value);
 
 describe("redactSecrets", () => {
+  it("removes bare external MCP tokens from tool titles and bot-authored text", () => {
+    const token = `crewbot_mcp_${"A".repeat(43)}`;
+    expect(flat(redactSecrets({ ordinary: `MCP client ${token}`, title: token }))).not.toContain(token);
+    expect(redactSecrets(`send_message and crewbot_mcp_example`)).toBe("send_message and crewbot_mcp_example");
+  });
   it("masks the tokens in an ACP session/new, keeping the shape", () => {
     const sessionNew = {
       jsonrpc: "2.0",

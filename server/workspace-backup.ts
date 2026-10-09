@@ -28,7 +28,7 @@ const TAG_BYTES = 16;
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const EXCLUDED = new Set([
   ".backups", ".crewbot-migration", "tools", "cache", ".cache", "tmp", ".tmp", "dist-native", "tunnel-runtime",
-  ".crewbot-server-child", ".openmausbot-server-child", "environment-id", "sessions.json", "tunnel-account.json",
+  ".crewbot-server-child", ".openmausbot-server-child", "environment-id", "sessions.json", "mcp-access.json", "tunnel-account.json",
   "team-computers.json", "room-continuations.json", "acp-instructions",
   "crewbot-server.lease", "openmausbot-server.lease", "box-create-requests.lock", "messages.db-wal", "messages.db-shm",
 ]);

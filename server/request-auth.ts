@@ -335,6 +335,8 @@ export function resolveRequestAuth(req: IncomingMessage, options: ResolveOptions
   // A presented session credential wins over the loopback rule so the served
   // web UI behaves the same on 127.0.0.1 and on a public domain.
   const bearer = bearerToken(req.headers.authorization);
+  // MCP credentials confer no owner/session authority on the ordinary API.
+  if (bearer?.startsWith("crewbot_mcp_")) return deny(401, "MCP tokens are accepted only at /mcp");
   const cookie = parseCookies(headerValue(req.headers.cookie)).get(options.cookieName);
   const ticket = path === options.streamPath ? options.url.searchParams.get("ticket") : null;
   let session: SessionRecord | null = null;

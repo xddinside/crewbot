@@ -13,7 +13,7 @@ import type { ModelSelection } from "./contracts.ts";
 import * as mdb from "./message-db.ts";
 import { peerAllowKey } from "./peer-approval-key.ts";
 import { canAccessTeam } from "./peer-roster.ts";
-import { mentionedBots, Store, type BotRecord } from "./store.ts";
+import { mentionedBots, toWireTask, Store, type BotRecord } from "./store.ts";
 import type { TeamSetupRequest } from "../shared/team-setup.ts";
 import { SECTION_CONTEXTS_FILE } from "./section-context.ts";
 
@@ -22,6 +22,22 @@ const selection = (): ModelSelection => ({ instanceId: "claude", model: "claude-
 describe("Store", () => {
   beforeEach(() => {
     rmSync(DATA_DIR, { recursive: true, force: true });
+  });
+
+  it("persists separate MCP threads with Ask despite Full bot defaults and keeps authority private", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({ name: "Chief" });
+    store.patchBot(bot.id, { approvalMode: "full", autoApprove: true, alwaysAllow: ["Bash"] });
+    const ownerThread = bot.threadId;
+    const task = store.mcpTask(bot.id, "client-fixture", "Cloud agent");
+    if (!task) throw new Error("MCP task missing");
+    expect(task).toMatchObject({ mcpClientId: "client-fixture", approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
+    expect(bot.threadId).toBe(ownerThread);
+    expect(toWireTask(task)).not.toHaveProperty("mcpClientId");
+    const loaded = new Store(selection);
+    expect(loaded.mcpTask(bot.id, "client-fixture", "Cloud agent")?.threadId).toBe(task.threadId);
+    expect(loaded.projectBotForTask(bot.id, task.threadId)?.approvalMode).toBe("ask");
+    expect(loaded.mcpTask(bot.id, "another-client", "Second agent")?.threadId).not.toBe(task.threadId);
   });
 
   it("commits a confirmed model switch once, preserving siblings and rolling back failed writes", () => {

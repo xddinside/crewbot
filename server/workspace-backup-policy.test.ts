@@ -30,7 +30,7 @@ describe("workspace backup data boundary", () => {
     "workspace-credentials.json", "browser-engine-key", "caddy/data/certificates/private.key",
     "chrome-profile/Default/Cookies", ".agent-browser/auth/site.json",
     "vm-home/.browser-profiles/chrome/Cookies", "vm-homes/abc123/.browser-profiles/chromium/Local State",
-    "config.json.123.tmp", "config.json.123.05a7b3e0-1234.tmp", "sessions.json.456.tmp",
+    "config.json.123.tmp", "config.json.123.05a7b3e0-1234.tmp", "sessions.json.456.tmp", "mcp-access.json", "mcp-access.json.123.tmp",
     "webhooks.json.123.05a7b3e0-1234.tmp", "browser-engine-key.12.05a7b3e0-1234.tmp",
   ])("excludes known owned authentication path %s", (path) => {
     expect(excludedWorkspaceAuthPath(path)).toBe(true);
