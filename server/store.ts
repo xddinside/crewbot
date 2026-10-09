@@ -75,6 +75,8 @@ export function isProjectEmoji(value: unknown): value is string {
  * wire shape; the extras below are server-private bookkeeping the wire
  * projection (toWireTask) strips. */
 export interface TaskRecord extends WireTask {
+  /** External MCP origin. Never editable by clients or elevated by bot defaults. */
+  mcpClientId?: string;
   /** provider-native continuation per instance, for THIS task only */
   resumeCursors: Record<string, unknown>;
   /** which instance dispatched the most recent turn. A cursor alone can't
@@ -89,7 +91,7 @@ export interface TaskRecord extends WireTask {
 /** TaskRecord fields no client may see. Everything else must be on WireTask:
  * the exactness assertion below fails to compile when either side drifts,
  * so a new server field forces a decision — wire-visible or private here. */
-export type TaskWirePrivateKeys = "resumeCursors" | "lastInstanceId" | "handedMessages";
+export type TaskWirePrivateKeys = "resumeCursors" | "lastInstanceId" | "handedMessages" | "mcpClientId";
 export type TaskWireProjection = Pick<TaskRecord, Exclude<keyof TaskRecord, TaskWirePrivateKeys>>;
 type AssertExact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
 type AssertSameKeys<A, B> = [keyof A] extends [keyof B] ? ([keyof B] extends [keyof A] ? true : never) : never;
@@ -101,7 +103,7 @@ export const taskWireProjectionIsExact: TaskWireProjectionIsExact = true;
 /** The typed wire projection for one task. Pairs with the assertion above:
  * returning WireTask means an undeclared server field cannot ride silently. */
 export function toWireTask(task: TaskRecord): WireTask {
-  const { resumeCursors: _resumeCursors, lastInstanceId: _lastInstanceId, handedMessages: _handedMessages, ...wire } = task;
+  const { resumeCursors: _resumeCursors, lastInstanceId: _lastInstanceId, handedMessages: _handedMessages, mcpClientId: _mcpClientId, ...wire } = task;
   return wire;
 }
 
@@ -2101,6 +2103,21 @@ export class Store {
     if (activate) {
       this.mirrorActiveTask(bot, task);
     }
+    this.saveBots();
+    this.emit({ type: "bot", botId });
+    return task;
+  }
+
+  /** Creates one visible client-owned conversation with Ask permissions. */
+  mcpTask(botId: string, clientId: string, name: string): TaskRecord | null {
+    const existing = this.tasks(botId).find(task => task.mcpClientId === clientId);
+    if (existing) return existing;
+    const task = this.createTask(botId, `MCP · ${name}`, false);
+    if (!task) return null;
+    task.mcpClientId = clientId;
+    task.approvalMode = "ask";
+    task.autoApprove = false;
+    task.alwaysAllow = [];
     this.saveBots();
     this.emit({ type: "bot", botId });
     return task;

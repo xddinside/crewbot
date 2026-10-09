@@ -21,6 +21,7 @@ export const mask = (value: string) => (REDACTION_MARKER.test(value) ? value : `
 // credentials match.
 
 const KEY_PREFIXES: RegExp[] = [
+  /\bcrewbot_mcp_[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/g, // external MCP client tokens
   /\bom[dg]_[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/g, // desktop device and model-only credentials
   /\bsk-(?:ant-|proj-|live-|test-)?[A-Za-z0-9_-]{16,}/g, // anthropic / openai / stripe
   /\bxai-[A-Za-z0-9_-]{20,}/g, // xai (grok)
