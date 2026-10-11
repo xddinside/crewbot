@@ -14,9 +14,15 @@ type PaletteEntry =
   | { kind: "room"; group: Group }
   | { kind: "message"; hit: SearchHit };
 
-export function CommandPalette({ onOpenChange }: { onOpenChange?: (open: boolean) => void }) {
+export function CommandPalette({ onOpenChange, open: controlledOpen }: { onOpenChange?: (open: boolean) => void; open?: boolean }) {
   const { state, dispatch } = useStore();
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  // The top bar's search entry opens the same palette the chord does, so the
+  // button is not a second, differently-behaving search. A controlled `open`
+  // lets the shell drive it; with none supplied the palette keeps owning its
+  // own state exactly as before.
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = controlledOpen === undefined ? setUncontrolledOpen : () => {};
   const [query, setQuery] = useState("");
   const [messageHits, setMessageHits] = useState<SearchHit[]>([]);
   const [cursor, setCursor] = useState(0);
@@ -24,17 +30,19 @@ export function CommandPalette({ onOpenChange }: { onOpenChange?: (open: boolean
 
   // The chord fires from anywhere — Shell's app-wide shortcuts (⌘N, ⌘1–9)
   // set the precedent of not guarding against focused inputs, and a
-  // modifier chord never collides with typing.
+  // modifier chord never collides with typing. It is ignored while the shell
+  // is driving the palette, or the two would fight over one boolean.
   useEffect(() => {
+    if (controlledOpen !== undefined) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        setOpen((o) => !o);
+        setUncontrolledOpen((o) => !o);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [controlledOpen]);
 
   // fresh palette every open; stale queries from last time would flash
   useEffect(() => {

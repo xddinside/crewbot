@@ -138,6 +138,136 @@
   --color-maus-line: #fcfcfc;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   THE SKY
+
+   The application has no window. This is the ground it stands on: a pale
+   blue-white field carrying a generated character texture, full-bleed, with
+   everything else floating on top of it.
+
+   Two rules hold this together:
+
+   1. The sky is a *texture*, never content. `--sky-ink` against `--sky-0`
+      measures about 1.6:1 — far below anything text could use. Nothing in
+      the app is ever written in it.
+   2. Every token below is re-declared inside each skin, so a skin's sky
+      always matches its own ground instead of sitting on top of it like a
+      borrowed photograph. See the blocks further down.
+
+   The light values here are the `@theme`/`Midnight` fallback so the field
+   renders before any skin is applied.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  /* the gradient the canvas ground paints; AsciiSky layers its texture over it */
+  --sky-ground:
+    radial-gradient(120% 90% at 8% -10%, #ffffff 0%, rgb(255 255 255 / 0) 55%),
+    radial-gradient(100% 80% at 92% 4%, #e3eefb 0%, rgb(227 238 251 / 0) 60%),
+    linear-gradient(180deg, #dceafb 0%, #e9f1fd 46%, #f5faff 100%);
+  /* the glyphs themselves: cloud edges and cloud cores */
+  --sky-ink: #7ea8da;
+  --sky-ink-soft: #a9c6e6;
+  --sky-opacity: 1;   /* the canvas paints at full opacity; per-glyph alpha
+                          carries the edge-to-core range, so this is not a
+                          second dimming pass */
+}
+
+/* Mascot colour. Four roles, four hues, used for nothing else, so a colour
+   always means an agent. These are the *presentation* default for the named
+   leads; a stored bot keeps its own colour and nothing is overwritten. */
+:root {
+  --mascot-maus: #8ea2bd;
+  --mascot-atlas: #2fbf87;
+  --mascot-nova: #f4735f;
+  --mascot-sage: #eda22b;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   GLASS
+
+   One recipe, four shapes (GlassPanel, GlassCard, GlassPopover, GlassSheet in
+   src/components/Glass.tsx). It lives here rather than in those components
+   so a skin can re-tune every frosted surface at once, and so the contrast
+   checker can still measure the tokens.
+
+   Nothing else in the app is frosted. Navigation, headings, lists, the crew
+   roster and the project and thread lists sit directly on the sky.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --glass-bg: rgb(255 255 255 / 0.72);
+  --glass-bg-strong: rgb(255 255 255 / 0.86);
+  --glass-border: rgb(255 255 255 / 0.85);
+  --glass-ring: rgb(15 23 42 / 0.07);
+  --glass-blur: 20px;
+  --glass-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 12px 32px rgb(15 23 42 / 0.08);
+  --glass-shadow-lifted: 0 2px 6px rgb(15 23 42 / 0.06), 0 24px 56px rgb(15 23 42 / 0.14);
+  --motion-fast: 150ms;
+  --motion-base: 180ms;
+  --motion-slow: 200ms;
+  --motion-curve: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.glass-panel,
+.glass-card,
+.glass-popover,
+.glass-sheet {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+  border: 1px solid var(--glass-ring);
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-border),
+    var(--glass-shadow);
+  color: var(--color-ink);
+}
+.glass-card {
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-border),
+    0 1px 2px rgb(15 23 42 / 0.03),
+    0 8px 20px rgb(15 23 42 / 0.07);
+}
+.glass-panel {
+  border-radius: 16px;
+}
+.glass-popover,
+.glass-sheet {
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  backdrop-filter: blur(24px) saturate(1.4);
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-border),
+    var(--glass-shadow-lifted);
+}
+.glass-popover {
+  border-radius: 12px;
+}
+.glass-sheet {
+  border-radius: 16px;
+}
+
+/* The composer's fade mask. Sits on top of the conversation glass and has to
+   hide bubbles tucking under the pill, so it blurs rather than merely
+   tinting: a bubble passing beneath is diffused past legibility instead of
+   being covered by an opaque slab that would read as a band across the
+   transcript. */
+.bg-glass-mask {
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  backdrop-filter: blur(24px) saturate(1.4);
+}
+
+/* A drop-in darker glass for skins whose ground is dark. Declared with the
+   same token names so nothing downstream has to know which is which; the
+   dark skin blocks below re-declare these values. */
+@media (prefers-reduced-motion: reduce) {
+  .glass-panel,
+  .glass-card,
+  .glass-popover,
+  .glass-sheet {
+    transition-duration: 1ms;
+  }
+}
+
 /* ── Midnight ──────────────────────────────────────────────────────────────
    The upstream palette, pixel-sampled from the real Grok app. Repeated here
    (rather than relying on the `@theme` defaults) so that a `[data-skin]`
@@ -167,6 +297,11 @@
   --color-accent-border: #459ffe;
   --color-accent-text: #7fc0ff;
   --color-accent-ink: #ffffff;
+  /* Inherited from @theme until now. Declared here so every skin in
+     SKIN_IDS carries the same token set — the contract skins.test.ts holds
+     them to — and so the ring is this skin's own blue rather than a default
+     that happens to match. */
+  --color-focus: #459ffe;
   --color-bubble-user: #5a5a5a;
   --color-bubble-user-ink: #fcfcfc;   /* = ink: unchanged */
   --color-success: #38d591;
@@ -176,6 +311,25 @@
   --color-warning: #ff9800;
   --color-scrollbar: #3d3d3d;
   --color-maus-line: #fcfcfc;
+
+  /* The redesign's dark sky: Daylight's structure, one stop down and much
+     darker, so a night shift still gets the full-bleed canvas and glass. */
+  --sky-ground:
+    radial-gradient(120% 90% at 8% -10%, #16243a 0%, rgb(22 36 58 / 0) 55%),
+    radial-gradient(100% 80% at 92% 4%, #101c2e 0%, rgb(16 28 46 / 0) 60%),
+    linear-gradient(180deg, #0a101b 0%, #0e1726 52%, #0b1220 100%);
+  --sky-ink: #2c4363;
+  --sky-ink-soft: #1d2b3f;
+  --sky-opacity: 1;
+
+  /* Glass over a dark sky: low-alpha white, and a ring that reads as a lit
+     edge rather than a shadow. */
+  --glass-bg: rgb(28 38 56 / 0.66);
+  --glass-bg-strong: rgb(26 35 52 / 0.84);
+  --glass-border: rgb(255 255 255 / 0.09);
+  --glass-ring: rgb(0 0 0 / 0.42);
+  --glass-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px rgb(0 0 0 / 0.34);
+  --glass-shadow-lifted: 0 2px 6px rgb(0 0 0 / 0.36), 0 24px 56px rgb(0 0 0 / 0.5);
 
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
@@ -227,6 +381,23 @@
   --color-warning: #7a5f31;       /* darkened → 4.98:1 */
   --color-scrollbar: #c9c0ae;
   --color-maus-line: #6b6559;
+
+  /* A warm paper sky. Same recipe as Daylight, tuned to this ground: warm
+     rather than blue, so the texture does not fight the beige. */
+  --sky-ground:
+    radial-gradient(120% 90% at 8% -10%, #fffaf2 0%, rgb(255 250 242 / 0) 55%),
+    radial-gradient(100% 80% at 92% 4%, #f0e6d6 0%, rgb(240 230 214 / 0) 60%),
+    linear-gradient(180deg, #f1e9dc 0%, #f6f1e8 48%, #fbf8f2 100%);
+  --sky-ink: #cbb897;
+  --sky-ink-soft: #ded0b8;
+  --sky-opacity: 1;
+
+  --glass-bg: rgb(255 253 249 / 0.74);
+  --glass-bg-strong: rgb(255 253 249 / 0.88);
+  --glass-border: rgb(255 255 255 / 0.85);
+  --glass-ring: rgb(42 37 28 / 0.09);
+  --glass-shadow: 0 1px 2px rgb(42 37 28 / 0.04), 0 12px 32px rgb(42 37 28 / 0.09);
+  --glass-shadow-lifted: 0 2px 6px rgb(42 37 28 / 0.07), 0 24px 56px rgb(42 37 28 / 0.15);
 
   /* System faces rather than Inter: paper reads as the platform's own. */
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -285,6 +456,23 @@
   --color-warning: #dfa441;
   --color-scrollbar: #3d3529;
   --color-maus-line: #b0a696;
+
+  /* Foundry's sky is a night shift lit in brass: dark, warm, and very quiet
+     — the texture has to stay invisible under a dark UI. */
+  --sky-ground:
+    radial-gradient(120% 90% at 8% -10%, #2a2218 0%, rgb(42 34 24 / 0) 55%),
+    radial-gradient(100% 80% at 92% 4%, #1d1811 0%, rgb(29 24 17 / 0) 60%),
+    linear-gradient(180deg, #120f0b 0%, #171208 52%, #14100b 100%);
+  --sky-ink: #5c4a2e;
+  --sky-ink-soft: #3d311e;
+  --sky-opacity: 1;
+
+  --glass-bg: rgb(40 33 23 / 0.66);
+  --glass-bg-strong: rgb(38 31 22 / 0.84);
+  --glass-border: rgb(255 236 200 / 0.09);
+  --glass-ring: rgb(0 0 0 / 0.44);
+  --glass-shadow: 0 1px 2px rgb(0 0 0 / 0.32), 0 12px 32px rgb(0 0 0 / 0.36);
+  --glass-shadow-lifted: 0 2px 6px rgb(0 0 0 / 0.38), 0 24px 56px rgb(0 0 0 / 0.52);
 
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
@@ -350,6 +538,23 @@
   --color-scrollbar: #a6b8b6;
   --color-maus-line: #4d5c5b;
 
+  /* Glazed ceramic rather than paper: the texture carries this skin's own
+     green-blue, so the sky and the neutrals stay one material. */
+  --sky-ground:
+    radial-gradient(120% 90% at 8% -10%, #f8fcfb 0%, rgb(248 252 251 / 0) 55%),
+    radial-gradient(100% 80% at 92% 4%, #dcece9 0%, rgb(220 236 233 / 0) 60%),
+    linear-gradient(180deg, #d9ebe8 0%, #e7f2f0 48%, #f0f7f6 100%);
+  --sky-ink: #8fb8b2;
+  --sky-ink-soft: #b4d2cd;
+  --sky-opacity: 1;
+
+  --glass-bg: rgb(250 253 252 / 0.74);
+  --glass-bg-strong: rgb(250 253 252 / 0.88);
+  --glass-border: rgb(255 255 255 / 0.85);
+  --glass-ring: rgb(22 45 44 / 0.09);
+  --glass-shadow: 0 1px 2px rgb(22 45 44 / 0.04), 0 12px 32px rgb(22 45 44 / 0.09);
+  --glass-shadow-lifted: 0 2px 6px rgb(22 45 44 / 0.07), 0 24px 56px rgb(22 45 44 / 0.15);
+
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, sans-serif;
   --radius-lg: 8px;
@@ -393,6 +598,22 @@
   --color-warning: #d3a150;
   --color-scrollbar: #464b54;
   --color-maus-line: #b3b8c2;
+
+  /* Graphite's sky is the steel-blue cast of its own neutrals, darkened. */
+  --sky-ground:
+    radial-gradient(120% 90% at 8% -10%, #232830 0%, rgb(35 40 48 / 0) 55%),
+    radial-gradient(100% 80% at 92% 4%, #191d24 0%, rgb(25 29 36 / 0) 60%),
+    linear-gradient(180deg, #101318 0%, #14181e 52%, #111419 100%);
+  --sky-ink: #414957;
+  --sky-ink-soft: #2c323c;
+  --sky-opacity: 1;
+
+  --glass-bg: rgb(32 37 45 / 0.66);
+  --glass-bg-strong: rgb(30 35 42 / 0.84);
+  --glass-border: rgb(255 255 255 / 0.08);
+  --glass-ring: rgb(0 0 0 / 0.44);
+  --glass-shadow: 0 1px 2px rgb(0 0 0 / 0.32), 0 12px 32px rgb(0 0 0 / 0.36);
+  --glass-shadow-lifted: 0 2px 6px rgb(0 0 0 / 0.38), 0 24px 56px rgb(0 0 0 / 0.52);
 
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
@@ -438,6 +659,22 @@
   --color-scrollbar: #aeb6c0;
   --color-maus-line: #59616c;
 
+  /* Linen: Daylight's cooler cousin, with the sky pushed the same way. */
+  --sky-ground:
+    radial-gradient(120% 90% at 8% -10%, #fcfdff 0%, rgb(252 253 255 / 0) 55%),
+    radial-gradient(100% 80% at 92% 4%, #e4eaf2 0%, rgb(228 234 242 / 0) 60%),
+    linear-gradient(180deg, #e2e9f3 0%, #ecf1f7 48%, #f4f7fa 100%);
+  --sky-ink: #a6b6cc;
+  --sky-ink-soft: #c3cfe0;
+  --sky-opacity: 1;
+
+  --glass-bg: rgb(255 255 255 / 0.73);
+  --glass-bg-strong: rgb(255 255 255 / 0.87);
+  --glass-border: rgb(255 255 255 / 0.85);
+  --glass-ring: rgb(29 34 41 / 0.08);
+  --glass-shadow: 0 1px 2px rgb(29 34 41 / 0.04), 0 12px 32px rgb(29 34 41 / 0.09);
+  --glass-shadow-lifted: 0 2px 6px rgb(29 34 41 / 0.07), 0 24px 56px rgb(29 34 41 / 0.15);
+
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, sans-serif;
   --radius-lg: 8px;
@@ -481,6 +718,22 @@
   --color-scrollbar: #4a414f;
   --color-maus-line: #b9afbd;
 
+  /* Dusk: the plum lives in the sky too, not just in the neutrals. */
+  --sky-ground:
+    radial-gradient(120% 90% at 8% -10%, #2a2331 0%, rgb(42 35 49 / 0) 55%),
+    radial-gradient(100% 80% at 92% 4%, #1e1926 0%, rgb(30 25 38 / 0) 60%),
+    linear-gradient(180deg, #141019 0%, #191420 52%, #15111b 100%);
+  --sky-ink: #564361;
+  --sky-ink-soft: #3a2f42;
+  --sky-opacity: 1;
+
+  --glass-bg: rgb(38 32 46 / 0.66);
+  --glass-bg-strong: rgb(36 30 43 / 0.84);
+  --glass-border: rgb(255 255 255 / 0.08);
+  --glass-ring: rgb(0 0 0 / 0.44);
+  --glass-shadow: 0 1px 2px rgb(0 0 0 / 0.32), 0 12px 32px rgb(0 0 0 / 0.36);
+  --glass-shadow-lifted: 0 2px 6px rgb(0 0 0 / 0.38), 0 24px 56px rgb(0 0 0 / 0.52);
+
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
   --radius-lg: 8px;
@@ -488,62 +741,84 @@
 }
 
 /* ── Daylight ─────────────────────────────────────────────────────────────
-   Midnight's twin. Midnight was pixel-sampled from the upstream app's dark
-   theme; this is the same sampling of its light one, so the two are the only
-   skins here that copy a palette rather than compose one.
+   The redesign's default light skin, and the first of the two built for the
+   ASCII sky (Midnight is its dark twin). The app has no window: the sky is
+   the ground, so --color-app is the sky's own tone rather than a page fill,
+   and everything structural — nav, lists, headings — is painted straight on
+   it. Only glass floats above.
 
-   Its structural quirk is the user's own bubble: near-black on a near-white
-   page, the one place a light skin carries inverted ink. That is what
-   --color-bubble-user-ink exists for — see the rule at the bottom of the
-   file. Everything else is a short ladder of greys: page #fcfcfc, sidebar
-   #f7f7f7, selected row #e1e1e1.
+   The ladder is deliberately short and cool-neutral rather than a grey ramp:
+   `--color-app` is what the conversation glass sits on, `--color-panel` is
+   one step above it so a selected row reads without a border, and everything
+   below is a control on one of those two.
+
+   Contrast was measured, not eyeballed: ink on every surface clears AA, and
+   `scripts/check-skin-contrast.mjs` re-runs that on each change.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="daylight"] {
   --code-color-scheme: light;
-  --color-app: #fcfcfc;           /* the thread */
-  --color-panel: #f7f7f7;         /* sidebar, one step down from the thread */
-  --color-raised: #e1e1e1;
-  --color-raised-hover: #d7d7d7;  /* the selected row */
-  --color-card: #eeeeee;          /* what a bot says */
-  --color-inset: #e6e6e6;         /* the search field */
-  --color-control: #dedede;       /* a chip on a card */
-  /* Sampled at #efefef, which is what the eye reads on the divider — but a
-     hairline that faint fails this repo's own gate (1.5:1 against the page)
-     and every border is drawn at /40 on top of that. #d0d0d0 is the lightest
-     grey that still passes; see scripts/check-skin-contrast.mjs. */
-  --color-hairline: #d0d0d0;
+  --color-app: #f4f8fe;           /* the sky's horizon tone, under the glass */
+  --color-panel: #e8f1fc;         /* a selected row: one step above the sky */
+  --color-raised: #ffffff;        /* a chip sitting on the sky */
+  --color-raised-hover: #dbe8f8;  /* its hover fill */
+  --color-card: #ffffff;          /* what a bot says, under the glass */
+  --color-inset: #e6effb;         /* the search field, inset into the sky */
+  --color-control: #cfdff4;       /* a chip on a card: a just-perceptible step */
+  /* The lightest hairline that still clears this repo's 1.5:1 gate against
+     the sky. Every border draws at /40 on top of it. */
+  --color-hairline: #b6c9e0;
 
-  --color-ink: #0d0d0d;
-  --color-ink-secondary: #575757;
+  --color-ink: #0f172a;           /* 16.9:1 on the glass, 15.1:1 on the sky */
+  --color-ink-secondary: #4f6076; /* 6.1:1 on the sky */
 
-  /* The upstream blue is #1084fe, which carries white at 3.1:1 — fine for the
-     unread dot it is mostly used for, not for a filled button's label. The
-     fill is darkened until white clears AA; the dot keeps reading as blue. */
-  --color-accent: #0b62c4;
-  --color-accent-border: #1084fe;
-  --color-accent-text: #0b5cb8;
-  --color-focus: #0b62c4;
+  /* One blue, used for the send button, the active pill, the focus ring,
+     progress fills and unread dots — and nothing else. */
+  --color-accent: #2666c4;        /* darkened until it clears AA on the darkest
+                                     surface it lands on — the inset search
+                                     field — as well as carrying white: 4.79:1 */
+  --color-accent-border: #2f7ff0; /* the bright tone lives on as the border and dot */
+  --color-accent-text: #1d5fc0;   /* links on glass and on the sky */
+  --color-focus: #2f7ff0;
   --color-accent-ink: #ffffff;
-  /* The composer is the page with a ring around it, not a grey slab —
-     the one surface where this skin departs from `raised`. */
-  --color-composer: #fcfcfc;
-  --color-composer-ring: #e4e4e4;
-  --color-menu: #fcfcfc;          /* menus sit on the page tone, not the bubble */
-  --color-bubble-user: #070707;   /* your own messages, inverted */
-  --color-bubble-user-ink: #fcfcfc;
+  /* The composer is glass over the sky, not a grey slab. */
+  --color-composer: #ffffff;
+  --color-composer-ring: #d6e4f5;
+  --color-menu: #ffffff;          /* menus sit on the card tone, not the bubble */
+  --color-bubble-user: #dbe8fa;   /* your own messages: the accent, at a wash */
+  --color-bubble-user-ink: #0f172a;
 
   --color-success: #1f7a4d;
   --color-danger: #c02b3a;
   --color-danger-ink: #ffffff;
   --color-success-ink: #ffffff;
   --color-warning: #8a5a00;
-  --color-scrollbar: #c4c4c4;
-  --color-maus-line: #5f5f5f;
+  --color-scrollbar: #b4c6dc;
+  --color-maus-line: #5f7189;
 
-  --font-sans: "Inter", -apple-system, blinkmacsystemfont, "SF Pro Text",
+  /* The sky itself. --sky-ink is a texture, not a colour anything is written
+     in: against --color-app it measures about 1.6:1, on purpose. */
+  --sky-ground:
+    radial-gradient(120% 90% at 8% -10%, #ffffff 0%, rgb(255 255 255 / 0) 55%),
+    radial-gradient(100% 80% at 92% 4%, #e3eefb 0%, rgb(227 238 251 / 0) 60%),
+    linear-gradient(180deg, #dceafb 0%, #e9f1fd 46%, #f5faff 100%);
+  --sky-ink: #7ea8da;
+  --sky-ink-soft: #a9c6e6;
+  /* The canvas is painted at full opacity; per-glyph alpha carries the
+     edge-to-core range, so this stays at 1 rather than dimming twice. */
+  --sky-opacity: 1;
+
+  /* Glass over a pale sky: high white, a barely-there ring. */
+  --glass-bg: rgb(255 255 255 / 0.72);
+  --glass-bg-strong: rgb(255 255 255 / 0.86);
+  --glass-border: rgb(255 255 255 / 0.85);
+  --glass-ring: rgb(15 23 42 / 0.07);
+  --glass-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 12px 32px rgb(15 23 42 / 0.08);
+  --glass-shadow-lifted: 0 2px 6px rgb(15 23 42 / 0.06), 0 24px 56px rgb(15 23 42 / 0.14);
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
-  --radius-lg: 8px;
-  --radius-xl: 14px;
+  --radius-lg: 10px;
+  --radius-xl: 16px;
 }
 
 /* Shiki emits both palettes so cached blocks follow the nearest skin without
@@ -1328,27 +1603,9 @@ body {
    quoted replies and attachment controls. Keep their normal semantic tokens
    together; overriding only the parent's color leaves explicit child ink dark.
    Stop at a nested skin so the picker previews retain their own palettes. */
-@scope ([data-skin="daylight"]) to ([data-skin]) {
-  .bg-bubble-user {
-    --color-ink: #fcfcfc;
-    --color-ink-secondary: #c4c4c4;
-    --color-panel: #111111;
-    --color-inset: #191919;
-    --color-raised: #2f2f2f;
-    --color-raised-hover: #3d3d3d;
-    --color-control: #2f2f2f;
-    --color-hairline: #666666;
-    --color-accent: #7fc0ff;
-    --color-accent-text: #7fc0ff;
-    --color-accent-ink: #070707;
-    --color-focus: #7fc0ff;
-    --color-danger: #ff7788;
-    --color-danger-ink: #070707;
-    --color-success: #63b58a;
-    --color-success-ink: #070707;
-  }
-}
-
+/* Daylight's own bubble is a wash of the accent rather than an inversion, so
+   its editor, quoted replies and attachment controls need no re-declared
+   token context: the semantic tokens it inherits are already correct. */
 /* Disabled buttons.
    Upstream fades them with `disabled:opacity-40`. On a dark ground that holds:
    the button stays darker than the page and the white label survives. On a

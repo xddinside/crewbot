@@ -24,17 +24,21 @@ export type Skin = {
 };
 
 export const SKINS: readonly Skin[] = [
-  { id: "midnight", name: "Midnight", tagline: "The original. Cool and dark." },
+  { id: "midnight", name: "Midnight", tagline: "Night shift. A dark sky under the glass." },
   { id: "atelier", name: "Atelier", tagline: "Daylight on paper, warm and quiet." },
   { id: "foundry", name: "Foundry", tagline: "Night shift. Dark, warm, lit in brass." },
   { id: "lagoon", name: "Lagoon", tagline: "Cool daylight. Porcelain and deep teal." },
   { id: "graphite", name: "Graphite", tagline: "Quiet charcoal and softened steel blue." },
   { id: "linen", name: "Linen", tagline: "Clean daylight with a restrained navy accent." },
   { id: "dusk", name: "Dusk", tagline: "Muted plum after dark, calm and low-key." },
-  { id: "daylight", name: "Daylight", tagline: "Midnight in reverse. Near-white, ink-black bubbles." },
+  { id: "daylight", name: "Daylight", tagline: "The default. A pale sky, one blue, glass on top." },
 ];
 
-export const DEFAULT_SKIN: SkinId = "midnight";
+// Daylight and Midnight are the two skins built for the ASCII sky, so they are
+// the pair a fresh install lands on. Everyone who has already picked a skin
+// keeps it — the choice is per browser, and readSkin() only falls back here
+// when nothing is stored.
+export const DEFAULT_SKIN: SkinId = "daylight";
 
 const KEY = "omb-skin";
 

@@ -858,15 +858,19 @@ export function Composer({
           }}
         />
         <div className="relative">
-          {/* App-ground from the pill midline down, full-bleed. Bubbles may
-              tuck into the top half of the radius; they must not show below
-              center. End at the dock's pb-3 padding: a viewport-height
-              backdrop extends the document and lets focus scroll the header
-              away. Only the decoration is bounded; upward menus stay free. */}
+          {/* Surface from the pill midline down, full-bleed. Bubbles may tuck
+              into the top half of the radius; they must not show below center.
+              It is frosted rather than opaque now that the conversation is
+              glass: an opaque fill here would read as a slab across the
+              transcript, while a blur lets a bubble pass under the pill
+              without ever being legible. End at the dock's pb-3 padding: a
+              viewport-height backdrop extends the document and lets focus
+              scroll the header away. Only the decoration is bounded; upward
+              menus stay free. */}
           <div
             aria-hidden
             data-composer-backdrop
-            className="pointer-events-none absolute -left-5 -right-5 -bottom-3 top-1/2 bg-app"
+            className="pointer-events-none absolute -left-5 -right-5 -bottom-3 top-1/2 bg-glass-mask"
           />
         <div data-tour="composer" className="relative z-[1] rounded-3xl bg-composer px-2 py-1.5 ring-1 ring-composer-ring">
         <div className="flex items-end gap-1">

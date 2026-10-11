@@ -1153,7 +1153,7 @@ export function GroupView({ group }: { group: Group }) {
   ));
 
   return (
-    <main className="relative flex h-full min-w-0 flex-1 flex-col bg-app">
+    <main className="relative flex h-full min-w-0 flex-1 flex-col glass-panel">
       <GroupCallOverlay group={group} members={members} />
       {membersOpen && !remoteClient && !group.dm && (
         <ManageMembersPanel group={group} onClose={closeMembers} triggerRef={membersTriggerRef} />

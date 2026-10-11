@@ -126,7 +126,7 @@ export function updateNoteworthy(phase: UpdatePhase, pending = false): boolean {
   return pending || (phase !== "idle" && phase !== "up-to-date" && phase !== "checking");
 }
 
-interface UpdateEntry {
+export interface UpdateEntry {
   item: SidebarMenuItem;
   phase: UpdatePhase;
   pending: boolean;
@@ -134,8 +134,12 @@ interface UpdateEntry {
 }
 
 /** The updater bridge exists only in the packaged app; in dev the entry is
- * absent rather than dead. */
-function useUpdateItem(): UpdateEntry | null {
+ * absent rather than dead.
+ *
+ *  Exported because the avatar menu in the top bar shows the same entry: an
+ *  update is about the app, and after the redesign the avatar is where the
+ *  app's own items live. One hook, two triggers, one state machine. */
+export function useUpdateItem(): UpdateEntry | null {
   const state = useUpdaterState();
   const updater = window.ogb?.updater;
   const [pending, setPending] = useState(false);

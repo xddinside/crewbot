@@ -8,6 +8,8 @@ import { welcomeDue } from "@/lib/onboarding";
 import { ThreadRefsProvider } from "@/components/ThreadRefs";
 import { emailGateDone, initAnalytics } from "@/lib/analytics";
 import { Sidebar } from "@/components/Sidebar";
+import { AsciiSky } from "@/components/AsciiSky";
+import { AppTopBar } from "@/components/AppTopBar";
 import { ChatView } from "@/components/ChatView";
 import { GroupView } from "@/components/GroupView";
 import { BotSettingsDialog } from "@/components/BotSettingsDialog";
@@ -28,6 +30,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { LocalVmWorkspace } from "@/components/LocalVmWorkspace";
 import { TeamMapPage } from "@/components/TeamMapPage";
+import { destinationFor, type Destination } from "@/lib/shell-nav";
 import { setLocale } from "@/lib/i18n";
 import { shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 
@@ -72,6 +75,10 @@ function Shell() {
     setLocaleEpoch((epoch) => epoch + 1);
   }, [language]);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // The destination pill and the Ctrl+K chord open the same palette. The
+  // shell owns the boolean so the search entry in the top bar and the global
+  // chord can never disagree about what is open.
+  const [paletteRequested, setPaletteRequested] = useState(false);
   const [localVmWorkspaceBotId, setLocalVmWorkspaceBotId] = useState<string | null>(null);
   // the Browser tab, expanded into the main column (the small preview in
   // the panel hands off to this and back)
@@ -81,6 +88,39 @@ function Shell() {
   const group = state.groups.find((g) => g.id === state.selectedId);
   const bot = group ? undefined : (state.bots.find((b) => b.id === state.selectedId) ?? state.bots[0]);
   const calendarFocus = state.activeView === "routines";
+
+  /* Where we are, derived from what is already selected rather than stored a
+     second time. See lib/shell-nav.ts. */
+  const destination = destinationFor({
+    activeView: state.activeView,
+    selectedId: state.selectedId,
+    selectedIsGroup: Boolean(group),
+  });
+
+  /* A destination is a *view* of the existing selection, so clicking a pill
+     never invents state — it moves the selection to something that already
+     exists, and leaves it alone when there is nothing to move to.
+
+     Home is the personal chat, so it needs a bot selected; Projects is a
+     conversation, so it needs a room. Both fall back to "stay where you
+     are" rather than blanking the screen on an empty workspace: a user with
+     no rooms clicking Projects should see their work, not an empty page. */
+  const goToDestination = useCallback(
+    (next: Destination) => {
+      if (next === "crew") {
+        dispatch({ type: "showTeamMap" });
+        return;
+      }
+      const wantGroup = next === "projects";
+      const current = wantGroup
+        ? state.groups.find((g) => g.id === state.selectedId)
+        : state.bots.find((b) => b.id === state.selectedId);
+      const target = current ?? (wantGroup ? state.groups[0] : state.bots.find((b) => !b.hidden));
+      if (target) dispatch({ type: "select", id: target.id });
+      else dispatch({ type: "showChat" });
+    },
+    [dispatch, state.bots, state.groups, state.selectedId],
+  );
 
   // Nothing on this machine can run a bot. A missing cloud login does not
   // count — that CLI can still host a local model. Wait for the first
@@ -104,6 +144,14 @@ function Shell() {
 
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
+      // ⌘K opens the search palette. The palette owned this chord itself
+      // before the redesign; the shell holds it now, so the top bar's search
+      // entry is the same action rather than a second one with its own state.
+      if (e.key.toLowerCase() === "k" && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        setPaletteRequested((open) => !open);
+        return;
+      }
       const bots = state.bots.filter((b) => !b.hidden);
       if (e.key === "n" && !e.shiftKey) {
         e.preventDefault();
@@ -229,17 +277,28 @@ function Shell() {
   }, [dispatch]);
 
   return (
-    <div className="flex h-full flex-col">
+    // There is no app window. The shell is a transparent column over the sky:
+    // a top bar, then whatever the destination holds, with the sidebar
+    // floating on the canvas at the left rather than inside a bordered panel.
+    <div className="relative flex h-full flex-col bg-transparent" data-app-shell="">
+      {/* The sky. Fixed, behind everything, pointer-events-none — the whole
+          app stands on it. */}
+      <AsciiSky />
       {/* fixed-position popup, bottom-left — outside the layout flow */}
       <UpdateBanner />
-      <div className="relative flex min-h-0 flex-1">
+      <AppTopBar
+        destination={destination}
+        onSelect={goToDestination}
+        onOpenSearch={() => setPaletteRequested(true)}
+      />
+      <div className="relative z-10 flex min-h-0 flex-1">
       {!calendarFocus && <button
         type="button"
         ref={menuButtonRef}
         aria-label="Open bot list"
         aria-expanded={drawerOpen}
         onClick={() => setDrawerOpen(true)}
-        className="absolute left-3 top-3 z-30 rounded-md p-1.5 text-ink-secondary hover:bg-raised hover:text-ink md:hidden"
+        className="glass-card absolute left-3 top-3 z-30 flex size-9 items-center justify-center text-ink-secondary md:hidden"
       >
         <Menu size={18} />
       </button>}
@@ -247,9 +306,11 @@ function Shell() {
         <div
           aria-hidden
           onMouseDown={(e) => e.target === e.currentTarget && setDrawerOpen(false)}
-          className="absolute inset-0 z-30 bg-black/50 md:hidden"
+          className="absolute inset-0 z-30 bg-black/25 md:hidden"
         />
       )}
+      {/* The context column. It floats: no panel fill, no right border, a
+          gutter so the lists have air against the sky. */}
       {!calendarFocus && <Sidebar
         open={drawerOpen}
         onClose={() => {
@@ -275,7 +336,7 @@ function Shell() {
       ) : bot ? (
         <ChatView bot={bot} />
       ) : (
-        <main className="flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-app text-ink-secondary">
+        <main className="flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-3 text-ink-secondary">
           <Loader2 size={20} className="animate-spin" />
           <div className="text-[14px]">
             {state.connected ? "No bots yet" : "Connecting to the bot server…"}
@@ -321,7 +382,7 @@ function Shell() {
       )}
       {/* mounted after the modals: same z-50 tier, so DOM order keeps the
           palette on top when one of them is open underneath */}
-      <CommandPalette onOpenChange={setPaletteOpen} />
+      <CommandPalette onOpenChange={setPaletteOpen} open={paletteRequested} />
       </div>
       {/* Renderer-drawn caption buttons for the overlay-less frameless
           Windows window. Deliberately the LAST child of the shell: Blink

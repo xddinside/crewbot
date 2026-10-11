@@ -1781,8 +1781,14 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       data-native-view-overlay
       data-sidebar
       className={cn(
-        "flex h-full shrink-0 flex-col border-r border-hairline/40 bg-panel transition-[width] duration-200",
-        density === "icons" ? "w-[80px]" : density === "compact" ? "w-[272px]" : "w-[320px]",
+        // Floats on the sky. No panel fill and no right border: the app has no
+        // window, and a rule down the side of a list is exactly the chrome
+        // that says "this is a panel". A left gutter gives the rows air, and
+        // on the drawer (below md) the fill comes back, because there the
+        // list covers the conversation and has to be readable against it.
+        "flex h-full shrink-0 flex-col bg-transparent transition-[width] duration-200",
+        density === "icons" ? "w-[80px] px-2" : density === "compact" ? "w-[272px] px-3" : "w-[320px] px-4",
+        "max-md:bg-panel max-md:px-0",
         // Below md only: the sidebar leaves the flow and slides in over the chat.
         // Scoped with max-md: rather than cancelled with md: on purpose — Tailwind
         // v4 emits the native `translate` property, and any value other than

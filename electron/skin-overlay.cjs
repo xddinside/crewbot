@@ -15,15 +15,16 @@ const SKIN_CHROME = Object.freeze({
   graphite: Object.freeze({ color: "#111214", symbolColor: "#b3b8c2" }),
   linen: Object.freeze({ color: "#eceff3", symbolColor: "#59616c" }),
   dusk: Object.freeze({ color: "#121014", symbolColor: "#b9afbd" }),
-  daylight: Object.freeze({ color: "#fcfcfc", symbolColor: "#575757" }),
+  daylight: Object.freeze({ color: "#f4f8fe", symbolColor: "#4f6076" }),
 });
 
-const DEFAULT_SKIN = "midnight";
+const DEFAULT_SKIN = "daylight";
 
 /** The chrome colours for a skin id sent by the renderer. Anything that is
  * not a known skin — a renamed skin, a stale value, a non-string — falls
- * back to Midnight rather than throwing, because the renderer has already
- * painted and a wrong overlay is recoverable while a broken IPC is not. */
+ * back to the renderer's default skin rather than throwing, because the
+ * renderer has already painted and a wrong overlay is recoverable while a
+ * broken IPC is not. */
 function skinChrome(skin) {
   return Object.hasOwn(SKIN_CHROME, skin) ? SKIN_CHROME[skin] : SKIN_CHROME[DEFAULT_SKIN];
 }
