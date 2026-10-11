@@ -169,6 +169,13 @@
   --sky-opacity: 1;   /* the canvas paints at full opacity; per-glyph alpha
                           carries the edge-to-core range, so this is not a
                           second dimming pass */
+  /* The approved cloud plate for this ground, painted between the gradient
+     and the glyphs. `none` means the gradient alone: that is every skin but
+     the two the redesign ships plates for. Each is 2560×1440 WebP under
+     15 kB, so the whole thing costs less than one round trip. */
+  --sky-image: none;
+  --sky-image-size: cover;
+  --sky-image-position: center;
 }
 
 /* Mascot colour. Four roles, four hues, used for nothing else, so a colour
@@ -321,6 +328,8 @@
   --sky-ink: #2c4363;
   --sky-ink-soft: #1d2b3f;
   --sky-opacity: 1;
+  /* The approved cloud plate for this ground. */
+  --sky-image: url("/sky/sky-dark.webp");
 
   /* Glass over a dark sky: low-alpha white, and a ring that reads as a lit
      edge rather than a shadow. */
@@ -391,6 +400,8 @@
   --sky-ink: #cbb897;
   --sky-ink-soft: #ded0b8;
   --sky-opacity: 1;
+  /* No approved cloud plate for this ground: the gradient carries it. */
+  --sky-image: none;
 
   --glass-bg: rgb(255 253 249 / 0.74);
   --glass-bg-strong: rgb(255 253 249 / 0.88);
@@ -466,6 +477,8 @@
   --sky-ink: #5c4a2e;
   --sky-ink-soft: #3d311e;
   --sky-opacity: 1;
+  /* No approved cloud plate for this ground: the gradient carries it. */
+  --sky-image: none;
 
   --glass-bg: rgb(40 33 23 / 0.66);
   --glass-bg-strong: rgb(38 31 22 / 0.84);
@@ -547,6 +560,8 @@
   --sky-ink: #8fb8b2;
   --sky-ink-soft: #b4d2cd;
   --sky-opacity: 1;
+  /* No approved cloud plate for this ground: the gradient carries it. */
+  --sky-image: none;
 
   --glass-bg: rgb(250 253 252 / 0.74);
   --glass-bg-strong: rgb(250 253 252 / 0.88);
@@ -607,6 +622,8 @@
   --sky-ink: #414957;
   --sky-ink-soft: #2c323c;
   --sky-opacity: 1;
+  /* No approved cloud plate for this ground: the gradient carries it. */
+  --sky-image: none;
 
   --glass-bg: rgb(32 37 45 / 0.66);
   --glass-bg-strong: rgb(30 35 42 / 0.84);
@@ -667,6 +684,8 @@
   --sky-ink: #a6b6cc;
   --sky-ink-soft: #c3cfe0;
   --sky-opacity: 1;
+  /* No approved cloud plate for this ground: the gradient carries it. */
+  --sky-image: none;
 
   --glass-bg: rgb(255 255 255 / 0.73);
   --glass-bg-strong: rgb(255 255 255 / 0.87);
@@ -726,6 +745,8 @@
   --sky-ink: #564361;
   --sky-ink-soft: #3a2f42;
   --sky-opacity: 1;
+  /* No approved cloud plate for this ground: the gradient carries it. */
+  --sky-image: none;
 
   --glass-bg: rgb(38 32 46 / 0.66);
   --glass-bg-strong: rgb(36 30 43 / 0.84);
@@ -806,6 +827,12 @@
   /* The canvas is painted at full opacity; per-glyph alpha carries the
      edge-to-core range, so this stays at 1 rather than dimming twice. */
   --sky-opacity: 1;
+  /* No approved cloud plate for this ground: the gradient carries it. */
+  --sky-image: none;
+  /* The approved cloud plate for this ground. It sits between the gradient
+     and the glyph canvas (see AsciiSky), so the ground still paints if the
+     plate is missing — a missing plate is a flatter sky, never a blank one. */
+  --sky-image: url("/sky/sky-light.webp");
 
   /* Glass over a pale sky: high white, a barely-there ring. */
   --glass-bg: rgb(255 255 255 / 0.72);

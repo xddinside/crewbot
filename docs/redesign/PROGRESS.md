@@ -180,3 +180,169 @@ here can no longer be attributed.
 - `scripts/sky-proof-skins.css` — regenerate, never hand-edit.
 - Atlas / Nova / Sage / Maus are a *presentation* of what a user already has.
   Do not rename or overwrite real bots, teams or folders.
+
+## Phase 2 — Home / Maus
+
+From `b3a779af`.
+
+### What changed
+
+**The landing.** `src/components/HomeScreen.tsx` frames a conversation with a
+greeting over it and two on-canvas columns around it. The conversation is still
+the `ChatView` the app always rendered — the landing frames it, it does not
+replace it, so the transcript, composer, Inspector and Computer panel keep their
+own routes.
+
+- **Greeting** — `Good morning/afternoon/evening, <first name>`, then
+  `Your personal assistant, <bot>.` The name comes from `config.profile.name`
+  and the first word of it; with no profile the line is the bare salutation
+  rather than a comma with nothing after it. The bot's name is the user's own,
+  so a workspace whose assistant is called Tracker greets Tracker. `hidden` below
+  `lg` so a phone spends its height on the conversation, as it did before.
+- **Left rail** (`HomeRail.tsx`) — an assistant switcher (every visible bot,
+  with its mascot and title, plus New bot), New conversation, *Today* (the
+  selected assistant's threads created today) and *History* (the rest, newest
+  first, as a disclosure). The thread rows are the app's own
+  `SidebarThreadRow` with the app's own `switchTask` / `renameTask` /
+  `deleteTask` actions, so the rail cannot disagree with the sidebar tree.
+  History opens by default when the open thread is not today's, so the
+  conversation you are looking at is never behind a collapsed disclosure.
+- **Right column** (`HomeContext.tsx`) — *Needs you*, *In motion*, *Today*,
+  all three directly on the sky. Needs you reuses `crossBotAttentionThreads`,
+  the same rule and order as the top-bar bell and the sidebar panel, so the
+  three can never count a workspace three ways. In motion is the rooms whose
+  **latest** goal run is unfinished, with the percentage read off that run's own
+  turn budget (`turnCount / maxTurns`) — a real number, clamped to 0–100, never
+  a mockup's "62%". Today is the enabled routines still due today, soonest
+  first, an overdue one marked Running now; clicking one opens Automations
+  focused on it (`showRoutines` + `routineId`, which the calendar already reads).
+
+**The sky now ships its plate.** `--sky-image` is a new token: `none` in the
+root and in the six skins that have no approved plate, and the 2560×1440 WebP
+from `crewbot-mockups/assets/` in Daylight and Midnight. `AsciiSky` paints it as
+a CSS layer between the `--sky-ground` gradient and the glyph canvas — ground,
+weather, character texture. Layer order matters: the plate carries clouds, the
+canvas carries the ASCII dots, and together they are the approved mockup's sky.
+Files are `public/sky/sky-light.webp` and `public/sky/sky-dark.webp`, 5.6 kB and
+14 kB, copied into `dist/` by the build. The glyph canvas and every token are
+untouched, so a missing plate is a flatter sky and never a blank one.
+
+**Nothing lost — how.** Home does not carry a second copy of the sidebar. The
+rail's last row (*All conversations*, `data-tour="tools"`) opens **the existing
+`Sidebar`** as a `GlassSheet` over the canvas: same component, same state, same
+rooms, sections, thread folders, archived bots, density and tools row. Below
+`md` the shell's phone drawer is still mounted on Home, and the *Open bot list*
+button still exists, because the rail is `md`+ — without that a phone would
+have had no route to rooms at all.
+
+**`data-tour="tools"`** is new and deliberate. Phase 1 moved Automations and
+Apps & tools into the avatar menu, which left the tour's `tour.tools` step
+pointing at an element that no longer existed anywhere; it has been falling back
+to a centred card. It now anchors to a real control on Home.
+
+### Files
+
+| file | |
+| --- | --- |
+| `src/lib/home-context.ts` + `.test.ts` | pure selectors: greeting, today's threads, goal-run progress, today's routines (39 tests with the component test) |
+| `src/components/HomeScreen.tsx` | greeting + the three-column frame |
+| `src/components/HomeRail.tsx` | assistant switcher, New conversation, Today, History |
+| `src/components/HomeContext.tsx` | Needs you, In motion, Today |
+| `src/components/HomeScreen.test.ts` | renders the landing against a store fixture and reads the markup back |
+| `src/App.tsx` | `showHome` gate, the Home branch, the workspace sheet, the phone drawer |
+| `src/components/AsciiSky.tsx` | the `--sky-image` layer |
+| `src/styles.css` | `--sky-image` in all eight skins |
+| `public/sky/*.webp` | the two approved cloud plates |
+| `src/locales/en.json` | 26 `home.*` strings |
+
+The store, IPC and the server were **not** touched. `activeView` is unchanged;
+`showHome` is derived from `destination`, `bot`, `noEngines` and
+`localVmWorkspaceBotId` exactly the way phase 1 derived the destination.
+
+### FEATURES.md rows covered
+
+- **F001** — the landing only takes over when there is a conversation to frame.
+  No engine, a workspace holding the column, a room, still connecting and no
+  bots yet all keep the shell's own screen, so the connection gate and the
+  recovery screens never gain a greeting over an empty canvas.
+- **F064** — Needs you, from the shared attention rule. **Group rows are a
+  redesign addition**, as the audit asked: a room whose member holds the floor
+  and is waiting now appears, and that member's own thread is suppressed
+  underneath it rather than repeated. Routine **failure badges are not** in this
+  column — they stay on the routine list and the run receipts (phase 8/9), and
+  this phase did not move them.
+- **F072** — memory stays where it is, `BotSettingsDialog → Memory`. The landing
+  reaches a bot's settings through the conversation header, unchanged. Not
+  restyled this phase; phase 6 owns the bot profile.
+- **F122** — *Today's routines* open the existing calendar focused on the
+  routine that was clicked (`routinesFocus.routineId`), so the route is the
+  same one Settings and the avatar menu use. The calendar itself is phase 8.
+- **F134** — `data-tour="tools"` restored on a real Home control (see above).
+  The other anchors — `composer`, `model`, `computer`, `computer-browser`,
+  `computer-tabs` — live in the conversation, which phase 2 does not touch.
+
+### Checks run
+
+| check | result |
+| --- | --- |
+| `pnpm typecheck` | pass |
+| `pnpm lint` | pass |
+| `pnpm i18n:check` | pass (10 languages, 2299 English strings; the 26 new keys fall back to English until a pack is translated) |
+| `pnpm check:contrast` | pass — all 8 skins + bubble context |
+| `vite build` | pass; `dist/sky/*.webp` emitted |
+| `vitest run` on what I touched (Home, home-context, shell-nav, skins, sidebar-attention, Avatar, store, BotThreads, BotProjects, thread-preferences) | pass — 218 tests |
+| `src/lib/sky-texture.test.ts` | **1 failure, pre-existing — see below** |
+| whole-repo suite | not run; phase 11 owns it |
+
+### The inherited failure phase 1 recorded as passing
+
+`src/lib/sky-texture.test.ts > leaves most of the field empty` asserts a
+coverage below 0.45 and gets 0.46. **It fails on `c87a80d5` too** — verified by
+stashing everything in this phase and re-running it — so it is not something
+phase 2 broke. `DESIGN.md` §6 documents `coverage: 0.46` as a *measured* value
+(the noise median is 0.44, so a cutoff picked on paper lands wherever the
+distribution falls), and the code agrees with the doc. The stale thing is the
+test's bound.
+
+**What would settle it:** decide whether 0.46 or "< 0.45" is the intent. If the
+doc is right, the assertion becomes `<= 0.46`; if the bound is right, the cutoff
+in `src/lib/sky-texture.ts` moves and the preview regenerates. It is one line
+either way and phase 2 did not touch either file.
+
+### Open, deferred, or unfinished
+
+- **The landing has never been looked at.** Structure is verified by tests and
+  the build; pixels are not. I rendered the real components against the real
+  built stylesheet into a standalone page and tried to screenshot it three
+  ways — the collaborative browser wedged on a two-line page, and
+  `html_preview` runs behind a proxy that cannot reach localhost and blocks
+  `file:`. **What would settle it:** launch an isolated fixture per
+  `docs/verification/README.md`, open Home, and check the greeting's weight, the
+  rail's density and the column's contrast. Phase 11 QA.
+- **No visual check of the new sky plate either**, for the same reason. The
+  build proves the file resolves and the CSS ships the rule; nobody has seen
+  Daylight's plate and Midnight's plate against their glass.
+- **The rail shows the selected assistant's threads only.** Every other bot is
+  one click away in the switcher, and the switcher is open by default nowhere —
+  it starts closed. A workspace with many bots will want the switcher to
+  remember, or the rail to gain folders. Deferred to the next Home pass.
+- *In motion* shows goal-driven rooms only. A room that is simply busy with no
+  goal run does not appear there; it shows in Needs you if it is waiting.
+- The assistant switcher's list is flat. Sections (Work / Personal / custom) are
+  not shown — the full grouping is in the workspace sheet.
+
+### For the next agent
+
+- `HomeScreen` takes the conversation as `children` on purpose. Phase 3 rewrites
+  the conversation internals; it should change what is passed in, not the frame.
+- `showHome` is a gate, not a mode. It is true only when a bot is selected, the
+  destination is home, and nothing else is holding the column. Phases 3–6 that
+  add panels should keep it that way.
+- `HomeRail` and `HomeContext` are both `md:`/`lg:` gated in CSS, not in JS.
+  There is no `matchMedia` hook in this repo and phase 2 did not add one.
+- The rail's thread rows reuse `SidebarThreadRow`, so they cost nothing extra to
+  keep correct. Do not fork a second row shape for Home.
+- Reuse `GlassCard` / `GlassPopover` / `GlassSheet` and the `--sky-*` tokens.
+  `--sky-image` is how a skin ships a plate; a second background is a bug.
+- `home-context.ts` is pure and takes the clock as an argument. Keep it that
+  way if you extend it — the landing's claims are all tested there.

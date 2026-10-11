@@ -10,6 +10,7 @@ import { emailGateDone, initAnalytics } from "@/lib/analytics";
 import { Sidebar } from "@/components/Sidebar";
 import { AsciiSky } from "@/components/AsciiSky";
 import { AppTopBar } from "@/components/AppTopBar";
+import { HomeScreen } from "@/components/HomeScreen";
 import { ChatView } from "@/components/ChatView";
 import { GroupView } from "@/components/GroupView";
 import { BotSettingsDialog } from "@/components/BotSettingsDialog";
@@ -65,6 +66,11 @@ function Shell() {
   // turn the aside into a containing block for its fixed descendants (see
   // Sidebar.tsx's className comment).
   const [drawerOpen, setDrawerOpen] = useState(false);
+  /* The Home rail's escape to the whole workspace: the same Sidebar, opened
+     over the canvas as a sheet. Rooms, sections, archived bots, the tools row
+     and the thread folders all live in there, so the landing never has to
+     carry a second copy of them to stay lossless. */
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
   // Apply the configured UI language the moment config arrives or changes;
   // "" follows the system. The epoch bump re-renders extracted strings —
   // t() reads a module variable, so React needs this nudge.
@@ -96,6 +102,11 @@ function Shell() {
     selectedId: state.selectedId,
     selectedIsGroup: Boolean(group),
   });
+
+  const closeDrawer = useCallback(() => {
+    setDrawerOpen(false);
+    menuButtonRef.current?.focus();
+  }, []);
 
   /* A destination is a *view* of the existing selection, so clicking a pill
      never invents state — it moves the selection to something that already
@@ -130,6 +141,13 @@ function Shell() {
     state.connected &&
     state.instances.length > 0 &&
     !state.instances.some((i) => i.snapshot.state === "available");
+
+  /* The landing takes over only when there is genuinely a conversation to
+     frame. Every gate the chat already had stays in front of it — no engine to
+     run anything, a workspace holding the column, a room rather than a bot,
+     still connecting, no bots yet — so F001's recovery screens keep their own
+     layout instead of gaining a greeting over an empty canvas. */
+  const showHome = destination === "home" && Boolean(bot) && !noEngines && !localVmWorkspaceBotId;
 
   // App-wide shortcuts: ⌘N new bot · ⌘1–9 jump to bot · ⌘⇧[ / ⌘⇧] prev/next · ⌘/ or ? shortcuts cheat sheet.
   // Kept deliberately small; every panel already closes on Esc.
@@ -196,6 +214,13 @@ function Shell() {
   useEffect(() => {
     setDrawerOpen(false);
   }, [state.selectedId, bot?.threadId, group?.threadId, state.activeView, state.pluginsOpen, state.settingsOpen]);
+
+  /* The workspace sheet belongs to Home. Leaving Home — a room selected from
+     inside it, the Crew pill, the calendar — takes it down with us, rather
+     than leaving a column of the sidebar floating over an unrelated screen. */
+  useEffect(() => {
+    if (!showHome) setWorkspaceOpen(false);
+  }, [showHome]);
 
   useEffect(() => {
     if (state.activeView === "routines" && previousViewRef.current !== "routines") {
@@ -292,6 +317,10 @@ function Shell() {
         onOpenSearch={() => setPaletteRequested(true)}
       />
       <div className="relative z-10 flex min-h-0 flex-1">
+      {/* The phone's way into the bot list. It lives outside the Home branch
+          on purpose: below `md` the landing has no rail and no context column,
+          so without this button a phone would have no route to rooms,
+          sections, archived bots or tools at all. */}
       {!calendarFocus && <button
         type="button"
         ref={menuButtonRef}
@@ -309,15 +338,42 @@ function Shell() {
           className="absolute inset-0 z-30 bg-black/25 md:hidden"
         />
       )}
+      {showHome ? (
+        /* Home. The conversation is the screen; the greeting over it and the
+           two context columns around it sit directly on the sky. Above `md`
+           the sidebar is not in this branch — it opens as a sheet on request,
+           so the landing never has to carry a second copy of rooms, sections,
+           archived bots or tools to stay lossless. */
+        <>
+          <HomeScreen
+            bot={bot!}
+            onOpenAll={() => setWorkspaceOpen(true)}
+            onGoProjects={() => goToDestination("projects")}
+            onShowAutomations={() => dispatch({ type: "showRoutines" })}
+          >
+            <ChatView bot={bot!} />
+          </HomeScreen>
+          {/* Below `md` the landing has no rail, so the drawer is still the
+              only route to the rest of the workspace. The wrapper is a plain
+              block there — a zero-width flex item, with the sidebar's own
+              `max-md:absolute` still resolving against the shell. */}
+          <div className="md:hidden">
+            {!calendarFocus && <Sidebar open={drawerOpen} onClose={closeDrawer} />}
+          </div>
+          {workspaceOpen && (
+            <div className="fixed inset-0 z-30">
+              <div aria-hidden className="absolute inset-0 bg-black/20" onMouseDown={() => setWorkspaceOpen(false)} />
+              <div className="glass-sheet relative h-full w-[320px] max-sm:w-full">
+                <Sidebar open onClose={() => setWorkspaceOpen(false)} />
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
       {/* The context column. It floats: no panel fill, no right border, a
           gutter so the lists have air against the sky. */}
-      {!calendarFocus && <Sidebar
-        open={drawerOpen}
-        onClose={() => {
-          setDrawerOpen(false);
-          menuButtonRef.current?.focus();
-        }}
-      />}
+      {!calendarFocus && <Sidebar open={drawerOpen} onClose={closeDrawer} />}
       {state.activeView === "team-map" ? (
         <TeamMapPage />
       ) : state.activeView === "routines" ? (
@@ -347,6 +403,8 @@ function Shell() {
             </div>
           )}
         </main>
+      )}
+        </>
       )}
       {/* The panels below are siblings, so their keys must differ even
           though each is remounted per bot. Two siblings keyed `bot.id`

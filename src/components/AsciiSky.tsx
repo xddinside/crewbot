@@ -115,6 +115,12 @@ export function AsciiSky() {
       className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
       style={{ background: "var(--sky-ground)" }}
     >
+      {/* The approved cloud plate, when the skin ships one. It sits between
+          the gradient and the glyphs: the gradient is the ground, the plate
+          is the weather, the glyphs are the character texture on top. CSS
+          `background: none` costs one skipped layer rather than a JS branch,
+          and it follows the skin automatically — no redraw when it changes. */}
+      <div className="absolute inset-0" style={{ backgroundImage: "var(--sky-image)", backgroundSize: "var(--sky-image-size)", backgroundPosition: "var(--sky-image-position)", backgroundRepeat: "no-repeat" }} />
       <canvas
         ref={ref}
         className="absolute left-0 top-0 h-full w-full"
