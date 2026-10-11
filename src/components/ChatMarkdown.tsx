@@ -18,7 +18,7 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, Copy, Download, LoaderCircle, RotateCcw, WrapText } from "lucide-react";
+import { Check, Copy, Download, FileText, LoaderCircle, RotateCcw, WrapText } from "lucide-react";
 import { remarkMentions, type MentionPeer } from "@/lib/mentions";
 
 import {
@@ -288,10 +288,11 @@ export function CodeBlock({ code, lang, streaming }: CodeBlockProps) {
   // Code reads left-to-right whatever language surrounds it, so the block pins
   // its own direction rather than inheriting the message's.
   return (
-    <div dir="ltr" className="my-2 overflow-hidden rounded-lg border border-hairline/40 bg-inset">
-      <div className="flex items-center justify-between gap-2 border-b border-hairline/30 bg-raised/30 px-3 py-1.5 text-xs">
+    <div dir="ltr" data-code-block="" className="code-block my-2 overflow-hidden rounded-xl border border-hairline/35 bg-inset/55">
+      <div className="flex items-center justify-between gap-2 border-b border-hairline/25 px-3 py-1.5 text-xs">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span title={displayLanguage} className="min-w-0 truncate rounded border border-hairline/40 bg-raised px-1.5 py-0.5 text-[11px] font-medium tracking-wide text-ink select-none">
+          <FileText size={13} aria-hidden="true" className="shrink-0 text-ink-secondary/70" />
+          <span title={displayLanguage} className="min-w-0 truncate rounded-md border border-hairline/35 bg-raised/70 px-1.5 py-0.5 text-[11px] font-medium tracking-wide text-ink select-none">
             {displayLanguage}
           </span>
           {lineCount > 0 && (
@@ -304,7 +305,7 @@ export function CodeBlock({ code, lang, streaming }: CodeBlockProps) {
           <button
             type="button"
             onClick={() => setWrapLines((w) => !w)}
-            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors ${
+            className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] transition-colors duration-[var(--motion-fast)] ${
               wrapLines
                 ? "bg-accent/15 text-accent font-medium"
                 : "text-ink-secondary hover:bg-raised hover:text-ink"
@@ -319,7 +320,7 @@ export function CodeBlock({ code, lang, streaming }: CodeBlockProps) {
           <button
             type="button"
             onClick={download}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-ink-secondary hover:bg-raised hover:text-ink transition-colors"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-ink-secondary hover:bg-raised hover:text-ink transition-colors duration-[var(--motion-fast)]"
             title="Download snippet as file"
             aria-label="Download snippet as file"
           >
@@ -329,7 +330,7 @@ export function CodeBlock({ code, lang, streaming }: CodeBlockProps) {
           <button
             type="button"
             onClick={copy}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-ink-secondary hover:bg-raised hover:text-ink transition-colors"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-ink-secondary hover:bg-raised hover:text-ink transition-colors duration-[var(--motion-fast)]"
             title={copied ? "Copied to clipboard" : "Copy code"}
             aria-label={copied ? "Code copied to clipboard" : "Copy code to clipboard"}
           >

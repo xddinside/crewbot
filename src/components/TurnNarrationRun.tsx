@@ -4,6 +4,8 @@
 import { useEffect, useState } from "react";
 import { Check, ChevronRight } from "lucide-react";
 
+import { cn } from "@/lib/cn";
+
 export function TurnNarrationRun({
   label,
   forceOpen = false,
@@ -26,11 +28,11 @@ export function TurnNarrationRun({
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
           title={open ? "Hide progress messages" : "Show progress messages"}
-          className="flex items-center gap-2 rounded-full border border-hairline/40 bg-panel px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-control"
+          className="flex items-center gap-2 rounded-full px-3 py-1.5 text-[13px] text-ink-secondary outline-none transition-colors duration-[var(--motion-fast)] hover:bg-raised-hover/50 focus-visible:ring-2 focus-visible:ring-accent/60"
         >
-          <Check size={13} className="text-success" />
+          <Check size={13} className="shrink-0 text-success" />
           <span>{label}</span>
-          <ChevronRight size={13} className={open ? "rotate-90" : undefined} />
+          <ChevronRight size={13} aria-hidden="true" className={cn("shrink-0 transition-transform duration-[var(--motion-fast)]", open && "rotate-90")} />
         </button>
       </div>
       {open && children}

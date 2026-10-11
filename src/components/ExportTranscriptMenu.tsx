@@ -123,7 +123,7 @@ export function ExportTranscriptMenu({
         <div
           role="menu"
           aria-label="Export options"
-          className="absolute right-0 top-full z-40 mt-1 w-[220px] overflow-hidden rounded-xl border border-hairline/50 bg-card py-1.5 shadow-2xl shadow-black/50"
+          className="glass-popover absolute right-0 top-full z-40 mt-1 w-[220px] overflow-hidden p-1.5"
         >
           <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-ink-secondary/70">
             Export Conversation
@@ -139,7 +139,7 @@ export function ExportTranscriptMenu({
                 type="button"
                 role="menuitem"
                 onClick={() => void handleCopy()}
-                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-ink hover:bg-raised/70"
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink outline-none transition-colors duration-[var(--motion-fast)] hover:bg-raised-hover/50 focus-visible:ring-2 focus-visible:ring-accent/60"
               >
                 {copied ? (
                   <Check size={14} className="shrink-0 text-success" />
@@ -161,7 +161,7 @@ export function ExportTranscriptMenu({
                 type="button"
                 role="menuitem"
                 onClick={handleDownload}
-                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-ink hover:bg-raised/70"
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink outline-none transition-colors duration-[var(--motion-fast)] hover:bg-raised-hover/50 focus-visible:ring-2 focus-visible:ring-accent/60"
               >
                 <Download size={14} className="shrink-0 text-ink-secondary" />
                 <span className="flex-1 truncate">Download as .md</span>

@@ -16,6 +16,7 @@ import { Search } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useCaptionChrome, useDesktopCapabilities } from "./DesktopCapabilities";
+import { SEGMENT_ACTIVE, SEGMENT_IDLE } from "./Glass";
 import { DESTINATIONS, DESTINATION_LABEL, type Destination } from "@/lib/shell-nav";
 import { AttentionBell } from "./AttentionBell";
 import { AvatarMenu } from "./AvatarMenu";
@@ -62,7 +63,8 @@ function DestinationNav({ destination, onSelect }: Omit<AppTopBarProps, "onOpenS
               if (e.key === "ArrowRight") {
                 e.preventDefault();
                 move(1);
-              } else if (e.key === "ArrowLeft") {
+              }
+              if (e.key === "ArrowLeft") {
                 e.preventDefault();
                 move(-1);
               }
@@ -70,9 +72,7 @@ function DestinationNav({ destination, onSelect }: Omit<AppTopBarProps, "onOpenS
             className={cn(
               "rounded-full px-4 py-1.5 text-[13px] font-medium",
               "transition-[background-color,color] duration-[var(--motion-base)] ease-[var(--motion-curve)]",
-              active
-                ? "bg-accent text-[var(--color-accent-ink)]"
-                : "text-ink-secondary hover:bg-raised/60 hover:text-ink",
+              active ? SEGMENT_ACTIVE : SEGMENT_IDLE,
             )}
           >
             {DESTINATION_LABEL[item]}

@@ -8,12 +8,20 @@
 // One tab per question (the model names them), the model's options as rows
 // with their descriptions, an "Other" row for a reply it did not think of,
 // and a single submit that sends every answer back at once — the shape a
-// person can read at a glance and answer without scrolling back up.
+// person can read at a glance and answer without scrolling back up. A short
+// single-choice question drops the descriptions and gets the mockup's row of
+// chips instead; `choiceLayout` owns that call.
 import { useMemo, useState } from "react";
-import { Check, MessageCircleQuestion } from "lucide-react";
+import { MessageCircleQuestion } from "lucide-react";
 import { useStore, type Bot, type Message } from "@/state/store";
-import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import {
+  ChoiceList,
+  DecisionCard,
+  DecisionInput,
+  DecisionReceipt,
+  OtherAnswer,
+} from "@/components/DecisionCard";
 import {
   answerWithoutPreamble,
   formatQuestionAnswers,
@@ -126,101 +134,85 @@ export function QuestionCard({
   };
 
   return (
-    <div
+    <DecisionCard
       role="group"
       aria-label={t("question.aria.card")}
-      className={cn(
-        "w-full max-w-[840px] rounded-2xl border bg-card p-4",
-        settled ? "border-hairline/30 opacity-70" : "border-accent/40",
-      )}
+      settled={settled}
+      glyph={<MessageCircleQuestion size={17} aria-hidden="true" className="text-ink-secondary" />}
+      title={bot ? t("question.card.named", { name: bot.name }) : t("question.card.title")}
+      aside={
+        questions.length > 1
+          ? t("question.progress", { answered: answeredCount, count: questions.length })
+          : undefined
+      }
+      footer={
+        settled ? (
+          <DecisionReceipt
+            settled
+            allow={(() => {
+              const answer = card.answeredText ?? sent;
+              return answer ? answerWithoutPreamble(answer) : t("question.status.answered");
+            })()}
+            deny={t("question.status.answered")}
+            waiting={t("question.status.waiting")}
+          />
+        ) : (
+          <div className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-1.5 text-[12.5px] text-ink-secondary">
+              <MessageCircleQuestion size={14} aria-hidden="true" className="text-accent" />
+              {t("question.status.waiting")}
+            </span>
+            <button
+              onClick={submit}
+              disabled={!complete}
+              className="rounded-full bg-accent px-4 py-1.5 text-[13.5px] font-medium text-white outline-none transition-colors duration-[var(--motion-fast)] hover:brightness-110 focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {questions.length > 1 ? t("question.submitAll") : t("question.submit")}
+            </button>
+          </div>
+        )
+      }
     >
-      <div className="flex items-baseline justify-between gap-3">
-        <div className="text-[15px] font-semibold text-ink">
-          {bot ? t("question.card.named", { name: bot.name }) : t("question.card.title")}
-        </div>
-        {questions.length > 1 && !settled && (
-          <span className="shrink-0 text-[11px] tabular-nums text-ink-secondary">
-            {t("question.progress", { answered: answeredCount, count: questions.length })}
-          </span>
-        )}
-      </div>
-
       {questions.length > 1 && (
-        <div role="tablist" aria-label={t("question.aria.tabs")} className="mt-3 flex flex-wrap gap-1">
+        <div role="tablist" aria-label={t("question.aria.tabs")} className="mt-2.5 flex flex-wrap gap-1">
           {questions.map((question, index) => (
             <button
               key={`${index}-${question.question}`}
               role="tab"
               aria-selected={index === currentIndex}
               onClick={() => setActive(index)}
-              className={cn(
-                "flex items-center gap-1.5 rounded-full px-3 py-1 text-[13px] transition-colors",
+              className={
                 index === currentIndex
-                  ? "bg-control text-ink"
-                  : "text-ink-secondary hover:bg-control/60 hover:text-ink",
-              )}
+                  ? "rounded-full bg-accent/12 px-3 py-1 text-[13px] font-medium text-accent outline-none transition-colors duration-[var(--motion-fast)] focus-visible:ring-2 focus-visible:ring-accent/60"
+                  : "rounded-full px-3 py-1 text-[13px] text-ink-secondary outline-none transition-colors duration-[var(--motion-fast)] hover:bg-control/60 hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/60"
+              }
             >
-              {answered[index] && <Check size={12} className="text-success" />}
+              {answered[index] && <span aria-hidden="true" className="me-1 text-success">✓</span>}
               {tabLabel(question, index)}
             </button>
           ))}
         </div>
       )}
 
-      <div className="mt-3 text-[15px] leading-relaxed text-ink">{current.question}</div>
+      <div className="mt-2.5 text-[15px] leading-relaxed text-ink">{current.question}</div>
       {current.multiSelect && !settled && (
         <div className="mt-1 text-[12.5px] text-ink-secondary">{t("question.multiHint")}</div>
       )}
 
       {!settled && (
-        <div
-          role={current.multiSelect ? "group" : "radiogroup"}
-          aria-label={current.question}
-          className="mt-3 overflow-hidden rounded-lg border border-hairline/40"
+        <ChoiceList
+          question={current.question}
+          options={current.options}
+          picked={draft.picked}
+          multiSelect={Boolean(current.multiSelect)}
+          onChoose={choose}
+          onOther={toggleOther}
+          otherOpen={draft.other}
+          otherLabel={t("question.other")}
         >
-          {current.options.map((option, index) => {
-            const picked = draft.picked.includes(option.label);
-            return (
-              <button
-                key={option.label}
-                role={current.multiSelect ? "checkbox" : "radio"}
-                aria-checked={picked}
-                onClick={() => choose(option.label)}
-                className={cn(
-                  "flex w-full items-start gap-3 px-3 py-2.5 text-left",
-                  index > 0 && "border-t border-hairline/40",
-                  // `raised` is the same value as the card in the light
-                  // skins; `raised-hover` is the one tone every skin
-                  // guarantees stands off a surface.
-                  picked ? "bg-raised-hover" : "hover:bg-raised-hover/60",
-                )}
-              >
-                <Marker checked={picked} multi={Boolean(current.multiSelect)} />
-                <span className="min-w-0">
-                  <span className="block text-[14.5px] font-medium text-ink">{option.label}</span>
-                  {option.description && (
-                    <span className="block text-[13px] leading-snug text-ink-secondary">{option.description}</span>
-                  )}
-                </span>
-              </button>
-            );
-          })}
-          <button
-            role={current.multiSelect ? "checkbox" : "radio"}
-            aria-checked={draft.other}
-            onClick={toggleOther}
-            className={cn(
-              "flex w-full items-center gap-3 px-3 py-2.5 text-left",
-              current.options.length > 0 && "border-t border-hairline/40",
-              draft.other ? "bg-raised-hover" : "hover:bg-raised-hover/60",
-            )}
-          >
-            <Marker checked={draft.other} multi={Boolean(current.multiSelect)} />
-            <span className="text-[14.5px] text-ink">{t("question.other")}</span>
-          </button>
           {draft.other && (
-            <div className="border-t border-hairline/40 px-3 py-2.5">
-              <input
+            <OtherAnswer>
+              <DecisionInput
                 autoFocus
                 value={draft.custom}
                 maxLength={MAX_CUSTOM_ANSWER}
@@ -229,60 +221,13 @@ export function QuestionCard({
                   if (event.key === "Enter" && complete) submit();
                 }}
                 placeholder={t("question.otherPlaceholder")}
-                className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14.5px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none"
+                aria-label={t("question.otherPlaceholder")}
               />
-            </div>
+            </OtherAnswer>
           )}
-        </div>
+        </ChoiceList>
       )}
-
-      {settled ? (
-        <div className="mt-3 flex items-start gap-1.5 text-[13px] text-ink-secondary">
-          <Check size={14} className="mt-0.5 shrink-0 text-success" />
-          <span className="whitespace-pre-wrap break-words">
-            {(() => {
-              const answer = card.answeredText ?? sent;
-              return answer ? answerWithoutPreamble(answer) : t("question.status.answered");
-            })()}
-          </span>
-        </div>
-      ) : (
-        <div className="mt-3 flex items-center justify-end gap-3">
-          <span className="flex items-center gap-1.5 text-[13px] text-ink-secondary">
-            <MessageCircleQuestion size={14} className="text-accent" />
-            {t("question.status.waiting")}
-          </span>
-          <button
-            onClick={submit}
-            disabled={!complete}
-            className="rounded-full bg-accent px-3.5 py-1.5 text-[13.5px] font-medium text-white transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {questions.length > 1 ? t("question.submitAll") : t("question.submit")}
-          </button>
-        </div>
-      )}
-    </div>
+    </DecisionCard>
   );
 }
 
-/** The radio dot / checkbox tick. Drawn rather than an <input> so the whole
- * row stays one button and the hit target is the row, not the 16px circle. */
-function Marker({ checked, multi }: { checked: boolean; multi: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "mt-0.5 flex size-4 shrink-0 items-center justify-center border",
-        multi ? "rounded-[5px]" : "rounded-full",
-        checked ? "border-accent bg-accent" : "border-hairline",
-      )}
-    >
-      {checked &&
-        (multi ? (
-          <Check size={11} className="text-white" strokeWidth={3} />
-        ) : (
-          <span className="size-1.5 rounded-full bg-white" />
-        ))}
-    </span>
-  );
-}

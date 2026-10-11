@@ -1,10 +1,16 @@
 import { useState, type FormEvent } from "react";
-import { Check, ExternalLink, KeyRound, Loader2, LockKeyhole, RefreshCw, X } from "lucide-react";
+import { Check, ExternalLink, Loader2, LockKeyhole, RefreshCw } from "lucide-react";
 
 import { credentialConfigPatch, credentialResumeOutcome } from "../../shared/credential-request";
 import { cn } from "@/lib/cn";
+import { t } from "@/lib/i18n";
 import { api, useStore, type ConfigStatus, type Message } from "@/state/store";
+import { DecisionCard, DecisionInput } from "./DecisionCard";
 
+/** The one card in the transcript that asks for a secret rather than for a
+ *  decision. It reads the same way as the rest — glass, a glyph, a receipt —
+ *  and it says plainly that the value never becomes part of the conversation,
+ *  because that is the only thing anyone needs to be told before typing a key. */
 export function SecretRequestCard({
   botId,
   threadId,
@@ -28,18 +34,18 @@ export function SecretRequestCard({
   const declined = outcome === "dismissed";
   const description = provided
     ? secret.resumed
-      ? "Saved securely. Your bot is continuing the task."
-      : "Saved securely. Your bot will continue when its current turn settles."
+      ? t("secret.savedResumed")
+      : t("secret.savedPending")
     : declined
-      ? "You chose not to provide this credential. crewbot could not resume the bot yet."
+      ? t("secret.declined")
       : secret.description;
   const footerLabel = declined
-    ? "Continuing without this credential failed"
+    ? t("secret.resumeFailedAfterDecline")
     : secret.resumed
-      ? "Bot resumed without seeing the key"
+      ? t("secret.resumedBlind")
       : error
-        ? "The key is safe; resuming failed"
-        : "Waiting to resume safely";
+        ? t("secret.keySafeResumeFailed")
+        : t("secret.waitingToResume");
 
   // A successful decline has no durable card to show. If its continuation
   // failed, bring the card back with the same retry affordance as a saved key.
@@ -101,52 +107,85 @@ export function SecretRequestCard({
     }).catch(() => {});
   };
 
+  const open = !provided && !declined;
+
   return (
     <div className="flex w-full justify-start">
-      <div className="w-full max-w-[520px] overflow-hidden rounded-2xl border border-hairline/50 bg-card shadow-sm">
-        <div className="flex items-start gap-3 p-4">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-control text-ink">
-            <KeyRound size={19} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="truncate text-[14px] font-semibold text-ink">{secret.label}</span>
-              {provided && (
-                <span className="flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success">
-                  <Check size={11} /> Saved
-                </span>
+      <DecisionCard
+        data-secret-card=""
+        settled={!open}
+        className="max-w-[520px]"
+        glyph={
+          provided ? (
+            <Check size={17} aria-hidden="true" className="text-success" />
+          ) : (
+            <LockKeyhole size={17} aria-hidden="true" className="text-ink-secondary" />
+          )
+        }
+        title={secret.label}
+        aside={
+          <span className="flex items-center gap-1">
+            {provided && <Check size={12} aria-hidden="true" />}
+            {open ? t("secret.enterSecurely") : undefined}
+          </span>
+        }
+        footer={
+          (provided || declined) && (
+            <div
+              className={cn(
+                "flex items-center justify-between gap-3 text-[11.5px]",
+                declined ? "text-danger" : "text-success",
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                {secret.resumed ? (
+                  <Check size={12} aria-hidden="true" />
+                ) : error ? (
+                  <LockKeyhole size={12} aria-hidden="true" />
+                ) : (
+                  <Loader2 size={12} aria-hidden="true" className="animate-spin" />
+                )}
+                {footerLabel}
+              </span>
+              {!secret.resumed && error && (
+                <button
+                  onClick={() => void retryResume()}
+                  disabled={saving}
+                  className="flex shrink-0 items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-[12px] font-medium text-white outline-none transition-colors duration-[var(--motion-fast)] hover:brightness-110 focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-50"
+                >
+                  {saving ? (
+                    <Loader2 size={12} aria-hidden="true" className="animate-spin" />
+                  ) : (
+                    <RefreshCw size={12} aria-hidden="true" />
+                  )}{" "}
+                  {t("chat.retry")}
+                </button>
               )}
             </div>
-            <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-secondary">
-              {description}
-            </p>
-            {!provided && !declined && (
-              <p className="mt-1 flex items-center gap-1 text-[11.5px] text-ink-secondary/80">
-                <LockKeyhole size={11} /> Stored securely by crewbot and never added to chat.
-              </p>
-            )}
-            {error && <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p>}
-          </div>
-          {!provided && !declined && (
-            <button
-              onClick={dismiss}
-              aria-label="Not now"
-              title="Not now"
-              className="rounded-md p-1 text-ink-secondary hover:bg-control hover:text-ink"
-            >
-              <X size={15} />
-            </button>
-          )}
-        </div>
-        {remoteClient && !provided && !declined && (
-          <div className="border-t border-hairline/40 bg-panel/40 px-4 py-3 text-[12.5px] leading-relaxed text-ink-secondary">
-            This key must be saved on the host computer. Open this conversation on the host to continue securely.
+          )
+        }
+      >
+        <p className="mt-2 text-[12.5px] leading-relaxed text-ink-secondary">{description}</p>
+        {open && (
+          <p className="mt-1 flex items-center gap-1 text-[11.5px] text-ink-secondary/85">
+            <LockKeyhole size={11} aria-hidden="true" /> {t("secret.storedSecurely")}
+          </p>
+        )}
+        {error && open && (
+          <p role="alert" className="mt-2 text-[12px] text-danger">
+            {error}
+          </p>
+        )}
+
+        {remoteClient && open && (
+          <div className="mt-2.5 rounded-lg bg-inset/60 px-3 py-2 text-[12.5px] leading-relaxed text-ink-secondary">
+            {t("secret.mustBeHost")}
           </div>
         )}
-        {!remoteClient && !provided && !declined && (
-          <form onSubmit={(event) => void save(event)} className="border-t border-hairline/40 bg-panel/40 px-4 py-3">
+        {!remoteClient && open && (
+          <form onSubmit={(event) => void save(event)} className="mt-2.5">
             <div className="flex gap-2">
-              <input
+              <DecisionInput
                 type="password"
                 autoComplete="new-password"
                 spellCheck={false}
@@ -155,15 +194,27 @@ export function SecretRequestCard({
                 placeholder={secret.placeholder}
                 disabled={saving || savedLocally}
                 aria-label={secret.label}
-                className="min-w-0 flex-1 rounded-lg border border-hairline bg-inset px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-secondary/60 focus:border-accent disabled:opacity-60"
               />
               <button
                 type="submit"
                 disabled={saving || (!value.trim() && !savedLocally)}
-                className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-medium text-white outline-none transition-colors duration-[var(--motion-fast)] hover:brightness-110 focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-50"
               >
-                {saving ? <Loader2 size={13} className="animate-spin" /> : <LockKeyhole size={13} />}
-                {savedLocally ? "Continue task" : "Save securely"}
+                {saving ? (
+                  <Loader2 size={13} aria-hidden="true" className="animate-spin" />
+                ) : (
+                  <LockKeyhole size={13} aria-hidden="true" />
+                )}
+                {savedLocally ? t("secret.continueTask") : t("secret.saveSecurely")}
+              </button>
+              <button
+                type="button"
+                onClick={dismiss}
+                aria-label={t("secret.notNow")}
+                title={t("secret.notNow")}
+                className="shrink-0 rounded-lg border border-hairline/55 px-3 py-2 text-[12.5px] text-ink outline-none transition-colors duration-[var(--motion-fast)] hover:bg-control focus-visible:ring-2 focus-visible:ring-accent/60"
+              >
+                {t("secret.notNow")}
               </button>
             </div>
             <a
@@ -172,31 +223,11 @@ export function SecretRequestCard({
               rel="noopener noreferrer"
               className="mt-2 inline-flex items-center gap-1 text-[11.5px] text-accent hover:underline"
             >
-              Where to get this key <ExternalLink size={11} />
+              {t("secret.whereToGet")} <ExternalLink size={11} aria-hidden="true" />
             </a>
           </form>
         )}
-        {(provided || declined) && (
-          <div className={cn(
-            "flex items-center justify-between border-t border-hairline/40 bg-panel/40 px-4 py-2.5 text-[11.5px]",
-            declined ? "text-danger" : "text-success",
-          )}>
-            <span className="flex items-center gap-1.5">
-              {secret.resumed ? <Check size={12} /> : error ? <KeyRound size={12} /> : <Loader2 size={12} className="animate-spin" />}
-              {footerLabel}
-            </span>
-            {!secret.resumed && error && (
-              <button
-                onClick={() => void retryResume()}
-                disabled={saving}
-                className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
-              >
-                {saving ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Try again
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      </DecisionCard>
     </div>
   );
 }

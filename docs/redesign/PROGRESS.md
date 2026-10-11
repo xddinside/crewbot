@@ -540,3 +540,185 @@ style instead.
 - `composerModeOptions()` is the one gate for slash commands and the mode
   menu. Do not re-derive availability in a component.
 - Do not run prettier. See above.
+
+## Phase 4 — Decisions, tools and files
+
+From `8c301a46`.
+
+### What changed
+
+**One decision-card chrome for four surfaces.** `src/components/DecisionCard.tsx`
+is the box every ask in the transcript now shares: `DecisionCard` (a
+`GlassCard` with a glyph tile, a title, an aside, a body and a footer),
+`DecisionReceipt` (what happened / what it is waiting on), `ChoiceList` +
+`ChoiceMarker` (the options), `OtherAnswer` and `DecisionInput`. Before this,
+the permission card, the question card, the onboarding quiz and the credential
+card were four independent copies of the same bordered box, the same header,
+the same radio dot and the same selected row. They kept their own state, their
+own dispatch and their own wording; only the shape moved, and the shape is now
+written once. `src/lib/decision-card.ts` holds the one judgement inside it —
+`choiceLayout`, which picks a row of chips for a short single-choice ask and a
+column of rows whenever a description or a second tick has to fit — so the four
+cannot each invent an answer, and the rule is tested.
+
+- **Permission / approval (F055, F056).** The transcript card is a receipt: a
+  gear glyph, the tool's own name as the aside, the reviewed content still
+  never truncated, and one closing line that reads *allowed* / *denied* /
+  *waiting*. `data-tour="approval"` and every wording and locale assertion are
+  unchanged. **The three answers still live in the composer**, which took over
+  the old strip: `PendingApprovalPanel` is now the glass card (its own
+  surface, not a tinted band welded to the composer pill) and
+  `PendingApprovalActions` is the mockup's three-button row — Deny · Allow
+  once · Always allow — with *Cancel turn* as a quiet left-hand text button.
+  Stop still works on durable requests; `allowKey` / `allowSession` grants,
+  `reviewedSha256`, `autoFocus` and the skills/routines/profile/team gates are
+  untouched.
+- **Question card (F057).** Tabs are accent pills, the options go through
+  `choiceLayout`, *Other* is a choice like any other, and Submit sits in the
+  card's footer beside the waiting line. Tab order, per-question completion,
+  multi-select, `MAX_CUSTOM_ANSWER` and the answered receipt are unchanged.
+- **Onboarding quiz (F058).** The lettered A/B/C rows are the same rows, with
+  the letter chip drawn by a `marker` override rather than by the card; the
+  free-text box still refuses to appear on a permission ask; the dismiss
+  control moved from a bare corner X into the card's aside with an accessible
+  name (`onboarding.card.dismiss`, new).
+- **Credential request.** `SecretRequestCard` is a decision card: a lock glyph,
+  *Enter securely* as the aside, the mask and *Save securely* on one line, and
+  **Not now** as a real button beside them instead of a corner X. Its fourteen
+  hard-coded English strings moved into the catalog (`secret.*`), so a
+  non-English reader is no longer the only one who reads English on this card.
+  Save, resume, dismiss, the remote-client rule and the retry-after-failure
+  path are unchanged.
+- **Tool rows (F036).** `ToolActivity` is a glass disclosure with the same
+  `<details>`/`<summary>` semantics, a status dot, the place icon, and
+  **Copy** on the input and on the output. The copy controls mount with the
+  open panel rather than sitting inside the closed one: a collapsed `<details>`
+  hides its body, so a button parked there is unreachable, and an inert button
+  in a room's plain activity pill read as a control that did nothing.
+  `TurnNarrationRun`'s pill lost its panel fill and gained motion and a focus
+  ring, matching `ActivityRun`'s folded card from phase 3.
+- **Goal and verification receipts (F035).** `GoalRunCard` is glass, and its
+  status is a chip rather than a coloured border. `VerifyCard` is a
+  `GlassCard` whose footer is one line: *Save as skill* and the hint that it
+  fills the message instead of sending. Every assertion in `VerifyCard.test.ts`
+  — including its pinned markup regexes — still passes unchanged.
+- **Inspector (F037).** The panel is a **side sheet**: `glass-sheet` inside a
+  gutter (`my-3 me-4` docked at `lg`, an inset overlay below it), the
+  Run log · Events · Raw switch is the same segmented pill as the top bar
+  (`SEGMENT_RAIL` / `SEGMENT_ACTIVE` / `SEGMENT_IDLE` now live in `Glass.tsx`
+  and both use them), and each entry is a frosted card with the raw record
+  behind a disclosure. The count and Reload are now shown on every lens rather
+  than only the two technical ones. The SSE follow, the live-tail buffering,
+  the snapshot generation guard, the JSON view and the error and empty states
+  are untouched. `RunLog` entries are the same records as cards, each folding
+  to its **Command** — **open by default**, because a run log that hides every
+  command behind a click is a list of titles.
+- **Rendered content (F053, F054, F051, F052).** The fenced code block keeps
+  its language badge, line count and Wrap / Save / Copy and gains the
+  mockup's file glyph, radius-12 corners and a **numbered gutter** — drawn from
+  the highlighter's own `.line` spans, so it exists only once a block has
+  settled and the streaming plain `<pre>` shows none rather than wrong ones.
+  The media lightbox is **on the sky**: a light wash instead of an 80% black
+  scrim, a `glass-sheet` viewer with the mockup's header, glass arrows and a
+  dot rail, on the same authorization as before. The gallery, the file chips
+  and the thumbnails are frosted; save, progress, saved-path, retry,
+  unavailable, explicit video and external-image loading, previous/next and
+  authorized download are all unchanged.
+- **Recovery and webhook (F034, F029).** `ErrorRow` is a frosted recovery card:
+  the message in danger, then the *one* control that fixes it — the native
+  folder picker, or the folder-path form whose submit is now the accent
+  primary. Provider-safety errors still offer no button. The webhook card is
+  glass with a labelled payload disclosure, and its payload no longer sits on
+  a black panel inside a pale card.
+- `ExportTranscriptMenu`'s dropdown is a `glass-popover` (F038's surface; its
+  header-ellipsis placement is still phase 5/6's).
+
+### Files
+
+| file | |
+| --- | --- |
+| `src/components/DecisionCard.tsx` + `.test.ts` | the shared card, receipt, choices, field (9 tests) |
+| `src/lib/decision-card.ts` + `.test.ts` | `choiceLayout`, pure (6 tests) |
+| `src/components/ApprovalCard.tsx`, `PendingApproval.tsx`, `Composer.tsx` | receipt + the three answers |
+| `src/components/QuestionCard.tsx`, `OptionCard.tsx`, `SecretRequestCard.tsx` | the other three asks |
+| `src/components/GoalRunCard.tsx`, `VerifyCard.tsx`, `ToolActivity.tsx`, `TurnNarrationRun.tsx` | receipts and tool rows |
+| `src/components/InspectorPanel.tsx`, `RunLog.tsx`, `Glass.tsx`, `AppTopBar.tsx` | the side sheet, the shared pill |
+| `src/components/ChatMarkdown.tsx`, `AttachmentPreview.tsx`, `AttachmentGallery.tsx`, `ExportTranscriptMenu.tsx` | rendered content |
+| `src/components/ChatView.tsx`, `src/styles.css`, `src/locales/en.json` | the recovery card, the code gutter, 27 new strings |
+
+The store, IPC and the server were **not** touched.
+
+### FEATURES.md rows covered
+
+F029 (fold, webhook payload, delivery card), F034 (recovery card, engine /
+folder settings, request identity), F035 (verification receipt), F036 (tool
+rows, activity folding, narration), F037 (Inspector lenses, live follow, JSON,
+count, copy, error, empty), F038 (export surface), F051 (gallery, viewer on
+sky, navigation, authorized download), F052 (file save, progress, saved path,
+retry, unavailable, explicit media), F053 (markdown, spoilers, controlled
+media load), F054 (code header, wrap, copy, download), F055 (approval count,
+details, cancel, deny, allow once, persistent grant, session grant, receipt),
+F056 (reviewed content and target before confirm, skill hash), F057 (tabs,
+progress, single, multi, Other, submit, answered), F058 (letter choices,
+custom, dismiss, read-only receipt).
+
+### Checks run
+
+| check | result |
+| --- | --- |
+| `pnpm run checks` (typecheck · lint · i18n · electron) | pass, 4/4 |
+| `pnpm check:contrast` | pass — all 8 skins + bubble context |
+| `vite build` | pass |
+| `vitest run src/components src/lib src/state` | pass — 1934 tests |
+| `src/lib/sky-texture.test.ts` | **1 failure, pre-existing** — the `coverage` bound phase 2 recorded; untouched here |
+| whole-repo suite (server, e2e, harness) | not run; phase 11 owns it |
+
+### Two deliberate deviations from the mockup
+
+1. **The filled accent stays on *Allow once*.** The mockup fills *Always
+   allow this tool*. A persistent grant is the answer that keeps changing what
+   the bot may do without asking, so it must never be the button that reads as
+   the default. The order (Deny · Allow once · Always allow) is the mockup's.
+2. **Run-log entries open by default.** The mockup draws one expanded card.
+   Folding all 200 behind a click would have made the lens a list of titles.
+
+### Open, deferred, or unfinished
+
+- **Nobody has looked at any of it.** Every check is structural; the fourth
+  phase of the redesign now rests on structure alone. The glass cards on the
+  sky, the numbered gutter, the media viewer over a pale scrim and the
+  Inspector's new geometry are all unverified pixels. **What would settle it:**
+  an isolated fixture per `docs/verification/README.md`, a conversation with a
+  permission ask, a question, a credential and a goal run, and the Inspector
+  open. Phase 11 QA.
+- **The `padClass` for the Windows caption corner stays on the Inspector** even
+  though the sheet now has a gutter under the top bar. On a `win-caption`
+  build that header therefore sits 16px lower than it needs to. Harmless, but
+  someone with that build should look and delete it if it reads as a gap.
+- **The segmented pill is shared by class strings, not by a component.** The
+  top bar's version is a `radiogroup` with drag-region opt-outs and the
+  Inspector's is a `tablist` with `aria-controls`, so they are not one
+  element; `SEGMENT_RAIL` / `SEGMENT_ACTIVE` / `SEGMENT_IDLE` keep them from
+  drifting.
+- **Line numbers only exist on a highlighted block.** A streaming fence shows
+  no gutter until it settles, which is a visible change of layout mid-stream.
+  It is the honest trade: numbering the plain `<pre>` would mean splitting its
+  text, which changes what copy and the blank-line count see.
+- **Tool-row copy needs `navigator.clipboard`,** which a non-secure origin may
+  not have. The buttons no-op there, as every other copy control in the app
+  already does.
+- **The credential card's fourteen strings are English-only** in the other nine
+  packs; they fall back to English, as every new key does.
+
+### For the next agent
+
+- `DecisionCard` is the chrome; do not add a fifth ask surface without it. Its
+  `ChoiceList` takes a `marker` override rather than growing a prop per caller.
+- `choiceLayout` is the one place the chips/rows judgement lives. Do not
+  re-derive it in a component.
+- The Inspector is a **sheet**, not a docked panel: it keeps `absolute` below
+  `lg` and `static` above it, and `App.tsx` still mounts it as a sibling of
+  the conversation. Anything that needs to overlay it must clear `z-40`.
+- The store, IPC and the server were not touched. Nothing here needs a fourth
+  `activeView`.
+- Do not run prettier. See phase 3's note.

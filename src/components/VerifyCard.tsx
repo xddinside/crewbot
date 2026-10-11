@@ -4,6 +4,7 @@ import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { runSummary, type RunStep } from "@/lib/verify-steps";
+import { GlassCard } from "./Glass";
 
 function StatusIcon({ status }: { status: RunStep["status"] }) {
   const className = "size-4 shrink-0";
@@ -26,7 +27,8 @@ const ICON_BUTTON =
  * through the ordinary skill review flow. The card renders whatever steps it
  * is given; whether a run is worth a card (`showRun`) is the caller's call.
  * Collapse is the card's own (a long run starts folded); dismissal is the
- * caller's, since it outlives the card. */
+ * caller's, since it outlives the card. Glass, and it keeps the mockup's two
+ * actions on one line: what was verified, and what to do with it. */
 export function VerifyCard({
   steps,
   canSave,
@@ -48,17 +50,20 @@ export function VerifyCard({
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   if (steps.length === 0) return null;
   const toggleLabel = collapsed ? t("chat.verify.expand") : t("chat.verify.collapse");
+  const summary = runSummary(steps);
   return (
-    <section
+    <GlassCard
+      as="section"
       aria-label={t("chat.verify.aria")}
-      className="w-[22rem] max-w-full rounded-2xl border border-hairline/40 bg-raised/95 text-ink shadow-lg backdrop-blur-sm"
+      data-verify-card=""
+      className="w-[22rem] max-w-full p-0"
     >
       <div className="flex items-center gap-2 px-3 py-2">
         <ListChecks size={14} className="shrink-0 text-accent" aria-hidden="true" />
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="text-[13px] font-medium">{t("chat.verify.title")}</span>
           <span role="status" aria-live="polite" aria-atomic="true" className="text-[12px] text-ink-secondary">
-            {runSummary(steps).label}
+            {summary.label}
           </span>
         </div>
         <button
@@ -98,11 +103,11 @@ export function VerifyCard({
           {staged ? (
             <div className="border-t border-hairline/25 px-3 py-2 text-[12px] text-ink-secondary">{t("chat.verify.staged")}</div>
           ) : canSave && (
-            <div className="flex flex-col items-end gap-1 border-t border-hairline/25 px-3 py-2">
+            <div className="flex items-center justify-between gap-2 border-t border-hairline/25 px-3 py-2">
               <button
                 type="button"
                 onClick={onSave}
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-ink-secondary outline-none hover:bg-raised-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/60"
+                className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-ink outline-none transition-colors duration-[var(--motion-fast)] hover:bg-raised-hover focus-visible:ring-2 focus-visible:ring-accent/60"
               >
                 <BookmarkPlus size={13} aria-hidden="true" />
                 {t("chat.verify.save")}
@@ -112,6 +117,6 @@ export function VerifyCard({
           )}
         </>
       )}
-    </section>
+    </GlassCard>
   );
 }

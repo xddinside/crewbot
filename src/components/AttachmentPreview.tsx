@@ -402,8 +402,12 @@ export function AttachmentPreviewDialog({
   };
 
   return createPortal(
+    /* The viewer floats on the sky rather than in a black box: the app has no
+       window to darken, so the scrim is a wash and the viewer itself is a
+       sheet of glass — the same surface the Inspector and the workspace sheet
+       use, so opening an image is not a jump into a different application. */
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-3 backdrop-blur-sm sm:p-6"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/25 p-3 backdrop-blur-[2px] sm:p-6"
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div
@@ -412,15 +416,19 @@ export function AttachmentPreviewDialog({
         aria-modal="true"
         aria-label={t("attach.previewAria", { name: current.name })}
         tabIndex={-1}
-        className="animate-pop-in flex h-full max-h-[900px] w-full max-w-[1200px] flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/70 shadow-2xl outline-none"
+        data-preview-dialog=""
+        className="glass-sheet animate-pop-in flex h-full max-h-[900px] w-full max-w-[1100px] flex-col overflow-hidden outline-none"
       >
-        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-black/45 px-4 py-3">
-          <div className="min-w-0">
-            <div className="truncate text-[13px] font-medium text-white">{current.name}</div>
-            <div className="text-[10.5px] text-white/50">
-              {items.length > 1
-                ? t("attach.position", { index: index + 1, count: items.length })
-                : t("attach.imagePreview")}
+        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-hairline/25 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <FileText size={15} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+            <div className="min-w-0">
+              <div className="truncate text-[13.5px] font-medium text-ink">{current.name}</div>
+              <div className="text-[11px] text-ink-secondary">
+                {items.length > 1
+                  ? t("attach.position", { index: index + 1, count: items.length })
+                  : t("attach.imagePreview")}
+              </div>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -431,7 +439,7 @@ export function AttachmentPreviewDialog({
                   fallback: current.name,
                   source: current.downloadUrl,
                 })}
-                className="flex size-9 items-center justify-center rounded-lg text-white/65 hover:bg-white/10 hover:text-white"
+                className="flex size-9 items-center justify-center rounded-lg text-ink-secondary outline-none transition-colors duration-[var(--motion-fast)] hover:bg-raised-hover/60 hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/60"
                 aria-label={t("attach.downloadAria", { name: current.name })}
                 title={t("attach.download")}
               >
@@ -443,7 +451,7 @@ export function AttachmentPreviewDialog({
                 href={current.openUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="flex size-9 items-center justify-center rounded-lg text-white/65 hover:bg-white/10 hover:text-white"
+                className="flex size-9 items-center justify-center rounded-lg text-ink-secondary outline-none transition-colors duration-[var(--motion-fast)] hover:bg-raised-hover/60 hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/60"
                 aria-label={t("attach.openOriginalAria", { name: current.name })}
                 title={t("attach.openOriginal")}
               >
@@ -452,7 +460,7 @@ export function AttachmentPreviewDialog({
             )}
             <button
               onClick={onClose}
-              className="flex size-9 items-center justify-center rounded-lg text-white/65 hover:bg-white/10 hover:text-white"
+              className="flex size-9 items-center justify-center rounded-lg text-ink-secondary outline-none transition-colors duration-[var(--motion-fast)] hover:bg-raised-hover/60 hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/60"
               aria-label={t("attach.close")}
             >
               <X size={19} />
@@ -461,22 +469,22 @@ export function AttachmentPreviewDialog({
         </header>
         <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4 sm:p-8">
           {!loaded && !failed && (
-            <div className="absolute inset-4 flex animate-pulse items-center justify-center rounded-xl bg-white/[0.055] sm:inset-8" role="status">
-              <span className="flex items-center gap-2 text-[13px] text-white/55">
-                <LoaderCircle size={17} className="animate-spin" /> Loading image…
+            <div className="absolute inset-4 flex animate-pulse items-center justify-center rounded-xl bg-ink/[0.04] sm:inset-8" role="status">
+              <span className="flex items-center gap-2 text-[13px] text-ink-secondary">
+                <LoaderCircle size={17} className="animate-spin" /> {t("attach.loadingImage")}
               </span>
             </div>
           )}
           {failed ? (
-            <div className="flex flex-col items-center gap-3 text-white/60" role="alert">
+            <div className="flex flex-col items-center gap-3 text-ink-secondary" role="alert">
               <ImageOff size={34} />
-              <span className="text-[13px]">This image could not be loaded.</span>
+              <span className="text-[13px]">{t("attach.imageUnavailable")}</span>
               <button
                 type="button"
                 onClick={retry}
-                className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-[12px] text-white hover:bg-white/15"
+                className="flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-raised/60 px-3 py-1.5 text-[12px] text-ink outline-none transition-colors duration-[var(--motion-fast)] hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent/60"
               >
-                <RotateCcw size={13} /> Retry
+                <RotateCcw size={13} /> {t("chat.retry")}
               </button>
             </div>
           ) : (
@@ -487,7 +495,7 @@ export function AttachmentPreviewDialog({
               onLoad={() => setLoadedSources((sources) => new Set(sources).add(current.src))}
               onError={() => setFailedSource(current.src)}
               className={cn(
-                "block max-h-full max-w-full rounded-lg object-contain shadow-2xl transition-opacity duration-150",
+                "block max-h-full max-w-full rounded-xl object-contain shadow-lg transition-opacity duration-150",
                 loaded ? "opacity-100" : "opacity-0",
               )}
             />
@@ -498,7 +506,7 @@ export function AttachmentPreviewDialog({
                 type="button"
                 onClick={() => navigate(-1)}
                 aria-label={t("attach.previous")}
-                className="absolute left-2 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-white/80 backdrop-blur-sm hover:bg-black/75 hover:text-white sm:left-4"
+                className="glass-card absolute left-2 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center text-ink outline-none transition-transform duration-[var(--motion-fast)] hover:scale-105 focus-visible:ring-2 focus-visible:ring-accent/60 sm:left-4"
               >
                 <ChevronLeft size={21} />
               </button>
@@ -506,11 +514,25 @@ export function AttachmentPreviewDialog({
                 type="button"
                 onClick={() => navigate(1)}
                 aria-label={t("attach.next")}
-                className="absolute right-2 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-white/80 backdrop-blur-sm hover:bg-black/75 hover:text-white sm:right-4"
+                className="glass-card absolute right-2 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center text-ink outline-none transition-transform duration-[var(--motion-fast)] hover:scale-105 focus-visible:ring-2 focus-visible:ring-accent/60 sm:right-4"
               >
                 <ChevronRight size={21} />
               </button>
             </>
+          )}
+          {items.length > 1 && (
+            <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-ink/[0.06] px-2.5 py-1 text-[11px] tabular-nums text-ink-secondary">
+              {items.map((item, position) => (
+                <span
+                  key={`${item.src}:${position}`}
+                  aria-hidden
+                  className={cn(
+                    "size-1.5 rounded-full transition-colors duration-[var(--motion-fast)]",
+                    position === index ? "bg-accent" : "bg-ink-secondary/35",
+                  )}
+                />
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -537,9 +559,9 @@ export function AttachmentThumbnail({
   const [attempt, setAttempt] = useState(0);
 
   return (
-    <span className={cn("group/image relative block aspect-[4/3] min-w-0 overflow-hidden rounded-xl border border-hairline/40 bg-inset", className)}>
+    <span className={cn("group/image relative block aspect-[4/3] min-w-0 overflow-hidden rounded-xl border border-hairline/30 bg-inset/60", className)}>
       {state === "loading" && (
-        <span className="absolute inset-0 flex animate-pulse items-center justify-center bg-raised/65" role="status">
+        <span className="absolute inset-0 flex animate-pulse items-center justify-center bg-raised/45" role="status">
           <LoaderCircle size={17} className="animate-spin text-ink-secondary/65" />
           <span className="sr-only">Loading {image.name}</span>
         </span>
@@ -547,7 +569,7 @@ export function AttachmentThumbnail({
       {state === "failed" ? (
         <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center text-ink-secondary" role="alert">
           <ImageOff size={22} />
-          <span className="max-w-full truncate text-[11.5px]">Image unavailable</span>
+          <span className="max-w-full truncate text-[11.5px]">{t("attach.imageUnavailableShort")}</span>
           <span
             role="button"
             tabIndex={0}
@@ -564,7 +586,7 @@ export function AttachmentThumbnail({
               setState("loading");
               setAttempt((value) => value + 1);
             }}
-            className="flex items-center gap-1 rounded-md border border-hairline/50 bg-panel px-2 py-1 text-[11px] text-ink hover:bg-raised"
+            className="flex items-center gap-1 rounded-md border border-hairline/50 bg-raised/70 px-2 py-1 text-[11px] text-ink outline-none hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent/60"
             aria-label={t("attach.retryAria", { name: image.name })}
           >
             <RotateCcw size={11} /> {t("chat.retry")}
@@ -603,7 +625,7 @@ export function AttachmentThumbnail({
               state === "ready" ? "opacity-100" : "opacity-0",
             )}
           />
-          <span className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-full bg-black/55 text-white opacity-0 backdrop-blur-sm transition-opacity group-hover/image:opacity-100 group-focus-within/image:opacity-100">
+          <span className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-full bg-black/45 text-white opacity-0 backdrop-blur-sm transition-opacity group-hover/image:opacity-100 group-focus-within/image:opacity-100">
             <Maximize2 size={13} />
           </span>
         </span>
@@ -759,7 +781,7 @@ export function AttachedFileChip({ file, message, linked = false, className }: {
   const failed = save.state === "failed";
   if (!message || (!file.private && !linked)) {
     return (
-      <div title={t("attach.legacyFile", { name: file.name })} className={cn("flex max-w-[280px] items-center gap-2 overflow-hidden rounded-lg border border-hairline/40 bg-inset/70 px-2.5 py-2 text-[12px] text-ink-secondary", className)}>
+      <div title={t("attach.legacyFile", { name: file.name })} data-file-chip="" className={cn("flex max-w-[280px] items-center gap-2 overflow-hidden rounded-xl border border-hairline/35 bg-inset/45 px-2.5 py-2 text-[12px] text-ink-secondary", className)}>
         <FileText size={14} className="shrink-0" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-ink">{file.name}</span>
         <span className="text-[10.5px]">{t("attach.unavailable")}</span>
@@ -769,7 +791,8 @@ export function AttachedFileChip({ file, message, linked = false, className }: {
   return (
     <div
       title={save.state === "saved" && save.savedTo ? t("attach.savedTo", { path: save.savedTo }) : file.name}
-      className={cn("max-w-[280px] overflow-hidden rounded-lg border border-hairline/40 bg-inset/70 text-[12px] text-ink-secondary", className)}
+      data-file-chip=""
+      className={cn("max-w-[280px] overflow-hidden rounded-xl border border-hairline/35 bg-inset/45 text-[12px] text-ink-secondary", className)}
     >
       <button
         type="button"
@@ -780,7 +803,7 @@ export function AttachedFileChip({ file, message, linked = false, className }: {
             ? t("attach.retrySaveAria", { name: file.name })
             : t("attach.saveAria", { name: file.name })
         }
-        className="flex min-h-10 w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-raised/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60 disabled:cursor-wait disabled:hover:bg-transparent"
+        className="flex min-h-10 w-full items-center gap-2 px-2.5 py-2 text-left transition-colors duration-[var(--motion-fast)] hover:bg-raised-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60 disabled:cursor-wait disabled:hover:bg-transparent"
       >
         <FileText size={14} className="shrink-0" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-ink">{file.name}</span>
@@ -798,7 +821,7 @@ export function AttachedFileChip({ file, message, linked = false, className }: {
         <div
           role={failed ? "alert" : "status"}
           className={cn(
-            "border-t border-hairline/30 px-2.5 py-1.5 text-[10.5px]",
+            "border-t border-hairline/25 px-2.5 py-1.5 text-[10.5px]",
             failed ? "text-danger" : save.state === "saved" ? "text-success" : "text-ink-secondary",
           )}
         >

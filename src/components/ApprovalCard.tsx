@@ -1,14 +1,19 @@
-// The approval box: what the bot wants to do, and three ways to answer.
+// The approval receipt: what the bot wants to do, and how it was answered.
 //
 // Deliberately not the lettered A/B/C list the onboarding card uses — an
 // approval is a decision about one concrete action, so it shows the tool
 // and the actual command/path in monospace, and the choices carry their
 // own behavior instead of being matched by their label text.
-import { Check, ShieldCheck, X } from "lucide-react";
+//
+// The three answers themselves live in the composer, not here: one place to
+// answer, and a decision cannot be scrolled past. This card is the receipt —
+// it is glass, it carries a gear glyph and the tool's own name, and it keeps
+// its hold after the answer so the transcript still says what was asked.
+import { Cog } from "lucide-react";
 import { type Bot, type Message } from "@/state/store";
-import { cn } from "@/lib/cn";
 import { t, tFromServer } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
+import { DecisionCard, DecisionReceipt } from "@/components/DecisionCard";
 import { SkillRequestPreview } from "@/components/SkillRequestPreview";
 
 interface ToolLabels {
@@ -107,26 +112,21 @@ export function ApprovalCard({
     : undefined;
 
   return (
-    <div
+    <DecisionCard
       data-tour={settled ? undefined : "approval"}
-      className={cn(
-        "w-full max-w-[840px] rounded-2xl border bg-card p-4",
-        settled ? "border-hairline/30 opacity-70" : "border-accent/40",
+      data-approval-card=""
+      settled={Boolean(settled)}
+      glyph={<Cog size={17} aria-hidden="true" className="text-ink-secondary" />}
+      title={isTeamSetup ? card.title : profileHeader ?? (
+        <>
+          {bot
+            ? t("approval.card.namedWantsTo", { name: bot.name, action: toolLabel(displayTool) })
+            : t("approval.card.wantsTo", { action: toolLabel(displayTool) })}
+        </>
       )}
+      aside={displayTool && !isTeamSetup ? displayTool : undefined}
+      asideTitle={displayTool ?? undefined}
     >
-      <div className="flex items-baseline justify-between gap-3">
-        <div className="text-[15px] font-semibold text-ink">
-          {isTeamSetup ? card.title : profileHeader ?? (
-            <>
-              {bot
-                ? t("approval.card.namedWantsTo", { name: bot.name, action: toolLabel(displayTool) })
-                : t("approval.card.wantsTo", { action: toolLabel(displayTool) })}
-            </>
-          )}
-        </div>
-        {displayTool && !isTeamSetup && <span className="shrink-0 font-mono text-[11px] text-ink-secondary">{displayTool}</span>}
-      </div>
-
       {/* what, exactly */}
       <pre
         tabIndex={0}
@@ -139,7 +139,7 @@ export function ApprovalCard({
                 ? t("approval.aria.profileChange")
                 : t("approval.aria.details")
         }
-        className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-inset px-3 py-2 font-mono text-[12.5px] leading-relaxed text-ink"
+        className="mt-2.5 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-inset/70 px-3 py-2 font-mono text-[12.5px] leading-relaxed text-ink"
       >
         {card.subtitle}
       </pre>
@@ -154,11 +154,11 @@ export function ApprovalCard({
 
       {/* The decision lives in the composer (one place to answer, and it
           can't be scrolled past); here we only record what happened. */}
-      <div className="mt-3 flex items-center gap-1.5 text-[13px] text-ink-secondary">
-        {settled === "allow" ? (
-          <>
-            <Check size={14} className="text-success" />
-            {isTeamSetup ? (card.teamSetupRequest?.deletion ? "Bot deleted" : "Team setup applied") : skillSettledLabel ??
+      <DecisionReceipt
+        settled={Boolean(settled)}
+        allow={
+          settled === "allow"
+            ? isTeamSetup ? (card.teamSetupRequest?.deletion ? "Bot deleted" : "Team setup applied") : skillSettledLabel ??
               routineSettledLabel ??
               (isProfileRequest
                 ? t("approval.status.profileUpdated")
@@ -166,23 +166,20 @@ export function ApprovalCard({
                   ? t("approval.status.routineConfirmed")
                   : isSkillRequest
                     ? t("approval.status.skillConfirmed")
-                    : t("approval.status.allowed"))}
-          </>
-        ) : settled ? (
-          <>
-            <X size={14} /> {isRoutineRequest || isSkillRequest || isProfileRequest || isTeamSetup
-              ? t("approval.status.cancelled")
-              : t("approval.status.denied")}
-          </>
-        ) : (
-          <>
-            <ShieldCheck size={14} className="text-accent" />
-            {isRoutineRequest || isSkillRequest || isProfileRequest || isTeamSetup
-              ? t("approval.status.waitingConfirmation")
-              : t("approval.status.waitingAnswer")}
-          </>
-        )}
-      </div>
-    </div>
+                    : t("approval.status.allowed"))
+            : undefined
+        }
+        deny={
+          isRoutineRequest || isSkillRequest || isProfileRequest || isTeamSetup
+            ? t("approval.status.cancelled")
+            : t("approval.status.denied")
+        }
+        waiting={
+          isRoutineRequest || isSkillRequest || isProfileRequest || isTeamSetup
+            ? t("approval.status.waitingConfirmation")
+            : t("approval.status.waitingAnswer")
+        }
+      />
+    </DecisionCard>
   );
 }

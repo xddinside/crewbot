@@ -846,9 +846,10 @@ export function Composer({
           </div>
         )}
         {/* An approval takes over the composer: you answer it before you
-            can type again, so a waiting bot is impossible to miss. */}
+            can type again, so a waiting bot is impossible to miss. The card
+            carries its own glass; the wrapper only owns the gap. */}
         {approval && (
-          <div className="mb-2 overflow-hidden rounded-2xl border border-accent/40 bg-card">
+          <div className="mb-2">
             {/* locale: the panel is memoized and its other props do not
                 change with the language — see MessagesList in ChatView */}
             <PendingApprovalPanel

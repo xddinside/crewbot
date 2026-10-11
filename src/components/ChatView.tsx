@@ -289,20 +289,26 @@ export function ErrorRow({
   const workingFolderError = message.startsWith("the working folder ");
   return (
     <div className="flex justify-start">
-      <div className="w-fit max-w-[min(42rem,78%)] rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-[13.5px] text-danger">
-        <div className="flex items-start gap-2">
+      {/* A recovery card, not an error tint: what went wrong, what to do about
+          it, and the exact control that fixes it — on glass, so it reads as
+          content in the transcript rather than as a system alert. */}
+      <div
+        data-error-row=""
+        className="glass-card w-fit max-w-[min(42rem,78%)] p-0 text-[13.5px] ring-1 ring-danger/30"
+      >
+        <div className="flex items-start gap-2 px-3.5 py-2.5 text-danger">
           <AlertTriangle size={15} className="mt-0.5 shrink-0" />
           <span className="min-w-0 break-words">{message}</span>
         </div>
         {workingFolderError ? (
-          <div className="mt-2">
+          <div className="border-t border-hairline/25 px-3.5 py-2.5">
             <p className="text-[12.5px] leading-relaxed text-ink-secondary">{t("chat.workingFolderRecovery")}</p>
             {onChooseWorkingFolder ? (
               <button
                 type="button"
                 onClick={onChooseWorkingFolder}
                 disabled={workingFolderRecoveryPending}
-                className="mt-2 flex min-h-10 items-center gap-1.5 rounded-lg border border-danger/30 px-3 py-2 text-[12.5px] hover:bg-danger/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60"
+                className="mt-2 flex min-h-10 items-center gap-1.5 rounded-lg border border-hairline/55 bg-raised/60 px-3 py-2 text-[12.5px] text-ink outline-none transition-colors duration-[var(--motion-fast)] hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-60"
               >
                 <FolderOpen size={14} aria-hidden="true" /> {t("chat.chooseFolderAndRetry")}
               </button>
@@ -322,13 +328,13 @@ export function ErrorRow({
                     onChange={(event) => setFolderPath(event.target.value)}
                     placeholder={t("chat.folderPathPlaceholder")}
                     autoComplete="off"
-                    className="min-h-10 rounded-lg border border-hairline/50 bg-inset px-3 text-base text-ink placeholder:text-ink-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    className="min-h-10 rounded-lg border border-hairline/50 bg-inset/60 px-3 text-base text-ink outline-none placeholder:text-ink-secondary focus-visible:ring-2 focus-visible:ring-accent/60"
                   />
                 </label>
                 <button
                   type="submit"
                   disabled={workingFolderRecoveryPending || !folderPath.trim()}
-                  className="min-h-10 rounded-lg border border-danger/30 px-3 py-2 text-[12.5px] hover:bg-danger/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60"
+                  className="min-h-10 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-medium text-white outline-none transition-colors duration-[var(--motion-fast)] hover:brightness-110 focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-60"
                 >
                   {t("chat.useFolderAndRetry")}
                 </button>
@@ -336,21 +342,25 @@ export function ErrorRow({
             ) : null}
           </div>
         ) : isProviderSafetyBlock(message) ? (
-          <p className="mt-2 text-[12.5px] leading-relaxed text-ink-secondary">
+          <p className="border-t border-hairline/25 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-ink-secondary">
             {PROVIDER_SAFETY_GUIDANCE}{" "}
             <a href={PROVIDER_SAFETY_HELP_URL} target="_blank" rel="noreferrer" className="underline">About provider safety checks</a>
           </p>
         ) : setupInstance &&
         !(setupInstance.snapshot.state === "available" && setupInstance.snapshot.authenticated !== false) ? (
-          <EngineSetup instance={setupInstance} className="mt-2 text-ink-secondary" />
+          <div className="border-t border-hairline/25 px-3.5 py-2.5">
+            <EngineSetup instance={setupInstance} className="text-ink-secondary" />
+          </div>
         ) : (
           onRetry && (
-            <button
-              onClick={onRetry}
-              className="mt-1.5 flex items-center gap-1.5 rounded-full border border-danger/30 px-2.5 py-1 text-[12.5px] hover:bg-danger/15"
-            >
-              <RefreshCw size={12} /> {t("chat.retry")}
-            </button>
+            <div className="border-t border-hairline/25 px-3.5 py-2">
+              <button
+                onClick={onRetry}
+                className="flex min-h-9 items-center gap-1.5 rounded-full border border-hairline/55 bg-raised/60 px-3 py-1.5 text-[12.5px] text-ink outline-none transition-colors duration-[var(--motion-fast)] hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent/60"
+              >
+                <RefreshCw size={12} aria-hidden="true" /> {t("chat.retry")}
+              </button>
+            </div>
           )
         )}
       </div>
@@ -550,7 +560,7 @@ function Bubble({
             "w-fit max-w-[min(42rem,78%)] rounded-2xl text-[15px] leading-relaxed",
             emerging && "turn-answer",
             user && webhookView
-              ? "overflow-hidden border border-accent/25 bg-card text-ink shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
+              ? "glass-card overflow-hidden p-0 text-ink"
               : user
                 ? "bg-bubble-user px-4 py-2.5 whitespace-pre-wrap text-ink"
                 : "bg-card px-4 py-2.5 text-ink",
@@ -570,16 +580,23 @@ function Bubble({
             </div>
           )}
           {user && webhookView ? (
-            <div className="min-w-[300px] max-w-[520px]">
-              <div className="flex items-center gap-2 border-b border-accent/15 bg-accent/[0.055] px-4 py-2.5 text-[11.5px] font-medium text-accent">
-                <Webhook size={13} />
+            /* A webhook delivery is content, not a chat bubble: what arrived,
+               and — behind a labelled disclosure — the payload that caused it.
+               Glass, so the payload's own dark panel does not read as a hole
+               in the conversation. */
+            <div data-webhook-card="" className="min-w-[300px] max-w-[520px]">
+              <div className="flex items-center gap-2 border-b border-hairline/25 px-3.5 py-2 text-[11.5px] font-medium text-accent">
+                <Webhook size={13} aria-hidden="true" />
                 <span>{t("chat.webhookTask")}</span>
               </div>
-              <div className="chat-text px-4 py-3 whitespace-pre-wrap">{webhookView.task}</div>
+              <div className="chat-text px-3.5 py-3 whitespace-pre-wrap">{webhookView.task}</div>
               {webhookView.payload && (
-                <details className="border-t border-hairline/30 bg-inset/25 px-4 py-2.5 text-[11.5px] text-ink-secondary">
-                  <summary className="cursor-pointer select-none hover:text-ink">{t("chat.viewPayload")}</summary>
-                  <pre className="mt-2 max-h-48 overflow-auto rounded-lg border border-hairline/25 bg-black/25 p-3 font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap text-ink-secondary">{webhookView.payload}</pre>
+                <details className="group/payload border-t border-hairline/25 px-3.5 py-2.5 text-[11.5px] text-ink-secondary">
+                  <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded outline-none transition-colors duration-[var(--motion-fast)] hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/60 [&::-webkit-details-marker]:hidden">
+                    <ChevronRight size={12} aria-hidden="true" className="shrink-0 transition-transform duration-[var(--motion-fast)] group-open/payload:rotate-90" />
+                    {t("chat.viewPayload")}
+                  </summary>
+                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-hairline/25 bg-inset/70 p-3 font-mono text-[10.5px] leading-relaxed text-ink-secondary">{webhookView.payload}</pre>
                 </details>
               )}
             </div>

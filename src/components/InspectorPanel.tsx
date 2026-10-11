@@ -19,6 +19,7 @@ import { formatTime, toRows, type InspectorEntry, type InspectorPage, type Inspe
 import { openLiveEvents } from "@/lib/live-events";
 import type { RuntimeEvent } from "../../shared/runtime-events";
 import { RunLog } from "./RunLog";
+import { SEGMENT_ACTIVE, SEGMENT_IDLE, SEGMENT_RAIL } from "./Glass";
 import { timelineEvents } from "@/lib/taskTimeline";
 import { t } from "@/lib/i18n";
 
@@ -189,87 +190,122 @@ export function InspectorPanel({ bot }: { bot: Bot }) {
   const total = lens === "raw" ? (page?.total.native ?? 0) : (page?.total.runtime ?? 0);
 
   return (
-    <aside aria-label="Inspector" className="animate-panel-in absolute inset-0 z-40 flex h-full min-w-0 flex-col border-l border-hairline/40 bg-panel lg:static lg:z-auto lg:w-[min(460px,45vw)] lg:shrink-0">
-      <div className={cn("flex items-center justify-between px-4 py-3", padClass)}>
-        <span className="flex items-center gap-2 text-[15px] font-semibold text-ink">
-          <Bug size={16} className="text-ink-secondary" /> Inspector
-        </span>
-        <button
-          onClick={() => dispatch({ type: "toggleInspector", open: false })}
-          aria-label="Close the Inspector"
-          title="Close the Inspector"
-          className="rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink"
-        >
-          <X size={18} />
-        </button>
-      </div>
-
-      <div className="flex items-center gap-2 border-b border-hairline/40 px-4 pb-3">
-        <div role="tablist" aria-label={t("inspector.views")} className="flex rounded-lg bg-inset p-0.5" onKeyDown={(event) => {
-          const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
-          const current = tabs.indexOf(document.activeElement as HTMLButtonElement);
-          const next = event.key === "ArrowRight" ? (current + 1) % tabs.length
-            : event.key === "ArrowLeft" ? (current + tabs.length - 1) % tabs.length
-              : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
-          if (next < 0) return;
-          event.preventDefault();
-          tabs[next].focus();
-          tabs[next].click();
-        }}>
-          {(["run", "events", "raw"] as const).map((l) => (
-            <button
-              key={l}
-              type="button"
-              role="tab"
-              id={`inspector-tab-${l}`}
-              aria-selected={lens === l}
-              aria-controls={`inspector-panel-${l}`}
-              tabIndex={lens === l ? 0 : -1}
-              onClick={() => setLens(l)}
-              className={cn(
-                "rounded-md px-2.5 py-1 text-[12px] font-medium capitalize",
-                lens === l ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink",
-              )}
-            >
-              {l === "run" ? t("inspector.run.title") : l}
-            </button>
-          ))}
+    <aside
+      aria-label="Inspector"
+      data-inspector=""
+      className="animate-panel-in absolute inset-2 z-40 flex min-w-0 flex-col lg:static lg:inset-auto lg:my-3 lg:me-4 lg:z-auto lg:w-[min(420px,42vw)] lg:shrink-0"
+    >
+      {/* The Inspector is a temporary review surface, so it is the sheet
+          shape: frosted, lifted, and floating with a gutter rather than
+          flush against the conversation's edge. */}
+      <div className={cn("glass-sheet flex min-h-0 flex-1 flex-col overflow-hidden", padClass)}>
+        <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-3">
+          <span className="flex items-center gap-2 text-[14px] font-semibold text-ink">
+            <Bug size={15} className="text-ink-secondary" aria-hidden="true" /> Inspector
+          </span>
+          <button
+            onClick={() => dispatch({ type: "toggleInspector", open: false })}
+            aria-label="Close the Inspector"
+            title="Close the Inspector"
+            className="rounded-md p-1 text-ink-secondary outline-none transition-colors duration-[var(--motion-fast)] hover:bg-raised hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/60"
+          >
+            <X size={17} />
+          </button>
         </div>
-        {lens !== "run" && <span className="ml-auto text-[11px] text-ink-secondary">
-          {page ? (shown < total ? `last ${shown} of ${total}` : `${shown} entries`) : "loading…"}
-        </span>}
-        {lens !== "run" && <button onClick={() => managedRefresh.current()} className="rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink" title="Reload from disk">
-          <RefreshCw size={14} />
-        </button>}
-      </div>
 
-      <div role="tabpanel" id={`inspector-panel-${lens}`} aria-labelledby={`inspector-tab-${lens}`} tabIndex={0} className="flex min-h-0 flex-1 flex-col outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60">
-      {lens === "run" ? <RunLog key={threadId} events={activity} /> : <div ref={listRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto font-mono text-[11.5px]">
-        {error && <div className="px-4 py-3 text-danger">couldn't load: {error}</div>}
-        {page && rows.length === 0 && !error && (
-          <div className="px-4 py-6 text-ink-secondary">
-            {lens === "raw" ? "No native protocol messages recorded for this thread yet." : "No runtime events for this thread yet."}
+        <div className="flex items-center gap-2 px-4 pb-3">
+          <div
+            role="tablist"
+            aria-label={t("inspector.views")}
+            className={cn(SEGMENT_RAIL, "bg-inset/60")}
+            onKeyDown={(event) => {
+              const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+              const current = tabs.indexOf(document.activeElement as HTMLButtonElement);
+              const next = event.key === "ArrowRight" ? (current + 1) % tabs.length
+                : event.key === "ArrowLeft" ? (current + tabs.length - 1) % tabs.length
+                  : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
+              if (next < 0) return;
+              event.preventDefault();
+              tabs[next].focus();
+              tabs[next].click();
+            }}
+          >
+            {(["run", "events", "raw"] as const).map((l) => (
+              <button
+                key={l}
+                type="button"
+                role="tab"
+                id={`inspector-tab-${l}`}
+                aria-selected={lens === l}
+                aria-controls={`inspector-panel-${l}`}
+                tabIndex={lens === l ? 0 : -1}
+                onClick={() => setLens(l)}
+                className={lens === l ? SEGMENT_ACTIVE : SEGMENT_IDLE}
+              >
+                {l === "run" ? t("inspector.run.title") : l}
+              </button>
+            ))}
           </div>
-        )}
-        {rows.map((row) => (
-          <Row key={row.key} row={row} open={expanded.has(row.key)} onToggle={() => toggle(row.key)} />
-        ))}
-      </div>}
+          <span className="ml-auto text-[11px] tabular-nums text-ink-secondary">
+            {lens === "run"
+              ? `${activity.length}`
+              : page
+                ? shown < total ? `last ${shown} of ${total}` : `${shown} entries`
+                : t("inspector.loading")}
+          </span>
+          <button
+            onClick={() => managedRefresh.current()}
+            aria-label={t("inspector.reload")}
+            title={t("inspector.reload")}
+            className="rounded-md p-1 text-ink-secondary outline-none transition-colors duration-[var(--motion-fast)] hover:bg-raised hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/60"
+          >
+            <RefreshCw size={14} />
+          </button>
+        </div>
+
+        <div
+          role="tabpanel"
+          id={`inspector-panel-${lens}`}
+          aria-labelledby={`inspector-tab-${lens}`}
+          tabIndex={0}
+          className="flex min-h-0 flex-1 flex-col border-t border-hairline/25 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60"
+        >
+          {lens === "run" ? (
+            <RunLog key={threadId} events={activity} />
+          ) : (
+            <div ref={listRef} onScroll={onScroll} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 font-mono text-[11.5px]">
+              {error && (
+                <div role="alert" className="rounded-lg bg-inset/60 px-3 py-2 text-danger">
+                  couldn't load: {error}
+                </div>
+              )}
+              {page && rows.length === 0 && !error && (
+                <div className="px-1 py-6 text-ink-secondary">
+                  {lens === "raw" ? "No native protocol messages recorded for this thread yet." : "No runtime events for this thread yet."}
+                </div>
+              )}
+              {rows.map((row) => (
+                <Row key={row.key} row={row} open={expanded.has(row.key)} onToggle={() => toggle(row.key)} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   );
 }
 
+/** One recorded entry. A frosted card, because the Inspector is the one place
+ *  a wall of technical text is meant to be read: the row is a summary, the
+ *  disclosure is the record exactly as it arrived, and the two never merge. */
 function Row({ row, open, onToggle }: { row: InspectorRow; open: boolean; onToggle: () => void }) {
   return (
-    <div
-      className={cn(
-        "border-b border-hairline/20",
-        row.tone === "boundary" && "bg-raised/40",
-        row.tone === "error" && "bg-danger/10",
-      )}
-    >
-      <button onClick={onToggle} className="flex w-full items-start gap-2 px-3 py-1.5 text-left hover:bg-raised/60">
+    <div className={cn("glass-card overflow-hidden p-0", row.tone === "error" && "ring-1 ring-danger/35")}>
+      <button
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-start gap-2 px-2.5 py-2 text-left outline-none transition-colors duration-[var(--motion-fast)] hover:bg-raised-hover/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60"
+      >
         <span className="mt-[1px] shrink-0 text-ink-secondary">{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
         <span className="shrink-0 tabular-nums text-ink-secondary">{formatTime(row.at)}</span>
         <span
@@ -279,12 +315,12 @@ function Row({ row, open, onToggle }: { row: InspectorRow; open: boolean; onTogg
           )}
         >
           {row.tag}
-          {row.count > 1 ? ` ×${row.count}` : ""}
+          {row.count > 1 ? ` \u00d7${row.count}` : ""}
         </span>
         <span className={cn("min-w-0 flex-1 truncate", row.tone === "error" ? "text-danger" : "text-ink")}>{row.summary}</span>
       </button>
       {open && (
-        <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-all border-t border-hairline/20 bg-app px-3 py-2 text-[11px] leading-relaxed text-ink">
+        <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-all border-t border-hairline/25 bg-inset/50 px-2.5 py-2 text-[11px] leading-relaxed text-ink">
           {JSON.stringify(row.data, null, 2)}
         </pre>
       )}

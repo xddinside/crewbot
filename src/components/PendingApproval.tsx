@@ -1,17 +1,18 @@
 // Pending approval, ported from the upstream pattern: an approval does
 // not sit in the transcript waiting to be noticed — it takes over the
-// composer. The prompt is disabled, a strip above it says exactly what
+// composer. The prompt is disabled, a card above the pill says exactly what
 // is being asked, and the send row is replaced by the decisions.
 //
 // Faithful details worth keeping: one at a time with an "n of N" counter,
 // the detail printed raw in a monospace block that is NEVER truncated
-// (it scrolls instead), and the buttons ordered least-destructive-last so
-// the primary action sits under your thumb.
+// (it scrolls instead), and the answers ordered so the least destructive one
+// is the one that reads as the default.
 import { memo } from "react";
 import { useStore, type Bot, type Message } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t, tFromServer } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
+import { DecisionCard } from "@/components/DecisionCard";
 import { SkillRequestPreview } from "@/components/SkillRequestPreview";
 import { toolLabel } from "./ApprovalCard";
 import { reviewedSkillSha256 } from "../../shared/skill-request";
@@ -143,8 +144,9 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
 }) {
   const heldNote = tFromServer(pending.heldCode, pending.held);
   return (
-    <div
+    <DecisionCard
       role="region"
+      aria-live="polite"
       aria-label={
         isSkillApproval(pending)
           ? t("approval.aria.pendingSkill")
@@ -154,30 +156,36 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
               ? t("approval.aria.pendingProfile")
               : t("approval.aria.pending")
       }
-      className="rounded-t-2xl border-b border-hairline/50 bg-control/40 px-4 py-3"
-    >
-      <div className="flex flex-wrap items-center gap-2" aria-live="polite">
-        <span className="text-[11px] uppercase tracking-[0.18em] text-ink-secondary">
-          {t("approval.pending")}
-        </span>
-        {count > 1 && (
-          <span className="rounded-full bg-control px-1.5 py-0.5 text-[11px] tabular-nums text-ink-secondary">
-            {t("approval.position", { index: index + 1, count })}
+      className="max-w-none"
+      title={
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-secondary">
+            {t("approval.pending")}
           </span>
-        )}
-        <span className="text-[13px] text-ink">{label(pending)}</span>
-        {!pending.message.card?.teamSetupRequest && <span className="font-mono text-[11px] text-ink-secondary">
-          {isSkillApproval(pending)
-            ? pending.message.card?.skillRequest?.action === "update" ? "update_skill" : "stage_skill"
-            : isRoutineApproval(pending)
-            ? pending.message.card?.routineRequest?.operation.action === "create"
-              ? "schedule_routine"
-              : "manage_routine"
-            : isProfileApproval(pending)
-              ? "update_profile"
-              : pending.tool}
-        </span>}
-      </div>
+          {count > 1 && (
+            <span className="rounded-full bg-control px-1.5 py-0.5 text-[11px] tabular-nums text-ink-secondary">
+              {t("approval.position", { index: index + 1, count })}
+            </span>
+          )}
+          <span className="text-[13.5px] font-medium text-ink">{label(pending)}</span>
+        </span>
+      }
+      aside={
+        !pending.message.card?.teamSetupRequest ? (
+          <span className="font-mono">
+            {isSkillApproval(pending)
+              ? pending.message.card?.skillRequest?.action === "update" ? "update_skill" : "stage_skill"
+              : isRoutineApproval(pending)
+                ? pending.message.card?.routineRequest?.operation.action === "create"
+                  ? "schedule_routine"
+                  : "manage_routine"
+                : isProfileApproval(pending)
+                  ? "update_profile"
+                  : pending.tool}
+          </span>
+        ) : undefined
+      }
+    >
       {/* never truncated — long commands wrap and scroll */}
       <pre
         tabIndex={0}
@@ -190,7 +198,7 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
                 ? t("approval.aria.reviewProfile")
                 : t("approval.aria.reviewDetails")
         }
-        className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-ink"
+        className="mt-2.5 max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-ink"
       >
         {pending.detail}
       </pre>
@@ -198,7 +206,7 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
         <SkillRequestPreview request={pending.message.card.skillRequest} />
       )}
       {heldNote && <div className="mt-2 text-[12px] text-warning">{heldNote}</div>}
-    </div>
+    </DecisionCard>
   );
 });
 
@@ -237,44 +245,30 @@ export function PendingApprovalActions({
       always: always && !pending.allowKey && pending.allowSession ? true : undefined,
     });
 
-  const base = "rounded-full px-3.5 py-1.5 text-[13.5px] transition-colors";
+  // Deny · Allow once · Always allow, the order the design uses. The filled
+  // accent stays on Allow once on purpose: a persistent grant is the answer
+  // that keeps changing what the bot may do without asking, so it must never
+  // be the one that reads as the default.
+  const answer = "rounded-full px-3.5 py-1.5 text-[13.5px] transition-colors duration-[var(--motion-fast)] focus-visible:ring-2 focus-visible:ring-accent/60";
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2 px-2 py-2">
+    <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
       {!durableRequest && (
-        <button onClick={onCancelTurn} className={cn(base, "text-ink-secondary hover:bg-control hover:text-ink")}>
+        <button onClick={onCancelTurn} className={cn(answer, "me-auto text-ink-secondary hover:bg-control hover:text-ink")}>
           {t("approval.action.cancelTurn")}
         </button>
       )}
       <button
         onClick={() => decide("deny")}
         autoFocus={isTeamSetup}
-        className={cn(base, "border border-danger/40 text-danger hover:bg-danger/10")}
+        className={cn(answer, "border border-hairline/55 text-danger hover:bg-danger/10")}
       >
         {isRoutineRequest || isProfileRequest || isTeamSetup ? t("approval.action.cancel") : t("approval.action.deny")}
       </button>
-      {!durableRequest && bot && pending.allowKey && (
-        <button
-          onClick={() => decide("allow", true)}
-          title={t("approval.action.stopAsking", { name: bot.name, key: pending.allowKey })}
-          className={cn(base, "border border-hairline/50 text-ink hover:bg-control")}
-        >
-          {t("approval.action.alwaysAllow")}
-        </button>
-      )}
-      {!durableRequest && !pending.allowKey && pending.allowSession && (
-        <button
-          onClick={() => decide("allow", true)}
-          title={t("approval.action.alwaysAllowSessionHint")}
-          className={cn(base, "border border-hairline/50 text-ink hover:bg-control")}
-        >
-          {t("approval.action.alwaysAllowSession")}
-        </button>
-      )}
       <button
         onClick={() => decide("allow")}
         disabled={isSkillRequest && !reviewedSha256}
         className={cn(
-          base,
+          answer,
           "bg-accent font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40",
         )}
       >
@@ -286,6 +280,24 @@ export function PendingApprovalActions({
             ? t("approval.action.confirm")
             : t("approval.action.allowOnce")}
       </button>
+      {!durableRequest && bot && pending.allowKey && (
+        <button
+          onClick={() => decide("allow", true)}
+          title={t("approval.action.stopAsking", { name: bot.name, key: pending.allowKey })}
+          className={cn(answer, "border border-hairline/55 text-ink hover:bg-control")}
+        >
+          {t("approval.action.alwaysAllow")}
+        </button>
+      )}
+      {!durableRequest && !pending.allowKey && pending.allowSession && (
+        <button
+          onClick={() => decide("allow", true)}
+          title={t("approval.action.alwaysAllowSessionHint")}
+          className={cn(answer, "border border-hairline/55 text-ink hover:bg-control")}
+        >
+          {t("approval.action.alwaysAllowSession")}
+        </button>
+      )}
     </div>
   );
 }

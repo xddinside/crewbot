@@ -854,6 +854,26 @@
   color-scheme: var(--code-color-scheme);
 }
 
+/* The mockup's numbered code preview. The gutter is drawn from the
+   highlighter's own `.line` spans, so it exists only once a block has settled
+   and highlighted: the plain <pre> a streaming fence renders has no lines to
+   number, and simply shows no gutter rather than a wrong one. The number is
+   `user-select: none` so copying a snippet never brings it along. */
+.code-block pre code {
+  counter-reset: code-line;
+}
+.code-block .line::before {
+  counter-increment: code-line;
+  content: counter(code-line);
+  display: inline-block;
+  width: 2.25em;
+  margin-inline-end: 1em;
+  text-align: right;
+  color: var(--color-ink-secondary);
+  opacity: 0.55;
+  user-select: none;
+}
+
 /* Plain-text message bodies (user turns, webhook tasks, error fallbacks) are
    written in whatever language the person used, which is independent of the
    UI language. `plaintext` resolves direction per line from its own first

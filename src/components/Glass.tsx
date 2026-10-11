@@ -33,6 +33,14 @@ export function glassClass(shape: GlassShape, extra?: string): string {
   return cn(SHAPE_CLASS[shape], extra);
 }
 
+/** The segmented pill: the top bar's destination nav and the Inspector's lens
+ *  switch are the same control at two sizes, so the rail, the active pill and
+ *  the idle pill live here rather than being written twice and drifting. */
+export const SEGMENT_RAIL = "flex items-center gap-0.5 rounded-full p-1";
+export const SEGMENT_ACTIVE = "rounded-full bg-accent px-4 py-1.5 text-[13px] font-medium text-[var(--color-accent-ink)]";
+export const SEGMENT_IDLE =
+  "rounded-full px-4 py-1.5 text-[13px] font-medium text-ink-secondary hover:bg-raised/60 hover:text-ink";
+
 interface GlassBaseProps extends HTMLAttributes<HTMLElement> {
   shape?: GlassShape;
   /** Renders a plain `<div>`. The polymorphic element keeps a `<button>` or a

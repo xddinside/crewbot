@@ -14,17 +14,17 @@ import type { GroupGoalRunCardData } from "../../shared/group-goal-run";
 const DETAIL_LIMIT = 280;
 
 const COPY = {
-  working: { label: "Working", tone: "text-accent", border: "border-accent/30" },
-  completed: { label: "Completed", tone: "text-success", border: "border-success/30" },
-  "needs-input": { label: "Needs your input", tone: "text-warning", border: "border-warning/35" },
-  blocked: { label: "Blocked", tone: "text-warning", border: "border-warning/35" },
-  "limit-reached": { label: "Turn limit reached", tone: "text-warning", border: "border-warning/35" },
-  paused: { label: "Paused", tone: "text-warning", border: "border-warning/35" },
-  stopped: { label: "Stopped", tone: "text-ink-secondary", border: "border-hairline/45" },
-  failed: { label: "Failed", tone: "text-danger", border: "border-danger/35" },
+  working: { label: "Working", tone: "text-accent" },
+  completed: { label: "Completed", tone: "text-success" },
+  "needs-input": { label: "Needs your input", tone: "text-warning" },
+  blocked: { label: "Blocked", tone: "text-warning" },
+  "limit-reached": { label: "Turn limit reached", tone: "text-warning" },
+  paused: { label: "Paused", tone: "text-warning" },
+  stopped: { label: "Stopped", tone: "text-ink-secondary" },
+  failed: { label: "Failed", tone: "text-danger" },
 } satisfies Record<
   GroupGoalRunCardData["status"],
-  { label: string; tone: string; border: string }
+  { label: string; tone: string }
 >;
 
 /** The one wording for a goal run's state. The receipt in the transcript and
@@ -72,7 +72,9 @@ function StatusIcon({ status }: { status: GroupGoalRunCardData["status"] }) {
   }
 }
 
-/** One durable terminal receipt for a goal-driven channel run. */
+/** One durable terminal receipt for a goal-driven channel run. Glass, because
+ *  it is content inside the conversation rather than chrome around it — the
+ *  same decision-card family the permission and question cards use. */
 export function GoalRunCard({ message }: { message: Message }) {
   const run = message.goalRun;
   if (!run) {
@@ -94,16 +96,23 @@ export function GoalRunCard({ message }: { message: Message }) {
   return (
     <section
       aria-label={`Goal run: ${copy.label}`}
-      className={cn("w-full max-w-[680px] rounded-2xl border bg-card px-3.5 py-3 shadow-sm", copy.border)}
+      data-goal-run=""
+      className="glass-card w-full max-w-[680px] px-3.5 py-3"
     >
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-inset">
+        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-inset/60">
           <StatusIcon status={run.status} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <h3 className="truncate text-[13.5px] font-semibold text-ink">{goal || "Group goal"}</h3>
-            <span aria-live="polite" className={cn("text-[11.5px] font-medium", copy.tone)}>
+            <span
+              aria-live="polite"
+              className={cn(
+                "rounded-full bg-inset/70 px-2 py-0.5 text-[11px] font-medium",
+                copy.tone,
+              )}
+            >
               {copy.label}
             </span>
           </div>
