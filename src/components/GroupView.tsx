@@ -27,9 +27,10 @@ import { normalizeState } from "@/lib/mascot";
 import { effectiveDefaultResponder, groupResponseHint } from "@/lib/group-routing";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { Composer } from "./Composer";
+import { MessageActions, type MessageActionItem } from "./MessageActions";
 import { ChatFindBar } from "./ChatFindBar";
 import { GroupTaskPicker } from "./TaskPicker";
-import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
+import { ConversationOverflowMenu } from "./ExportTranscriptMenu";
 import { ReplyQuote } from "./ReplyQuote";
 import { ConnectorCard } from "./ConnectorCard";
 import { SecretRequestCard } from "./SecretRequestCard";
@@ -141,27 +142,36 @@ function ClusterLabel({ bot, name, color }: { bot?: Bot; name: string; color: st
   );
 }
 
-/** Pin toggle for one room message — one pin per room, patchGroup path. */
-function PinToggle({ group, message }: { group: Group; message: Message }) {
-  const { dispatch } = useStore();
-  if (window.ogb?.remoteClient?.active) return null;
+/** What one room message can be done with.
+ *
+ *  Deliberately short. A room has reply and pin — one pin per room, through
+ *  `patchGroup` — and nothing else is invented for it. Edit, regenerate and
+ *  version navigation stay direct-chat only: a member speaking in a room is
+ *  not a branch anyone rewinds, and F031 is explicit that room parity with a
+ *  direct chat must not be assumed. */
+function roomMessageMenu(
+  group: Group,
+  message: Message,
+  onReply: (message: Message) => void,
+  patch: (patch: Partial<Group>) => void,
+): MessageActionItem[] {
+  const reply = {
+    id: "reply",
+    label: t("chat.reply"),
+    icon: <MessageSquareReply size={14} aria-hidden="true" />,
+    onSelect: () => onReply(message),
+  };
+  if (window.ogb?.remoteClient?.active) return [reply];
   const pinned = group.pinnedMessageId === message.id;
-  return (
-    <button
-      onClick={() =>
-        dispatch({
-          type: "patchGroup",
-          groupId: group.id,
-          patch: { pinnedMessageId: pinned ? "" : message.id },
-        })
-      }
-      aria-label={pinned ? t("chat.unpinMessage") : t("chat.pinMessage")}
-      className="rounded-md p-1.5 text-ink-secondary opacity-0 transition-opacity hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
-      title={pinned ? t("chat.unpinHint") : t("room.pinHint")}
-    >
-      {pinned ? <PinOff size={14} /> : <Pin size={14} />}
-    </button>
-  );
+  return [
+    reply,
+    {
+      id: "pin",
+      label: pinned ? t("chat.unpinMessage") : t("chat.pinMessage"),
+      icon: pinned ? <PinOff size={14} aria-hidden="true" /> : <Pin size={14} aria-hidden="true" />,
+      onSelect: () => patch({ pinnedMessageId: pinned ? "" : message.id }),
+    },
+  ];
 }
 
 const Transcript = memo(function Transcript({
@@ -233,6 +243,10 @@ const Transcript = memo(function Transcript({
         const routineTarget = routineOwner && hasRoutineExecutionTask(routineOwner.tasks, routineExecutionThreadId)
           ? { botId: routineOwner.id, threadId: routineExecutionThreadId }
           : undefined;
+        const roomMenu = (message: Message) =>
+          roomMessageMenu(group, message, onReply, (patch) =>
+            dispatch({ type: "patchGroup", groupId: group.id, patch }),
+          );
         const row =
           // a member can hit a permission ask mid-turn; without this the
           // card never rendered here and the bot waited out its timeout.
@@ -279,20 +293,7 @@ const Transcript = memo(function Transcript({
           ) : m.kind === "text" && (m.text || m.attachments?.length) ? (
             <div className={cn("group flex w-full flex-col", user ? "items-end" : "items-start")}>
               <div className={cn("flex w-full items-end gap-1.5", user ? "justify-end" : "justify-start")}>
-                {user && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => onReply(m)}
-                      aria-label={t("chat.replyToMessage")}
-                      title={t("chat.reply")}
-                      className="rounded-md p-1.5 text-ink-secondary opacity-0 transition-opacity hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
-                    >
-                      <MessageSquareReply size={14} />
-                    </button>
-                    <PinToggle group={group} message={m} />
-                  </>
-                )}
+                {user && <MessageActions side="user" label={t("chat.messageActions")} items={roomMenu(m)} />}
                 <div
                   className={cn(
                     "w-fit max-w-[min(42rem,78%)] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed",
@@ -331,20 +332,7 @@ const Transcript = memo(function Transcript({
                     </>
                   )}
                 </div>
-                {!user && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => onReply(m)}
-                      aria-label={t("chat.replyToMessage")}
-                      title={t("chat.reply")}
-                      className="rounded-md p-1.5 text-ink-secondary opacity-0 transition-opacity hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
-                    >
-                      <MessageSquareReply size={14} />
-                    </button>
-                    <PinToggle group={group} message={m} />
-                  </>
-                )}
+                {!user && <MessageActions side="bot" label={t("chat.messageActions")} items={roomMenu(m)} />}
                 <span className="self-end pb-1 text-[11px] tabular-nums text-ink-secondary/70 opacity-0 transition-opacity group-hover:opacity-100">
                   {formatTime(m.at)}
                 </span>
@@ -1198,7 +1186,9 @@ export function GroupView({ group }: { group: Group }) {
             <Search size={18} />
           </button>
           {!setupPending && <GroupTaskPicker group={group} />}
-          <ExportTranscriptMenu
+          {/* Copy Markdown · Download .md, under the header's `…`. A room has
+              no Inspector — the Inspector is a thread-level lens. */}
+          <ConversationOverflowMenu
             title={group.name}
             messages={group.messages}
             isGroup
@@ -1292,11 +1282,11 @@ export function GroupView({ group }: { group: Group }) {
         const sender = pinned.role === "user" ? t("chat.you") : (pinned.from?.name ?? t("room.aBot"));
         return (
           <div className="w-full px-5">
-            <div className="mb-2 flex items-center gap-2 rounded-lg border border-accent/25 bg-accent/[0.07] px-3 py-1.5">
+            <div className="glass-card mb-2 flex items-center gap-2 px-3 py-1.5">
               <Pin size={12} className="shrink-0 text-accent" />
               <button
                 onClick={() => dispatch({ type: "focusMessage", threadId: group.threadId, messageId: pinned.id })}
-                className="flex min-w-0 flex-1 items-baseline gap-2 text-left"
+                className="flex min-w-0 flex-1 items-baseline gap-2 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-focus)]"
                 title={t("chat.pinnedJump")}
               >
                 <span className="shrink-0 text-[11.5px] font-medium text-accent">{sender}</span>
@@ -1306,7 +1296,7 @@ export function GroupView({ group }: { group: Group }) {
                 onClick={() => dispatch({ type: "patchGroup", groupId: group.id, patch: { pinnedMessageId: "" } })}
                 aria-label={t("chat.unpinMessage")}
                 title={t("chat.unpin")}
-                className={cn("shrink-0 rounded p-0.5 text-ink-secondary hover:bg-raised hover:text-ink", remoteClient && "hidden")}
+                className={cn("shrink-0 rounded p-0.5 text-ink-secondary hover:bg-raised/70 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-focus)]", remoteClient && "hidden")}
               >
                 <X size={13} />
               </button>
@@ -1381,7 +1371,7 @@ export function GroupView({ group }: { group: Group }) {
             <div className="flex justify-center pt-2">
               <button
                 onClick={showEarlier}
-                className="rounded-full border border-hairline/40 bg-panel px-3 py-1 text-[12.5px] text-ink-secondary hover:bg-raised hover:text-ink"
+                className="glass-card px-3 py-1 text-[12.5px] text-ink-secondary transition-colors hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-focus)]"
               >
                 {t("chat.showEarlier", { count: hiddenCount })}
               </button>
@@ -1391,7 +1381,7 @@ export function GroupView({ group }: { group: Group }) {
               <button
                 onClick={loadOlder}
                 disabled={olderPending}
-                className="rounded-full border border-hairline/40 bg-panel px-3 py-1 text-[12.5px] text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-60"
+                className="glass-card px-3 py-1 text-[12.5px] text-ink-secondary transition-colors hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-focus)] disabled:opacity-60"
               >
                 {olderPending ? t("chat.loadingEarlier") : t("chat.loadEarlier")}
               </button>
@@ -1410,7 +1400,7 @@ export function GroupView({ group }: { group: Group }) {
             <div className="flex justify-center">
               <button
                 onClick={showLater}
-                className="rounded-full border border-hairline/40 bg-panel px-3 py-1 text-[12.5px] text-ink-secondary hover:bg-raised hover:text-ink"
+                className="glass-card px-3 py-1 text-[12.5px] text-ink-secondary transition-colors hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-focus)]"
               >
                 {t("chat.showLater", { count: laterCount })}
               </button>
@@ -1443,7 +1433,7 @@ export function GroupView({ group }: { group: Group }) {
         <button
           onClick={jumpToLatest}
           aria-label={t("chat.jumpToLatestAria")}
-          className="animate-pop-in absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-hairline/40 bg-raised px-3 py-1.5 text-[12.5px] text-ink shadow-lg hover:bg-raised-hover"
+          className="glass-card animate-pop-in absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 px-3 py-1.5 text-[12.5px] text-ink transition-colors hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-focus)]"
           style={{ bottom: composerDock.height }}
         >
           <ArrowDown size={13} /> {t("chat.jumpToLatest")}

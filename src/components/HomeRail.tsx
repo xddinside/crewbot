@@ -18,6 +18,7 @@ import { GlassPopover } from "./Glass";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { SidebarThreadRow } from "./SidebarThreadRow";
+import { DesktopWorkspaceSwitcher } from "./DesktopWorkspaceSwitcher";
 import { HOME_COLUMN_LIMIT, isSameLocalDay, todaysThreads } from "@/lib/home-context";
 
 /** Rows in this rail are one line, no preview, no byline — the sidebar tree
@@ -225,7 +226,13 @@ export function HomeRail({ bot, onOpenAll }: { bot: Bot; onOpenAll: () => void }
           from Home. `data-tour="tools"` gives the guided tour a real anchor
           here — Automations and Apps moved to the avatar menu in phase 1 and
           left this step pointing at nothing. */}
-      <div className="mt-auto pt-6">
+      <div className="mt-auto space-y-0.5 pt-6">
+        {/* Which computer's workspace this is, and the route to the others.
+            It used to live only in the sidebar's footer — which above `md`
+            this rail replaces — so switching workspace from Home or Projects
+            had no route at all. The native menu is the desktop's own; this is
+            the entry, not a second implementation. */}
+        <DesktopWorkspaceSwitcher />
         <button
           type="button"
           data-tour="tools"

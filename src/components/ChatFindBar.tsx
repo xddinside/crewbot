@@ -69,9 +69,13 @@ export function ChatFindBar({ threadId, onClose }: { threadId: string; onClose: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hits]);
 
+  /* Narrow and floating, scoped to this thread. It sits on the conversation's
+     own glass rather than over the canvas: the hits it walks are in the
+     transcript, and a bar floating away from the transcript would be asking
+     the reader to look in two places. 100 hits is the cap the audit pins. */
   return (
-    <div className="w-full px-5 pb-2">
-      <div className="flex items-center gap-1.5 rounded-xl border border-hairline/50 bg-panel px-2 py-1.5 shadow-sm">
+    <div className="w-full px-5 pb-2 pt-1">
+      <div className="glass-card flex w-full max-w-[520px] items-center gap-1.5 px-2.5 py-1.5">
         <Search size={15} className="shrink-0 text-ink-secondary" />
         <input
           ref={inputRef}
@@ -88,7 +92,7 @@ export function ChatFindBar({ threadId, onClose }: { threadId: string; onClose: 
           }}
           placeholder={t("chat.find.placeholder")}
           aria-label={t("chat.find.placeholder")}
-          className="min-w-0 flex-1 bg-transparent px-1 text-[13px] text-ink outline-none placeholder:text-ink-secondary/70"
+          className="min-w-0 flex-1 bg-transparent px-1 text-[13px] text-ink outline-none placeholder:text-ink-secondary/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-focus)]"
         />
         <span className="min-w-[58px] text-right text-[11.5px] tabular-nums text-ink-secondary">
           {loading
@@ -104,7 +108,7 @@ export function ChatFindBar({ threadId, onClose }: { threadId: string; onClose: 
           onClick={() => move(-1)}
           disabled={!hits.length}
           aria-label={t("chat.find.previous")}
-          className="rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-30"
+          className="flex size-6 items-center justify-center rounded-md text-ink-secondary hover:bg-raised/70 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-focus)] disabled:opacity-30"
         >
           <ChevronUp size={15} />
         </button>
@@ -113,7 +117,7 @@ export function ChatFindBar({ threadId, onClose }: { threadId: string; onClose: 
           onClick={() => move(1)}
           disabled={!hits.length}
           aria-label={t("chat.find.next")}
-          className="rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-30"
+          className="flex size-6 items-center justify-center rounded-md text-ink-secondary hover:bg-raised/70 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-focus)] disabled:opacity-30"
         >
           <ChevronDown size={15} />
         </button>
@@ -121,7 +125,7 @@ export function ChatFindBar({ threadId, onClose }: { threadId: string; onClose: 
           type="button"
           onClick={onClose}
           aria-label={t("chat.find.close")}
-          className="rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink"
+          className="flex size-6 items-center justify-center rounded-md text-ink-secondary hover:bg-raised/70 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-focus)]"
         >
           <X size={15} />
         </button>

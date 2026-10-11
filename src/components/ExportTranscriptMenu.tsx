@@ -1,13 +1,16 @@
-import { useEffect, useRef, useState } from "react";
-import { Check, Copy, Download, Share } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Check, Copy, Download, Ellipsis } from "lucide-react";
 
 import { cn } from "@/lib/cn";
+import { t } from "@/lib/i18n";
+import { messageMenuRowClass } from "./MessageActions";
 import {
   copyTranscriptToClipboard,
   downloadMarkdownTranscript,
   formatTranscriptMarkdown,
   slugifyTranscriptFilename,
 } from "@/lib/export-transcript";
+import { glassClass } from "./Glass";
 import type { Message } from "@/state/store";
 
 export interface ExportTranscriptMenuProps {
@@ -21,18 +24,39 @@ export interface ExportTranscriptMenuProps {
   isGroup?: boolean;
   /** Optional custom CSS classes for the trigger button. */
   className?: string;
+  /** Rows the caller adds after the export pair — the Inspector in a direct
+   *  chat, nothing in a room, which has none. */
+  extraItems?: readonly ConversationOverflowItem[];
+}
+
+export interface ConversationOverflowItem {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  onSelect: () => void;
+  /** Renders the row pressed, for a panel that is already open. */
+  pressed?: boolean;
 }
 
 /**
- * A dropdown menu button in the chat header allowing users to export the current
- * conversation transcript either by copying to clipboard or downloading as Markdown.
+ * The conversation header's `…`.
+ *
+ * F038 asks for the export to live in a header ellipsis submenu, and the
+ * mockup draws exactly that: Copy Markdown · Download .md · Inspector. Both
+ * exports and — where there is one — the Inspector used to be two more icons
+ * in the row; they are named rows here instead, so the row of icons stays
+ * short enough to hold a title, a stop button, a model and a usage figure.
+ *
+ * Markdown export is the only way out of a conversation: there is no public
+ * share link and none is invented here.
  */
-export function ExportTranscriptMenu({
+export function ConversationOverflowMenu({
   title,
   messages,
   botName,
   isGroup = false,
   className,
+  extraItems,
 }: ExportTranscriptMenuProps) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -68,17 +92,12 @@ export function ExportTranscriptMenu({
   }, [open]);
 
   const hasMessages = messages && messages.length > 0;
+  const markdown = () => formatTranscriptMarkdown({ title, messages, botName, isGroup });
 
   /** Copy formatted Markdown transcript to clipboard with visual feedback. */
   const handleCopy = async () => {
     if (!hasMessages) return;
-    const markdown = formatTranscriptMarkdown({
-      title,
-      messages,
-      botName,
-      isGroup,
-    });
-    const success = await copyTranscriptToClipboard(markdown);
+    const success = await copyTranscriptToClipboard(markdown());
     setCopyFailed(!success);
     if (success) {
       setCopied(true);
@@ -90,14 +109,7 @@ export function ExportTranscriptMenu({
   /** Trigger browser download for the formatted Markdown transcript file. */
   const handleDownload = () => {
     if (!hasMessages) return;
-    const markdown = formatTranscriptMarkdown({
-      title,
-      messages,
-      botName,
-      isGroup,
-    });
-    const filename = slugifyTranscriptFilename(title);
-    downloadMarkdownTranscript(filename, markdown);
+    downloadMarkdownTranscript(slugifyTranscriptFilename(title), markdown());
     setOpen(false);
   };
 
@@ -106,70 +118,113 @@ export function ExportTranscriptMenu({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        aria-label="Export conversation"
+        aria-label={t("chat.moreActions")}
         aria-haspopup="menu"
         aria-expanded={open}
         className={cn(
-          "rounded-md p-1.5 transition-colors hover:bg-raised",
-          open ? "text-accent" : "text-ink-secondary hover:text-ink",
+          "rounded-md p-1.5 transition-colors hover:bg-raised/60",
+          open ? "bg-raised/70 text-ink" : "text-ink-secondary hover:text-ink",
           className,
         )}
-        title="Export conversation as Markdown"
+        title={t("chat.moreActions")}
       >
-        <Share size={18} />
+        <Ellipsis size={18} aria-hidden="true" />
       </button>
 
       {open && (
-        <div
-          role="menu"
-          aria-label="Export options"
-          className="glass-popover absolute right-0 top-full z-40 mt-1 w-[220px] overflow-hidden p-1.5"
-        >
-          <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-ink-secondary/70">
-            Export Conversation
-          </div>
-
-          {!hasMessages ? (
-            <div className="px-3 py-2 text-[12px] text-ink-secondary">
-              No messages to export yet.
-            </div>
-          ) : (
-            <>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => void handleCopy()}
-                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink outline-none transition-colors duration-[var(--motion-fast)] hover:bg-raised-hover/50 focus-visible:ring-2 focus-visible:ring-accent/60"
-              >
-                {copied ? (
-                  <Check size={14} className="shrink-0 text-success" />
-                ) : (
-                  <Copy size={14} className="shrink-0 text-ink-secondary" />
-                )}
-                <span className="flex-1 truncate">
-                  {copied ? "Copied to clipboard!" : "Copy as Markdown"}
-                </span>
-              </button>
-
-              {copyFailed && (
-                <div role="status" className="px-3 py-2 text-[12px] text-ink-secondary">
-                  Clipboard unavailable. Download the Markdown file instead.
-                </div>
-              )}
-
-              <button
-                type="button"
-                role="menuitem"
-                onClick={handleDownload}
-                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink outline-none transition-colors duration-[var(--motion-fast)] hover:bg-raised-hover/50 focus-visible:ring-2 focus-visible:ring-accent/60"
-              >
-                <Download size={14} className="shrink-0 text-ink-secondary" />
-                <span className="flex-1 truncate">Download as .md</span>
-              </button>
-            </>
-          )}
-        </div>
+        <ConversationOverflowRows
+          hasMessages={Boolean(hasMessages)}
+          copied={copied}
+          copyFailed={copyFailed}
+          onCopy={() => void handleCopy()}
+          onDownload={handleDownload}
+          extraItems={extraItems}
+          onClose={() => setOpen(false)}
+        />
       )}
     </div>
   );
 }
+
+/** The menu's rows, without the trigger, so the labels can be asserted — and
+ *  so the sheet below and the menu above cannot drift apart. */
+export function ConversationOverflowRows({
+  hasMessages,
+  copied,
+  copyFailed,
+  onCopy,
+  onDownload,
+  extraItems,
+  onClose,
+}: {
+  hasMessages: boolean;
+  copied: boolean;
+  copyFailed: boolean;
+  onCopy: () => void;
+  onDownload: () => void;
+  extraItems?: readonly ConversationOverflowItem[];
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="menu"
+      aria-label={t("chat.moreActions")}
+      className={cn(glassClass("popover"), "absolute right-0 top-full z-40 mt-1 w-[228px] overflow-hidden p-1.5")}
+    >
+      {!hasMessages && <div className="px-2.5 py-1.5 text-[12px] text-ink-secondary">{t("chat.exportEmpty")}</div>}
+      <button
+        type="button"
+        role="menuitem"
+        disabled={!hasMessages}
+        onClick={onCopy}
+        className={cn(messageMenuRowClass, "text-ink hover:bg-raised/70 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent")}
+      >
+        <span className="flex size-4 shrink-0 items-center justify-center text-ink-secondary">
+          {copied ? <Check size={14} className="text-success" /> : <Copy size={14} aria-hidden="true" />}
+        </span>
+        <span className="min-w-0 flex-1 truncate">{copied ? t("chat.exportCopied") : t("chat.exportCopy")}</span>
+      </button>
+
+      <button
+        type="button"
+        role="menuitem"
+        disabled={!hasMessages}
+        onClick={onDownload}
+        className={cn(messageMenuRowClass, "text-ink hover:bg-raised/70 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent")}
+      >
+        <span className="flex size-4 shrink-0 items-center justify-center text-ink-secondary">
+          <Download size={14} aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1 truncate">{t("chat.exportDownload")}</span>
+      </button>
+
+      {copyFailed && (
+        <div role="status" className="px-2.5 py-1.5 text-[12px] text-ink-secondary">
+          {t("chat.exportClipboardFailed")}
+        </div>
+      )}
+
+      {extraItems?.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          role="menuitem"
+          aria-pressed={item.pressed}
+          onClick={() => {
+            onClose();
+            item.onSelect();
+          }}
+          className={cn(
+            messageMenuRowClass,
+            "mt-1.5 border-t border-hairline/30 pt-2 text-ink hover:bg-raised/70",
+            item.pressed && "text-accent",
+          )}
+        >
+          <span className="flex size-4 shrink-0 items-center justify-center text-ink-secondary">{item.icon}</span>
+          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+

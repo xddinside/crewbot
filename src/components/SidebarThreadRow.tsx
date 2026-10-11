@@ -7,6 +7,7 @@ import { t } from "@/lib/i18n";
 import { nextRename } from "@/lib/rename";
 import { threadRefUrl } from "@/lib/thread-refs";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { messageMenuRowClass } from "./MessageActions";
 
 type ThreadRowTask = Pick<Task, "threadId" | "title" | "projectId" | "busy" | "activity" | "unread" | "openedBy" | "closedBy" | "archivedAt"> & { queued?: boolean };
 
@@ -158,19 +159,24 @@ export function SidebarThreadRow({ task, ownerId, current, compact, folders, onS
         <MoreHorizontal size={13} />
       </button>
     </div>
-    {menu && createPortal(<div ref={menuRef} data-thread-overlay role="group" aria-label={t("task.actions", { title: task.title })} style={menu}
-      className="fixed z-50 w-[220px] rounded-lg border border-hairline/50 bg-card p-1 shadow-xl"
+    {/* The mockup's order, as named rows: Rename · Copy link · Move to
+        folder › · Archive · Delete. Frosted like every other menu in the app,
+        and it was already a portal — the row lives inside a scroll pane. */}
+    {menu && createPortal(<div ref={menuRef} data-thread-overlay role="menu" aria-label={t("task.actions", { title: task.title })} style={menu}
+      className="fixed z-50 w-[224px] p-1"
       onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setMenu(null); actionRef.current?.focus(); } }}>
-      <button type="button" onClick={copyLink} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><Link2 size={12} />{t("task.copyLink")}</button>
-      <button type="button" onClick={startRename} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><Pencil size={12} />{t("task.renameAria")}</button>
-      {onMove && Boolean(folders?.length) && <label className="block rounded px-2.5 py-2 text-[12px] text-ink"><span className="mb-1 flex items-center gap-2 text-ink-secondary"><FolderInput size={12} />{t("folder.move")}</span>
+      <div className="glass-popover">
+      <button type="button" role="menuitem" onClick={startRename} className={cn(messageMenuRowClass, "text-ink hover:bg-raised/70")}><span className="flex size-4 shrink-0 items-center justify-center text-ink-secondary"><Pencil size={14} aria-hidden="true" /></span><span className="min-w-0 flex-1 truncate">{t("task.renameAria")}</span></button>
+      <button type="button" role="menuitem" onClick={copyLink} className={cn(messageMenuRowClass, "text-ink hover:bg-raised/70")}><span className="flex size-4 shrink-0 items-center justify-center text-ink-secondary"><Link2 size={14} aria-hidden="true" /></span><span className="min-w-0 flex-1 truncate">{t("task.copyLink")}</span></button>
+      {onMove && Boolean(folders?.length) && <label className="block rounded-lg px-2.5 py-2 text-[12px] text-ink"><span className="mb-1 flex items-center gap-2 text-ink-secondary"><FolderInput size={12} />{t("folder.move")}</span>
         <select aria-label={t("folder.moveNamed", { title: task.title })} value={folders?.some((folder) => folder.id === task.projectId) ? task.projectId : ""}
           onChange={(event) => { onMove(event.target.value || null); setMenu(null); }} className="w-full rounded border border-hairline/40 bg-card px-1 py-1 text-ink outline-none">
           <option value="">{t("folder.none")}</option>{folders?.map((folder) => <option key={folder.id} value={folder.id}>{folder.emoji ? `${folder.emoji} ` : ""}{folder.name}</option>)}
         </select>
       </label>}
-      {onArchive && <button type="button" disabled={isWorking(task)} onClick={() => { setMenu(null); onArchive(isArchived(task) ? null : Date.now()); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised disabled:opacity-40">{archived ? <ArchiveRestore size={12} /> : <Archive size={12} />}{archived ? t("task.unarchive") : t("task.archive")}</button>}
-      <button type="button" disabled={isWorking(task)} onClick={() => { setMenu(null); setDeleting(true); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-danger hover:bg-raised disabled:opacity-40"><Trash2 size={12} />{t("task.deleteAria")}</button>
+      {onArchive && <button type="button" role="menuitem" disabled={isWorking(task)} onClick={() => { setMenu(null); onArchive(isArchived(task) ? null : Date.now()); }} className={cn(messageMenuRowClass, "mt-1.5 border-t border-hairline/30 pt-2 text-ink hover:bg-raised/70", isWorking(task) && "cursor-not-allowed opacity-40 hover:bg-transparent")}><span className="flex size-4 shrink-0 items-center justify-center text-ink-secondary">{archived ? <ArchiveRestore size={14} aria-hidden="true" /> : <Archive size={14} aria-hidden="true" />}</span><span className="min-w-0 flex-1 truncate">{archived ? t("task.unarchive") : t("task.archive")}</span></button>}
+      <button type="button" role="menuitem" disabled={isWorking(task)} onClick={() => { setMenu(null); setDeleting(true); }} className={cn(messageMenuRowClass, "text-danger hover:bg-danger/10", isWorking(task) && "cursor-not-allowed opacity-40 hover:bg-transparent")}><span className="flex size-4 shrink-0 items-center justify-center"><Trash2 size={14} aria-hidden="true" /></span><span className="min-w-0 flex-1 truncate">{t("task.deleteAria")}</span></button>
+      </div>
     </div>, document.body)}
     <ConfirmDialog open={deleting} title={t("task.deleteConfirm")} body={t("task.deleteBody", { title: task.title })} confirmLabel={t("task.deleteAria")}
       onCancel={() => setDeleting(false)} onConfirm={() => { if (!isWorking(task)) onDelete(); setDeleting(false); }} returnFocusRef={actionRef} />

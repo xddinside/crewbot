@@ -6,6 +6,7 @@ import { useSpeech } from "@/lib/tts/useSpeech";
 import { useStore } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { messageMenuRowClass } from "./MessageActions";
 
 /** Read one message aloud. Hover-revealed beside the copy control, and it
  * becomes a stop button while this message is the one speaking — the same
@@ -19,12 +20,16 @@ export function SpeakButton({
   messageId,
   voiceId,
   className,
+  variant = "icon",
 }: {
   text: string;
   botId?: string;
   messageId: string;
   voiceId?: string;
   className?: string;
+  /** `row` is the message menu's named entry; `icon` is the bare control the
+   *  menu replaced. One state machine either way. */
+  variant?: "icon" | "row";
 }) {
   const { state } = useStore();
   const speech = useSpeech();
@@ -42,6 +47,32 @@ export function SpeakButton({
     : mine
       ? t("chat.speak.stop")
       : t("chat.speak.read");
+  if (variant === "row") {
+    return (
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          if (mine) return speaker.stop();
+          void speaker.speak(text, { botId, messageId, voiceId });
+        }}
+        disabled={!ready}
+        aria-label={label}
+        className={cn(
+          messageMenuRowClass,
+          "py-2",
+          mine ? "text-accent" : "text-ink hover:bg-raised/70",
+          !ready && "cursor-not-allowed opacity-60 hover:bg-transparent",
+          className,
+        )}
+      >
+        <span className="flex size-4 shrink-0 items-center justify-center text-ink-secondary">
+          {preparing ? <Loader2 size={14} className="animate-spin" /> : mine ? <Square size={14} className="fill-current" /> : <Volume2 size={14} />}
+        </span>
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+      </button>
+    );
+  }
   return (
     <button
       onClick={() => {

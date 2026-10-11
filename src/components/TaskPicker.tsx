@@ -247,9 +247,11 @@ function ConversationTaskPicker({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-40 mt-1 w-[300px] overflow-hidden rounded-xl border border-hairline/50 bg-card py-1 shadow-2xl shadow-black/50">
+        /* The thread sheet: folder groups, a search box, exact ids and the
+           per-thread cost/activity line. Frosted like every other popover. */
+        <div className="glass-popover absolute right-0 top-full z-40 mt-1 w-[300px] overflow-hidden py-1">
           <div className="px-2 pb-1 pt-1.5">
-            <div className="flex items-center gap-2 rounded-lg border border-hairline/40 bg-inset px-2.5 py-1.5 focus-within:border-accent/60">
+            <div className="flex items-center gap-2 rounded-lg bg-inset/70 px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-[var(--color-focus)]">
               <Search size={13} className="shrink-0 text-ink-secondary" />
               <input
                 autoFocus

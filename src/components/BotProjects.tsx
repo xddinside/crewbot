@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, CheckCheck, Folder, MoreHorizontal, Pencil, Plus, X
 import { useStore, type Bot, type BotProject } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { messageMenuRowClass } from "./MessageActions";
 
 const FOLDER_EMOJI = ["📁", "💼", "🏠", "📬", "💡", "🚀", "🎨", "🧪", "📚", "🌱", "⭐", "🛠️"];
 
@@ -59,13 +60,13 @@ export function FolderActions({ project, canMoveUp, canMoveDown, canMarkRead, sa
       onClick={(event) => { if (menu) { close(); return; } const rect = event.currentTarget.getBoundingClientRect(); onMenuChange({ left: rect.left, top: rect.bottom + 4 }); }}
       className="flex size-6 shrink-0 items-center justify-center rounded opacity-0 hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover/folder:opacity-100 max-md:opacity-70"><MoreHorizontal size={13} /></button>
     {position && createPortal(<div ref={menuRef} role="menu" aria-label={t("folder.actions", { name: project.name })} aria-busy={saving || undefined} data-thread-overlay style={position}
-      className="fixed z-50 w-[220px] rounded-lg border border-hairline/50 bg-card p-1 shadow-xl"
+      className="glass-popover fixed z-50 w-[220px] p-1"
       onMouseDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } else navigateThreadMenu(event); }}>
-      <button type="button" role="menuitem" onClick={() => { close(); onEdit(); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><Pencil size={12} />{t("folder.settings")}</button>
-      <button type="button" role="menuitem" disabled={!canMarkRead || saving} onClick={() => onMarkRead(close)} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised disabled:opacity-40"><CheckCheck size={12} />{t("folder.markRead")}</button>
-      <button type="button" role="menuitem" disabled={!canMoveUp || saving} onClick={() => move(-1)} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised disabled:opacity-40"><ArrowUp size={12} />{t("folder.moveUp")}</button>
-      <button type="button" role="menuitem" disabled={!canMoveDown || saving} onClick={() => move(1)} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised disabled:opacity-40"><ArrowDown size={12} />{t("folder.moveDown")}</button>
+      <button type="button" role="menuitem" onClick={() => { close(); onEdit(); }} className={cn(messageMenuRowClass, "text-ink hover:bg-raised/70")}><span className="flex size-4 shrink-0 items-center justify-center text-ink-secondary"><Pencil size={14} aria-hidden="true" /></span>{t("folder.settings")}</button>
+      <button type="button" role="menuitem" disabled={!canMarkRead || saving} onClick={() => onMarkRead(close)} className={cn(messageMenuRowClass, "text-ink hover:bg-raised/70 disabled:opacity-40")}><span className="flex size-4 shrink-0 items-center justify-center text-ink-secondary"><CheckCheck size={14} aria-hidden="true" /></span>{t("folder.markRead")}</button>
+      <button type="button" role="menuitem" disabled={!canMoveUp || saving} onClick={() => move(-1)} className={cn(messageMenuRowClass, "text-ink hover:bg-raised/70 disabled:opacity-40")}><span className="flex size-4 shrink-0 items-center justify-center text-ink-secondary"><ArrowUp size={14} aria-hidden="true" /></span>{t("folder.moveUp")}</button>
+      <button type="button" role="menuitem" disabled={!canMoveDown || saving} onClick={() => move(1)} className={cn(messageMenuRowClass, "text-ink hover:bg-raised/70 disabled:opacity-40")}><span className="flex size-4 shrink-0 items-center justify-center text-ink-secondary"><ArrowDown size={14} aria-hidden="true" /></span>{t("folder.moveDown")}</button>
     </div>, document.body)}
   </>;
 }
@@ -103,7 +104,7 @@ export function BotProjectDialog({ bot, project, onClose, onCreated }: {
     };
   }, []);
   return createPortal(
-    <div data-thread-overlay className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
+    <div data-thread-overlay className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-4"
       onMouseDown={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) onClose(); }}
       onKeyDown={(event) => {
         if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onCloseRef.current(); }
@@ -116,7 +117,7 @@ export function BotProjectDialog({ bot, project, onClose, onCreated }: {
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
       }}>
       <div ref={dialogRef} role="dialog" tabIndex={-1} aria-modal="true" aria-busy={saving || undefined} aria-label={t(project ? "folder.settings" : "folder.create")}
-        className="max-h-[85dvh] w-full max-w-[420px] overflow-y-auto rounded-2xl border border-hairline/50 bg-panel p-5 shadow-2xl">
+        className="glass-sheet max-h-[85dvh] w-full max-w-[420px] overflow-y-auto p-5">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-[15px] font-semibold text-ink">{t(project ? "folder.settings" : "folder.create")}</h2>
           <button type="button" onClick={onClose} aria-label={t("folder.close")} className="rounded p-1 text-ink-secondary hover:bg-raised"><X size={16} /></button>

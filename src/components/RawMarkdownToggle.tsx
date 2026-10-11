@@ -1,6 +1,7 @@
 import { Code, Eye } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { messageMenuRowClass } from "./MessageActions";
 
 /** Props for the {@link RawToggleAction} component. */
 export interface RawToggleActionProps {
@@ -10,11 +11,30 @@ export interface RawToggleActionProps {
   onToggle: () => void;
   /** Optional custom CSS class name. */
   className?: string;
+  /** `row` is the message menu's named entry; `icon` is the bare control the
+   *  menu replaced. Same toggle, same label. */
+  variant?: "icon" | "row";
 }
 
 /** Switch one bot message between rendered markdown and its original source. */
-export function RawToggleAction({ active, onToggle, className }: RawToggleActionProps) {
+export function RawToggleAction({ active, onToggle, className, variant = "icon" }: RawToggleActionProps) {
   const label = t(active ? "chat.showRenderedMarkdown" : "chat.showRawMarkdown");
+  if (variant === "row") {
+    return (
+      <button
+        type="button"
+        role="menuitem"
+        onClick={onToggle}
+        aria-pressed={active}
+        className={cn(messageMenuRowClass, "py-2 text-ink hover:bg-raised/70", className)}
+      >
+        <span className="flex size-4 shrink-0 items-center justify-center text-ink-secondary">
+          {active ? <Eye size={14} aria-hidden="true" /> : <Code size={14} aria-hidden="true" />}
+        </span>
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+      </button>
+    );
+  }
   return (
     <button
       type="button"

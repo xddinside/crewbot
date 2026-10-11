@@ -722,3 +722,210 @@ custom, dismiss, read-only receipt).
 - The store, IPC and the server were not touched. Nothing here needs a fourth
   `activeView`.
 - Do not run prettier. See phase 3's note.
+
+## Phase 5 — History, search and message actions
+
+From `4a3baace`.
+
+### What changed
+
+**One menu recipe, and it says what every row does.** `MessageActions` used to
+slide a row of unlabelled 14px glyphs out of the bubble — edit, copy, reply,
+pin — so the whole vocabulary of a message lived in a tooltip, which is no
+vocabulary at all on touch and none in a screenshot. It is now a `…` handle and
+a frosted menu of **named rows**: Copy · Reply · Pin · — View raw Markdown ·
+Read aloud · Regenerate, in the mockup's order and with the mockup's hairline
+between the everyday controls and the ones that change or replace the message.
+Every gate the icon row had is in the same place in the list: editing still
+waits for the turn to end, pinning is still hidden from a remote client,
+regenerate is still only ever the last answer.
+
+- `MessageActions.tsx` exports `MessageMenu` (the rows) and `messageMenuRowClass`
+  (the shared row class), so a row that owns state — read aloud, raw Markdown —
+  is the same row as the ones this file renders. `SpeakButton` and
+  `RawToggleAction` each gained `variant="row"`; their state machines are
+  untouched.
+- **The menu is a portal.** The transcript scrolls inside `overflow-y-auto`, so
+  an absolutely positioned popover would be clipped and a row near the top of a
+  long thread would open into nothing. It measures the handle, flips above when
+  the viewport has no room below, opens *inward* (a user bubble's handle is on
+  its left, a bot bubble's on its right), and re-measures on resize and scroll.
+  Escape closes it and returns the focus to the handle; arrows walk the rows.
+
+**Rooms get the same menu, with less in it.** ``PinToggle` became
+`roomMessageMenu`, and both sides of a room bubble carry the handle. Nothing
+was added or removed: rooms already had Reply and Pin on both sides, and they
+still do, now as named rows. Edit, regenerate and version navigation stay
+direct-chat only, because a member speaking in a room is not a branch anyone
+rewinds and F031 is explicit that room parity must not be assumed. The one pin
+per room and the remote-client rule are unchanged.
+
+**The header's `…`.** F038 asks for the export to be a *header ellipsis
+submenu* and the mockup draws exactly that — Copy Markdown · Download .md ·
+Inspector. Those were two more icons in a row already carrying a title, a stop
+button, a task picker, a usage chip, a model, a call and a computer. They are
+one frosted menu now (`ConversationOverflowMenu`; `ConversationOverflowRows` is
+exported so the labels are testable without a click). A room's `…` is the
+export pair alone — the Inspector is a thread-level lens. **No public share link
+is invented.** The seven hard-coded English strings in that menu moved into the
+catalog, so a non-English reader no longer meets untranslated export rows.
+
+**The Ctrl+K sheet is the mockup's sheet.** A frosted `GlassSheet` on a pale
+veil rather than a `bg-black/50` window, titled *Search conversations* with a
+`Ctrl+K` badge. A hit row is: conversation · owner · when · the line with the
+match lit. `Ctrl+K` and the top bar's search glyph stay one action with one
+boolean, owned by the shell. The footer says what the arrows, Enter and Esc do
+and carries a **Keyboard shortcuts** entry that opens the real catalog. The
+audit's numbers are kept: **12** transcript hits, the existing **40** in the
+sidebar search, and a hit off the live branch is labelled **Other version**
+because opening it moves the branch (F032).
+
+**Everything else in the mockup, on glass.** The in-thread find bar is a
+`GlassCard` capped at 520px, sitting on the conversation's own glass with the
+count and prev/next where they were. *Show earlier / Load earlier / Show later*
+and the *Jump to latest* pill are `glass-card`s instead of bordered pills. The
+pinned strip lost its accent wash for glass. The branch counter under an edited
+or regenerated message is a small `glass-card` pill. The inline edit editor is
+a frosted card with Cancel · Save. The thread row menu is the mockup's order —
+Rename · Copy link · Move to folder · Archive · Delete — as named rows in a
+frosted portal. The folder menu and folder dialog, the thread sheet
+(`TaskPicker`) and the keyboard-shortcuts sheet all moved onto the shared glass.
+
+**The workspace switcher had no route.** It lived only in the sidebar's footer,
+and above `md` Home and Projects replace the sidebar with these rails — so
+switching workspace from either screen was impossible. `HomeRail` and
+`ProjectRail` now carry `DesktopWorkspaceSwitcher` above their *All
+conversations* escape. Same native menu, same bridge; this is the entry, not a
+second implementation. It renders nothing when the bridge is absent (browser).
+
+### Files
+
+| file | |
+| --- | --- |
+| `src/components/MessageActions.tsx` + `.test.ts` | the `…` handle, the portalled menu, `MessageMenu`, `messageMenuRowClass` |
+| `src/components/SpeakButton.tsx`, `RawMarkdownToggle.tsx` | `variant="row"` — a named menu entry, same state machine |
+| `src/components/ChatView.tsx` | menu items, `CopyMenuRow`, glass editor, version pill, history pills, pinned strip, header `…` |
+| `src/components/GroupView.tsx` | `roomMessageMenu`, glass pinned strip and history pills, header `…` |
+| `src/components/ExportTranscriptMenu.tsx` + `.test.ts` | `ConversationOverflowMenu` / `ConversationOverflowRows` |
+| `src/components/CommandPalette.tsx` + `.test.ts` | the search sheet |
+| `src/components/ChatFindBar.tsx`, `SearchResults.tsx` | find bar and sidebar hit rows |
+| `src/components/SidebarThreadRow.tsx`, `BotProjects.tsx`, `TaskPicker.tsx` | thread, folder and thread-sheet menus |
+| `src/components/KeyboardShortcutsModal.tsx` | the shortcut sheet |
+| `src/components/HomeRail.tsx`, `ProjectRail.tsx` | the workspace entry |
+| `src/locales/en.json` | 27 new strings |
+
+The store, IPC and the server were **not** touched.
+
+### FEATURES.md rows covered
+
+- **F022** — folder create / name / emoji / edit / delete-to-ungroup, move,
+  reorder, mark-all-read: unchanged in behaviour, now named rows in a frosted
+  menu, and the folder dialog is a `glass-sheet`. Deleting a folder still never
+  deletes its threads.
+- **F023** — thread new / select / search / rename / move / copy link /
+  archive / restore / delete / show-all: the row menu is the mockup's five rows,
+  the thread sheet keeps its folder groups, exact ids and cost line, the
+  working-thread gate still disables archive and delete, and archived threads
+  are still a disclosure.
+- **F024** — other-thread activity jumps: `BotActivityPicker` and the thread
+  sheet's attention rows are untouched.
+- **F025** — the direct-chat header keeps every action it had. The export and
+  the Inspector moved *into* the `…`, which F038 asks for; model, usage, stop,
+  task picker, call, computer and find stayed where the tests pin them.
+- **F026** — the room header keeps members, responders, task picker, calls and
+  the working folder.
+- **F028** — history windowing, earlier/later/load-older, jump to latest, target
+  highlight and scroll-follow: every control still there, now glass. The
+  windowing maths in `lib/transcript-window.ts` was not touched.
+- **F030** — copy / edit / cancel / send, regenerate, raw Markdown, read aloud,
+  reply, pin: all present in the menu, all with their original gates.
+- **F031** — room reply and pin remain; no group editing or regeneration was
+  fabricated.
+- **F032** — `‹ 2/3 ›` branch navigation is a glass pill under the message;
+  alternate-version search is labelled *Other version* in both search surfaces.
+- **F033** — pinned banner, jump and unpin in both surfaces; reply quotation and
+  its clear are untouched.
+- **F038** — copy Markdown and download `.md` are now a header ellipsis submenu,
+  with the empty, copied and clipboard-failed states. No share link.
+- **F062** — global search, exact message / branch / tool hits, local rank, the
+  12-hit palette cap, and the sheet's landing on the exact thread, message and
+  branch.
+- **F063** — in-chat find: prev / next / count / loading / no matches, Enter,
+  Shift+Enter and Escape, and the 100-hit thread cap (`limit=100` untouched).
+- **F066** — the shortcut catalog, its filter and its help chord are unchanged;
+  the sheet is glass and its Done button is the accent primary.
+
+### Checks run
+
+| check | result |
+| --- | --- |
+| `npx tsc --noEmit` | pass |
+| `npx oxlint --config .oxlintrc.json src/components src/lib` | pass |
+| `node scripts/generate-locale.mjs --check` | pass (10 languages, 2383 English strings) |
+| `node scripts/check-skin-contrast.mjs` | pass — all 8 skins + bubble context |
+| `vite build` | pass |
+| `vitest run src/components src/lib src/state` | **1948 pass, 1 fail** |
+| whole-repo suite (server, e2e, harness) | not run; phase 11 owns it |
+
+The one failure is `src/lib/sky-texture.test.ts > leaves most of the field
+empty` (0.46 against a `< 0.45` bound) — the inherited failure phases 2 and 4
+recorded. Untouched here.
+
+### Two deliberate deviations from the mockup
+
+1. **The search sheet is not centred over a black scrim.** It sits high and
+   right-ish as the mockup draws it, but the veil is a pale wash: a glass sheet
+   under a 50% black scrim loses the translucency that is the whole point, and
+   the conversation underneath is better left recognisable than replaced.
+2. **The pinned strip stayed inside the conversation.** The mockup puts
+   `Pinned · Beta auth plan` as a header chip. The strip with sender, one line,
+   jump and unpin stays above the transcript: F033 asks for a *strip*, and a
+   chip in the header cannot carry a jump target and an unpin without becoming
+   a container.
+
+### Open, deferred, or unfinished
+
+- **Nobody has looked at any of it.** Five phases of the redesign now rest on
+  structure alone. The portalled message menu, the flip-above placement, the
+  glass card *inside* the glass panel (find bar, version pill, history pills)
+  and the search sheet's type are all unverified pixels. **What would settle
+  it:** an isolated fixture per `docs/verification/README.md`, a conversation
+  with a long thread, an edited message with two branches and a pinned one,
+  open a message menu near the top *and* near the bottom of the pane, then
+  Ctrl+K and type a word that appears on a fork. Phase 11 QA.
+- **The message menu portals to `document.body`, so `renderToStaticMarkup`
+  cannot render it open.** That is why `MessageMenu` is exported separately:
+  `MessageActions.test.ts` asserts the handle, `MessageMenu` assertions cover
+  the rows. Nothing asserts the *placement* maths.
+- **A row that is `render`-ed by the caller bypasses `onClose`.** Read aloud and
+  raw Markdown leave the menu open on purpose — it is `forceOpen` anyway — but a
+  future custom row that must close the menu has to call `onClose` itself.
+- **A room message still cannot be copied.** Rooms have Reply and Pin and
+  nothing else; copy was not added, because F031 is a warning against inventing
+  room parity rather than a list to fill. `roomMessageMenu` is the single place
+  to add it if the next pass decides a room deserves it.
+- **The search sheet's date line is locale-formatted** (`Intl.DateTimeFormat`),
+  so the mockup's `Today 10:15` / `Oct 12` split uses the `search.today` string
+  for today and nothing for older days. That reads as `Oct 12 10:15`; a bare
+  relative date would be nicer but is not in the catalog.
+- **`DesktopWorkspaceSwitcher` returns `null` without the desktop bridge**, so
+  on a browser build both rails simply do not show the row. That is correct, but
+  it means the workspace entry has no browser counterpart to check against.
+- The 27 new strings are English-only in the other nine packs; they fall back to
+  English, as every new key does.
+
+### For the next agent
+
+- `messageMenuRowClass` is the one menu row in the app. `MessageMenu`,
+  `ConversationOverflowRows`, the folder menu and the thread row menu all use
+  it. Do not add a second row recipe.
+- `MessageActions` takes `items`, not `children`. A row that owns state outside
+  the menu passes `render`; anything else passes `icon` + `label` + `onSelect`.
+- `ConversationOverflowMenu` is the header's `…`. `extraItems` is how a caller
+  adds a row without a second menu — the Inspector is the only user today, and
+  only in a direct chat.
+- `landOnSearchHit` is what makes search land on the exact **branch**, not just
+  the thread. Nothing in this phase changed it; do not bypass it.
+- The store, IPC and the server were not touched. Nothing here needed a fourth
+  `activeView`.
+- Do not run prettier. See phase 3's note.

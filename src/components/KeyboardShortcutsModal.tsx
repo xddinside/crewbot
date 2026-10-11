@@ -68,7 +68,7 @@ export function KeyboardShortcutsModal({ open, onClose }: KeyboardShortcutsModal
     <dialog
       ref={dialogRef}
       aria-labelledby="shortcuts-dialog-title"
-      className="m-auto w-[min(500px,calc(100%-32px))] max-h-[85vh] overflow-hidden rounded-2xl border border-hairline/50 bg-panel p-0 text-ink shadow-2xl backdrop:bg-black/60 backdrop:backdrop-blur-xs"
+      className="glass-sheet m-auto w-[min(520px,calc(100%-32px))] max-h-[85vh] overflow-hidden p-0 text-ink backdrop:bg-black/20"
       onCancel={(event) => { event.preventDefault(); onClose(); }}
       onKeyDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
@@ -95,7 +95,7 @@ export function KeyboardShortcutsModal({ open, onClose }: KeyboardShortcutsModal
             type="button"
             onClick={onClose}
             aria-label="Close keyboard shortcuts"
-            className="rounded-lg p-1.5 text-ink-secondary hover:bg-raised hover:text-ink"
+            className="rounded-lg p-1.5 text-ink-secondary hover:bg-raised/70 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-focus)]"
           >
             <X size={18} />
           </button>
@@ -103,7 +103,7 @@ export function KeyboardShortcutsModal({ open, onClose }: KeyboardShortcutsModal
 
         {/* Search Input */}
         <div className="border-b border-hairline/30 px-5 py-2.5">
-          <div className="flex items-center gap-2 rounded-xl border border-hairline/40 bg-inset px-3 py-1.5 focus-within:border-accent/60">
+          <div className="flex items-center gap-2 rounded-xl px-3 py-1.5 focus-within:ring-2 focus-within:ring-[var(--color-focus)]">
             <Search size={14} className="shrink-0 text-ink-secondary" />
             <input
               ref={inputRef}
@@ -128,7 +128,7 @@ export function KeyboardShortcutsModal({ open, onClose }: KeyboardShortcutsModal
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-secondary/70">
                   {group.category}
                 </div>
-                <div className="divide-y divide-hairline/20 rounded-xl bg-card/40 px-3 py-1 border border-hairline/30">
+                <div className="glass-card divide-y divide-hairline/20 px-3 py-1">
                   {group.items.map((item) => (
                     <ShortcutRow key={item.id} item={item} isMac={isMac} />
                   ))}
@@ -139,14 +139,14 @@ export function KeyboardShortcutsModal({ open, onClose }: KeyboardShortcutsModal
         </div>
 
         {/* Modal Footer */}
-        <div className="flex items-center justify-between border-t border-hairline/40 bg-card/30 px-5 py-2.5 text-[11.5px] text-ink-secondary">
+        <div className="flex items-center justify-between border-t border-hairline/30 px-5 py-2.5 text-[11.5px] text-ink-secondary">
           <span>
             Press <kbd className="rounded bg-control px-1 py-0.5 font-mono text-[10.5px]">?</kbd> when not typing to open
           </span>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg bg-raised px-3 py-1 font-medium text-ink hover:brightness-110"
+            className="rounded-full bg-accent px-3.5 py-1 font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-focus)]"
           >
             Done
           </button>

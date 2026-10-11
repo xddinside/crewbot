@@ -16,6 +16,7 @@ import { Archive, ChevronRight, PanelLeft, Plus } from "lucide-react";
 import { useStore, type Bot, type Group, type Task } from "@/state/store";
 import { NewRoomPanel } from "./Sidebar";
 import { SidebarThreadRow } from "./SidebarThreadRow";
+import { DesktopWorkspaceSwitcher } from "./DesktopWorkspaceSwitcher";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { projectList, type ProjectEntry } from "@/lib/project-context";
@@ -302,7 +303,11 @@ export function ProjectRail({
       {/* The whole workspace, not just this project: assistants, sections,
           rooms, archived bots and the tools row. Same Sidebar Home opens, so
           no destination gains a screen the old route could not reach. */}
-      <div className="mt-auto pt-6">
+      <div className="mt-auto space-y-0.5 pt-6">
+        {/* The same entry Home's rail carries: above `md` the sidebar is a
+            sheet here, so its footer row — and the workspace switcher with it
+            — would otherwise have no route on this screen. */}
+        <DesktopWorkspaceSwitcher />
         <button
           type="button"
           data-tour="tools"
