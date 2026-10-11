@@ -3,14 +3,16 @@
 // first lines instead of flooding the composer; a file dropped anywhere
 // on the window attaches by path.
 import { useEffect, useRef, useState } from "react";
-import { ClipboardPaste, File as FileIcon, Image as ImageIcon, LoaderCircle, MessageSquareText, X } from "lucide-react";
-import { cn } from "@/lib/cn";
+import { ClipboardPaste, File as FileIcon, LoaderCircle, MessageSquareText, X } from "lucide-react";
+import { t } from "@/lib/i18n";
 import {
   attachmentImageUrl,
   intakeFiles,
   formatSize,
   pasteSummary,
   type Attachment,
+  type FileAttachment,
+  type ImageAttachment,
   type PasteAttachment,
 } from "@/lib/composer-attachments";
 import { AttachmentPreviewDialog, previewImage, type PreviewImage } from "./AttachmentPreview";
@@ -129,74 +131,17 @@ export function ComposerAttachments({
       )}
 
       {items.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-2">
+        <div className="mb-2 flex flex-wrap gap-1.5">
           {items.map((a) =>
             a.kind === "paste" ? (
-              <Chip
-                key={a.id}
-                label="PASTED"
-                title={a.text.slice(0, 4000)}
-                onRemove={() => onRemove(a.id)}
-              >
-                <div className="relative h-[76px] overflow-hidden">
-                  <pre className="whitespace-pre-wrap break-words font-mono text-[10.5px] leading-[1.45] text-ink-secondary">
-                    {a.text.slice(0, 400)}
-                  </pre>
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-b from-transparent to-raised" />
-                </div>
-                <div className="mt-1 text-[10.5px] text-ink-secondary/70">{pasteSummary(a)}</div>
-                <button
-                  type="button"
-                  onClick={() => onDisplayInChatBox(a)}
-                  className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-accent/25 bg-accent/5 px-2 py-1.5 text-[10.5px] font-medium text-accent-text transition-colors hover:border-accent/50 hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/60"
-                  aria-label="Display pasted text in chat box"
-                  title="Display in chat box"
-                >
-                  <MessageSquareText size={12} aria-hidden="true" />
-                  <span>Display in chat box</span>
-                </button>
-              </Chip>
+              /* A pasted wall of text has nothing to shrink to: the point of the
+                 chip is that you can read what you pasted, so it keeps a card
+                 while files and images become pills. */
+              <PasteChip key={a.id} attachment={a} onRemove={() => onRemove(a.id)} onDisplay={onDisplayInChatBox} />
             ) : a.kind === "image" ? (
-              <Chip key={a.id} label="IMAGE" title={a.name} onRemove={() => onRemove(a.id)}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const image = previewImage(a.path, a.name);
-                    const src = image?.src ?? a.previewUrl;
-                    if (src) setPreview(image ?? { src, name: a.name });
-                  }}
-                  disabled={!attachmentImageUrl(a.path) && !a.previewUrl}
-                  aria-busy={a.uploading || undefined}
-                  className="relative flex h-[76px] w-full items-center justify-center overflow-hidden rounded-lg bg-inset focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:cursor-default"
-                  aria-label={`Preview ${a.name}`}
-                >
-                  <img
-                    src={attachmentImageUrl(a.path) ?? a.previewUrl}
-                    alt={a.name}
-                    loading="eager"
-                    fetchPriority="high"
-                    className="max-h-[76px] max-w-full object-contain"
-                  />
-                  {a.uploading && (
-                    <span className="absolute bottom-1.5 right-1.5 flex size-6 items-center justify-center rounded-full bg-black/65 text-white shadow-sm">
-                      <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
-                    </span>
-                  )}
-                </button>
-                <div className="mt-1 truncate text-[10.5px] text-ink-secondary/70">
-                  {a.uploading ? "Uploading…" : formatSize(a.size)}
-                </div>
-              </Chip>
+              <ImageChip key={a.id} attachment={a} onRemove={() => onRemove(a.id)} onPreview={setPreview} />
             ) : (
-              <Chip key={a.id} label="FILE" title={a.path} onRemove={() => onRemove(a.id)}>
-                <div className="flex h-[76px] items-center gap-2">
-                  <FileIcon size={16} className="shrink-0 text-ink-secondary" />
-                  <div className="min-w-0">
-                    <div className="truncate text-[12px] text-ink">{a.name}</div>
-                    <div className="text-[10.5px] text-ink-secondary/70">{formatSize(a.size)}</div>
-                  </div>
-                </div>
-              </Chip>
+              <FileChip key={a.id} attachment={a} onRemove={() => onRemove(a.id)} />
             ),
           )}
         </div>
@@ -206,42 +151,129 @@ export function ComposerAttachments({
   );
 }
 
-function Chip({
-  children,
-  label,
+/** The shared shape of a chip: a rounded pill on the composer, with the remove
+ *  control revealed by hover *and* by focus — `hidden` would take the only way
+ *  to drop a chip out of the keyboard's reach. */
+function ChipShell({
   title,
+  removeLabel,
   onRemove,
+  children,
 }: {
-  children: React.ReactNode;
-  label: "PASTED" | "FILE" | "IMAGE";
   title: string;
+  removeLabel: string;
   onRemove: () => void;
+  children: React.ReactNode;
 }) {
-  const Icon = label === "PASTED" ? ClipboardPaste : label === "IMAGE" ? ImageIcon : FileIcon;
   return (
     <div
       title={title}
-      className={cn(
-        "group relative w-[172px] rounded-xl border border-hairline/40 bg-raised px-2.5 py-2",
-        "transition-colors hover:border-hairline",
-      )}
+      className="group/chip relative flex items-center gap-2 rounded-full border border-hairline/40 bg-raised/70 py-1 pl-2 pr-7 transition-colors duration-[var(--motion-fast)] hover:border-hairline"
     >
       {children}
-      <div className="mt-1 flex items-center gap-1">
-        <Icon size={11} className="text-ink-secondary/70" />
-        <span className="rounded border border-hairline/60 px-1 py-px text-[9.5px] font-medium tracking-wide text-ink-secondary">
-          {label}
-        </span>
-      </div>
-      {/* hover reveals it, but so must focus: `hidden` would take the only
-          way to drop a chip out of reach of the keyboard */}
       <button
         onClick={onRemove}
-        aria-label={`Remove ${label === "PASTED" ? "pasted text" : "file"}`}
-        className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full border border-hairline/60 bg-panel text-ink-secondary opacity-0 transition-opacity hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
+        aria-label={removeLabel}
+        className="absolute right-1 flex size-5 items-center justify-center rounded-full text-ink-secondary opacity-0 transition-opacity hover:bg-raised-hover hover:text-ink focus-visible:opacity-100 group-hover/chip:opacity-100"
       >
         <X size={11} />
       </button>
     </div>
+  );
+}
+
+function PasteChip({
+  attachment,
+  onRemove,
+  onDisplay,
+}: {
+  attachment: PasteAttachment;
+  onRemove: () => void;
+  onDisplay: (attachment: PasteAttachment) => void;
+}) {
+  return (
+    <div
+      title={attachment.text.slice(0, 4000)}
+      className="group/chip relative w-[232px] rounded-xl border border-hairline/40 bg-raised/70 p-2.5 transition-colors hover:border-hairline"
+    >
+      <div className="flex items-center gap-1.5">
+        <ClipboardPaste size={12} className="shrink-0 text-ink-secondary" aria-hidden="true" />
+        <span className="text-[11px] font-medium text-ink-secondary">{pasteSummary(attachment)}</span>
+      </div>
+      <pre className="mt-1.5 line-clamp-3 whitespace-pre-wrap break-words font-mono text-[10.5px] leading-[1.45] text-ink-secondary">
+        {attachment.text.slice(0, 400)}
+      </pre>
+      <button
+        type="button"
+        onClick={() => onDisplay(attachment)}
+        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-accent/25 px-2 py-1 text-[10.5px] font-medium text-accent-text transition-colors hover:border-accent/50 hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/60"
+      >
+        <MessageSquareText size={12} aria-hidden="true" />
+        <span>{t("composer.paste.display")}</span>
+      </button>
+      <button
+        onClick={onRemove}
+        aria-label={t("composer.paste.remove")}
+        className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full border border-hairline/60 bg-panel text-ink-secondary opacity-0 transition-opacity hover:text-ink focus-visible:opacity-100 group-hover/chip:opacity-100"
+      >
+        <X size={11} />
+      </button>
+    </div>
+  );
+}
+
+function ImageChip({
+  attachment,
+  onRemove,
+  onPreview,
+}: {
+  attachment: ImageAttachment;
+  onRemove: () => void;
+  onPreview: (image: PreviewImage | null) => void;
+}) {
+  return (
+    <ChipShell title={attachment.name} removeLabel={t("composer.paste.removeFile")} onRemove={onRemove}>
+      <button
+        type="button"
+        onClick={() => {
+          const image = previewImage(attachment.path, attachment.name);
+          const src = image?.src ?? attachment.previewUrl;
+          if (src) onPreview(image ?? { src, name: attachment.name });
+        }}
+        disabled={!attachmentImageUrl(attachment.path) && !attachment.previewUrl}
+        aria-busy={attachment.uploading || undefined}
+        aria-label={`${t("composer.paste.preview")} ${attachment.name}`}
+        className="relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-inset focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:cursor-default"
+      >
+        <img
+          src={attachmentImageUrl(attachment.path) ?? attachment.previewUrl}
+          alt={attachment.name}
+          loading="eager"
+          fetchPriority="high"
+          className="size-full object-cover"
+        />
+        {attachment.uploading && (
+          <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/65 text-white">
+            <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
+          </span>
+        )}
+      </button>
+      <span className="max-w-[160px] truncate text-[12.5px] text-ink">{attachment.name}</span>
+      <span className="shrink-0 text-[11px] text-ink-secondary/80">
+        {attachment.uploading ? t("composer.paste.uploading") : formatSize(attachment.size)}
+      </span>
+    </ChipShell>
+  );
+}
+
+function FileChip({ attachment, onRemove }: { attachment: FileAttachment; onRemove: () => void }) {
+  return (
+    <ChipShell title={attachment.path} removeLabel={t("composer.paste.removeFile")} onRemove={onRemove}>
+      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
+        <FileIcon size={12} aria-hidden="true" />
+      </span>
+      <span className="max-w-[160px] truncate text-[12.5px] text-ink">{attachment.name}</span>
+      <span className="shrink-0 text-[11px] text-ink-secondary/80">{formatSize(attachment.size)}</span>
+    </ChipShell>
   );
 }

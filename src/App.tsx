@@ -11,6 +11,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { AsciiSky } from "@/components/AsciiSky";
 import { AppTopBar } from "@/components/AppTopBar";
 import { HomeScreen } from "@/components/HomeScreen";
+import { ProjectScreen } from "@/components/ProjectScreen";
 import { ChatView } from "@/components/ChatView";
 import { GroupView } from "@/components/GroupView";
 import { BotSettingsDialog } from "@/components/BotSettingsDialog";
@@ -142,12 +143,17 @@ function Shell() {
     state.instances.length > 0 &&
     !state.instances.some((i) => i.snapshot.state === "available");
 
-  /* The landing takes over only when there is genuinely a conversation to
+  /* The Home landing takes over only when there is genuinely a conversation to
      frame. Every gate the chat already had stays in front of it — no engine to
      run anything, a workspace holding the column, a room rather than a bot,
      still connecting, no bots yet — so F001's recovery screens keep their own
      layout instead of gaining a greeting over an empty canvas. */
   const showHome = destination === "home" && Boolean(bot) && !noEngines && !localVmWorkspaceBotId;
+  /* Projects is the same shape for a room: the conversation still owns the
+     middle, and the project's own conversations plus its goal, up-next and
+     staffing run down the canvas either side of it. Same gates, so a room
+     waiting on engine setup still gets the setup card rather than columns. */
+  const showProjects = destination === "projects" && Boolean(group) && !noEngines && !localVmWorkspaceBotId;
 
   // App-wide shortcuts: ⌘N new bot · ⌘1–9 jump to bot · ⌘⇧[ / ⌘⇧] prev/next · ⌘/ or ? shortcuts cheat sheet.
   // Kept deliberately small; every panel already closes on Esc.
@@ -215,12 +221,13 @@ function Shell() {
     setDrawerOpen(false);
   }, [state.selectedId, bot?.threadId, group?.threadId, state.activeView, state.pluginsOpen, state.settingsOpen]);
 
-  /* The workspace sheet belongs to Home. Leaving Home — a room selected from
-     inside it, the Crew pill, the calendar — takes it down with us, rather
-     than leaving a column of the sidebar floating over an unrelated screen. */
+  /* The workspace sheet belongs to Home and Projects. Leaving either — a bot
+     selected from inside it, the Crew pill, the calendar — takes it down with
+     us, rather than leaving a column of the sidebar floating over an unrelated
+     screen. */
   useEffect(() => {
-    if (!showHome) setWorkspaceOpen(false);
-  }, [showHome]);
+    if (!showHome && !showProjects) setWorkspaceOpen(false);
+  }, [showHome, showProjects]);
 
   useEffect(() => {
     if (state.activeView === "routines" && previousViewRef.current !== "routines") {
@@ -359,6 +366,28 @@ function Shell() {
               `max-md:absolute` still resolving against the shell. */}
           <div className="md:hidden">
             {!calendarFocus && <Sidebar open={drawerOpen} onClose={closeDrawer} />}
+          </div>
+          {workspaceOpen && (
+            <div className="fixed inset-0 z-30">
+              <div aria-hidden className="absolute inset-0 bg-black/20" onMouseDown={() => setWorkspaceOpen(false)} />
+              <div className="glass-sheet relative h-full w-[320px] max-sm:w-full">
+                <Sidebar open onClose={() => setWorkspaceOpen(false)} />
+              </div>
+            </div>
+          )}
+        </>
+      ) : showProjects ? (
+        /* Projects. The room's conversation is the screen; its conversations
+           run down the left on the sky and its goal, up-next and staffing run
+           down the right. Same escape hatch as Home — above `md` the sidebar
+           opens as a sheet on request rather than sitting beside the rail —
+           so rooms, sections, archived bots and tools stay one click away. */
+        <>
+          <ProjectScreen group={group!} onOpenAll={() => setWorkspaceOpen(true)}>
+            <GroupView key={group!.id} group={group!} />
+          </ProjectScreen>
+          <div className="md:hidden">
+            <Sidebar open={drawerOpen} onClose={closeDrawer} />
           </div>
           {workspaceOpen && (
             <div className="fixed inset-0 z-30">

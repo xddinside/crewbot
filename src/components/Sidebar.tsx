@@ -420,8 +420,10 @@ function RoomContextMenu({
   );
 }
 
-/** Pick members and an optional Work/Personal/project context, then create. */
-function NewRoomPanel({ onClose }: { onClose: () => void }) {
+/** Pick members and an optional Work/Personal/project context, then create.
+ *  Exported because Projects' rail has its own "New project" entry and would
+ *  otherwise carry a second copy of this form. */
+export function NewRoomPanel({ onClose }: { onClose: () => void }) {
   const { state, dispatch } = useStore();
   const [name, setName] = useState("");
   const [section, setSection] = useState("");

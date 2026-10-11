@@ -90,7 +90,7 @@ export function QueuedComposerMessages({
 
   return (
     <div
-      className="relative z-[1] mx-3 -mb-3 max-h-36 overflow-y-auto rounded-t-2xl border border-b-0 border-hairline/40 bg-raised/95 pb-3 shadow-sm backdrop-blur-sm"
+      className="glass-card relative z-[1] mx-3 mb-2 max-h-40 overflow-y-auto p-1"
       aria-label={
         items.length === 1
           ? t("composer.queued.regionOne")
@@ -98,18 +98,18 @@ export function QueuedComposerMessages({
       }
       aria-live="polite"
     >
+      <div className="flex items-center gap-2 px-2 py-1.5 text-[12px] text-ink-secondary">
+        <CornerDownRight size={13} strokeWidth={1.8} className="shrink-0" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate">
+          {multiple ? t("composer.queued.summaryMany", { count: items.length }) : t("composer.queued.summaryOne")}
+        </span>
+      </div>
       {items.some((item) => item.reason === "capacity") && (
-        <p className="px-3 pt-2 text-[12px] text-ink-secondary">{t("composer.queued.capacity")}</p>
+        <p className="px-2 pb-1 text-[12px] text-ink-secondary">{t("composer.queued.capacity")}</p>
       )}
-      <ul className="divide-y divide-hairline/25" aria-label={t("composer.queued.list")}>
+      <ul className="divide-y divide-hairline/25 border-t border-hairline/25" aria-label={t("composer.queued.list")}>
         {items.map((item, index) => (
-          <li key={item.queueId} className="flex min-h-10 min-w-0 items-center gap-2 px-2.5 py-1.5">
-            <CornerDownRight
-              size={14}
-              strokeWidth={1.8}
-              className="shrink-0 text-ink-secondary"
-              aria-hidden="true"
-            />
+          <li key={item.queueId} className="flex min-h-9 min-w-0 items-center gap-2 px-2 py-1.5">
             <span dir="auto" className="min-w-0 flex-1 truncate text-[14px] text-ink" title={item.text}>
               {item.text}
             </span>

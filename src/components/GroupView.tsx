@@ -1153,26 +1153,33 @@ export function GroupView({ group }: { group: Group }) {
   ));
 
   return (
-    <main className="relative flex h-full min-w-0 flex-1 flex-col glass-panel">
+    /* The header stands on the sky; only the conversation below it is glass.
+       Nothing else on this screen is a container — see DESIGN.md §1. */
+    <main className="relative flex h-full min-w-0 flex-1 flex-col">
       <GroupCallOverlay group={group} members={members} />
       {membersOpen && !remoteClient && !group.dm && (
         <ManageMembersPanel group={group} onClose={closeMembers} triggerRef={membersTriggerRef} />
       )}
-      {/* Header: static member avatars; a ring + dot marks the working bot. */}
+      {/* Header: the project's name at conversation scale, the room's own line
+          under it, and the roster. A ring + dot marks the working bot. */}
       <div
         style={headerDragStyle}
         className={cn(
-          "flex items-center justify-between px-5 py-3",
+          "@container/chathead flex items-start justify-between gap-3 px-5 py-3",
           // Room for the drawer button, which overlays this corner below md.
           "pl-11 md:pl-5",
         )}
       >
-        <div className="flex min-w-0 items-center gap-2" style={headerNoDragStyle}>
-          <span className="truncate text-[15px] font-semibold text-ink">{group.name}</span>
-          {!setupPending && !group.dm && <GroupTaskPicker group={group} />}
+        <div className="min-w-0 flex-1" style={headerNoDragStyle}>
+          <h1 className="truncate text-[26px] font-semibold leading-8 tracking-[-0.02em] text-ink">{group.name}</h1>
+          {!setupPending && !group.dm && (
+            <p className="mt-0.5 truncate text-[13px] text-ink-secondary">
+              {[groupResponseHint(group, members), group.bulletin.split("\n")[0]?.trim()].filter(Boolean).join(" · ")}
+            </p>
+          )}
         </div>
         <div
-          className="flex items-center gap-1.5"
+          className="flex shrink-0 items-center gap-1.5 pt-1"
           // The caption buttons sit over the header's right end; drop this
           // control row 16px (visual only) below the 26px overlay.
           style={controlsShiftStyle}
@@ -1190,6 +1197,7 @@ export function GroupView({ group }: { group: Group }) {
           >
             <Search size={18} />
           </button>
+          {!setupPending && <GroupTaskPicker group={group} />}
           <ExportTranscriptMenu
             title={group.name}
             messages={group.messages}
@@ -1224,12 +1232,12 @@ export function GroupView({ group }: { group: Group }) {
         </div>
       </div>
 
-      {findOpen && <ChatFindBar threadId={group.threadId} onClose={() => setFindOpen(false)} />}
-
-      {/* Bulletin: one pinned line; click to edit */}
-      {!setupPending && <div className="w-full px-5">
+      {/* Bulletin: one pinned line; click to edit. It sits with the title
+          rather than inside the transcript — a room's standing instruction is
+          context, not something the conversation scrolled past. */}
+      {!setupPending && <div className="px-5 pb-2 pl-11 md:pl-5">
         {bulletinOpen ? (
-          <div className="mb-1 rounded-lg border border-hairline/40 bg-panel p-2">
+          <div className="rounded-lg border border-hairline/40 bg-panel p-2">
             <textarea
               autoFocus
               value={bulletinDraft}
@@ -1261,6 +1269,11 @@ export function GroupView({ group }: { group: Group }) {
           </button>
         )}
       </div>}
+
+      {/* The one frosted surface on the screen: the conversation itself, with
+          the composer docked inside it. */}
+      <div className="glass-panel relative mx-3 mb-3 flex min-h-0 flex-1 flex-col rounded-2xl md:mx-4 md:mb-4">
+      {findOpen && <ChatFindBar threadId={group.threadId} onClose={() => setFindOpen(false)} />}
 
       {/* Working folder card — the chip in the header toggles it */}
       {!setupPending && folderOpen && !group.dm && (
@@ -1448,6 +1461,7 @@ export function GroupView({ group }: { group: Group }) {
         onConsumeReply={consumeReply}
         onRestoreReply={restoreReply}
       />
+      </div>
       </div>
       </div>
     </main>

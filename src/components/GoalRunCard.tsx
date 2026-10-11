@@ -27,6 +27,26 @@ const COPY = {
   { label: string; tone: string; border: string }
 >;
 
+/** The one wording for a goal run's state. The receipt in the transcript and
+ *  the project's own goal column both read it, so a status cannot be called
+ *  two things in two places on the same screen. A status this build does not
+ *  know (a newer server) reads as itself rather than as nothing. */
+export function goalRunStatusLabel(status: string): string {
+  return (
+    (COPY as Readonly<Record<string, { label: string } | undefined>>)[status]
+      ?.label ?? status
+  );
+}
+
+/** The matching text tone, for a readout that sits on the sky rather than in
+ *  the card's own border. */
+export function goalRunStatusTone(status: string): string {
+  return (
+    (COPY as Readonly<Record<string, { tone: string } | undefined>>)[status]
+      ?.tone ?? ""
+  );
+}
+
 function compact(value: string | undefined, limit: number): string {
   const clean = value?.replace(/\s+/g, " ").trim() ?? "";
   return clean.length > limit ? `${clean.slice(0, limit - 1).trimEnd()}…` : clean;

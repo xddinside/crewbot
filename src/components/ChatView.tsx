@@ -1422,7 +1422,9 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
   const canOpenResults = resultsThreadId && [...state.bots, ...state.groups].some((owner) => owner.threadId === resultsThreadId || owner.tasks?.some((task) => task.threadId === resultsThreadId));
 
   return (
-    <main className="relative flex h-full min-w-0 flex-1 flex-col glass-panel">
+    /* The header stands on the sky; only the conversation below it is glass.
+       Nothing else on this screen is a container — see DESIGN.md §1. */
+    <main className="relative flex h-full min-w-0 flex-1 flex-col">
       {/* Call mode covers the thread while the bot is on the line */}
       <CallOverlay bot={bot} />
       {/* Header */}
@@ -1431,12 +1433,12 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
         className={cn(
           // @container so the chips on the right can fold to icon bubbles
           // when the column is narrow (side panel open, small window)
-          "@container/chathead flex items-center justify-between px-5 py-3",
+          "@container/chathead flex items-start justify-between gap-3 px-5 py-3",
           // Room for the drawer button, which overlays this corner below md.
           "pl-11 md:pl-5",
         )}
       >
-        <div className="flex min-w-0 items-center gap-2.5 rounded-lg px-1.5 py-1" style={headerNoDragStyle}>
+        <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-1.5 py-1" style={headerNoDragStyle}>
           <button
             onClick={() => dispatch({ type: "toggleSettings", open: true })}
             className="flex size-10 shrink-0 items-center justify-center rounded-lg hover:bg-raised/50"
@@ -1451,6 +1453,8 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
               motionKey={mascotMotion?.nonce ?? 0}
             />
           </button>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
           <RenameTitle
             value={bot.name}
             onCommit={(name) => {
@@ -1464,18 +1468,21 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
             }}
             onActivate={() => dispatch({ type: "toggleSettings", open: true })}
             showEditButton
-            className="truncate text-[15px] font-semibold text-ink"
-            inputClassName="max-w-[220px] rounded bg-inset px-1.5 py-0.5 text-[15px] font-semibold"
+            className="truncate text-[26px] font-semibold leading-8 tracking-[-0.02em] text-ink"
+            inputClassName="max-w-[260px] rounded bg-inset px-1.5 py-0.5 text-[26px] font-semibold"
           />
           {bot.chiefOfStaff && (
-            <span className="flex items-center gap-1 rounded-full bg-accent/12 px-2 py-0.5 text-[11px] font-medium text-accent">
+            <span className="flex shrink-0 items-center gap-1 rounded-full bg-accent/12 px-2 py-0.5 text-[11px] font-medium text-accent">
               <Crown size={11} /> {t("chat.chiefOfStaff")}
             </span>
           )}
-          {bot.busy && <WorkingDots className="text-ink-secondary" />}
+          {bot.busy && <WorkingDots className="shrink-0 text-ink-secondary" />}
+            </div>
+            {bot.title.trim() && <p className="truncate text-[13px] text-ink-secondary">{bot.title}</p>}
+          </div>
         </div>
         <div
-          className="flex shrink-0 items-center gap-2"
+          className="flex shrink-0 items-center gap-2 pt-1"
           // The caption buttons sit over the header's right end; drop this
           // icon row 16px (visual only — the header keeps its height) so the
           // buttons clear the 26px overlay while the rest of the layout stays.
@@ -1541,6 +1548,9 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
         </div>
       </div>
 
+      {/* The one frosted surface on the screen: the conversation itself, with
+          the composer docked inside it. */}
+      <div className="glass-panel relative mx-3 mb-3 flex min-h-0 flex-1 flex-col rounded-2xl md:mx-4 md:mb-4">
       <BotActivityPicker bot={bot} />
       {routineExecution && <div className="mx-5 mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[11.5px] text-ink-secondary">
         <span className="min-w-0 flex-1 truncate">{t("routines.executionDetails", { name: routineExecution.routineName })}</span>
@@ -1753,6 +1763,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           ? () => setEditingId(lastUserMessage.id)
           : undefined}
       />
+      </div>
       </div>
       </div>
 

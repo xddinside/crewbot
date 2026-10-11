@@ -346,3 +346,197 @@ either way and phase 2 did not touch either file.
   `--sky-image` is how a skin ships a plate; a second background is a bug.
 - `home-context.ts` is pure and takes the clock as an argument. Keep it that
   way if you extend it — the landing's claims are all tested there.
+
+## Phase 3 — Projects: the room, its conversations, and the composer
+
+From `5c3ae947`.
+
+### What changed
+
+**Projects is a destination now, not a room with a sidebar beside it.**
+`showProjects` is derived exactly the way phase 2 derived `showHome` — a
+selected room, no engine problem, no VM workspace holding the column — and
+`ProjectScreen` frames it the same way `HomeScreen` frames Home: the
+conversation in the middle, two columns on the sky either side. The **sidebar
+is not mounted above `md` on this screen**; the rail's last row opens the same
+`Sidebar` as a glass sheet that Home uses, so rooms, sections, archived bots and
+tools stay one click away, and below `md` the shell's phone drawer is still
+mounted with its *Open bot list* button.
+
+- **Left — `ProjectRail.tsx`.** *New project* (the existing `NewRoomPanel`,
+  now exported from `Sidebar.tsx` rather than copied), then every room with the
+  conversations inside it. The thread rows are the app's own
+  `SidebarThreadRow` with the same `switchGroupTask` / `renameGroupTask` /
+  `deleteGroupTask` actions the sidebar uses, so the rail cannot disagree with
+  the tree. **Archived** is a disclosure over the archived conversations a
+  person put away, each row naming the assistant it belongs to — that is where
+  archiving lives in the data, and the workspace sheet still carries it.
+  `data-tour="tools"` moved onto this row as well: one screen mounts at a
+  time, so the guided tour still finds exactly one anchor (F134).
+- **Right — `ProjectContext.tsx`.** *Goal* (the room's **latest** goal run,
+  with the percentage off that run's own turn budget), *Up next*, *Staffing*.
+  Up next only lists things that really happened: the member holding the floor
+  (and whether it stopped to ask), words waiting in the queue with a count, a
+  conversation with something unread. The mockup drew a checklist of dated
+  tasks; the workspace has no task objects behind that, so it says the truth
+  instead of dressing a status line up as a to-do. Staffing shows the roster
+  with a `+N` overflow and opens the existing `ManageMembersPanel`; the room
+  header keeps its own trigger because the column is `lg:`-only.
+
+**The conversation is the one frosted thing.** `ChatView` and `GroupView` lost
+`glass-panel` from their `<main>`; it now wraps the transcript and the docked
+composer, inset `mx-3 md:mx-4` with a radius-16 edge. Everything above it —
+the title, the room's own line, the bulletin, the find bar, the error banner,
+the pinned strip — stands on the sky. The header is the mockup's: the
+conversation title at 26/32 with the room's `routing hint · bulletin first line`
+under it. Nothing was removed from either header; the rows still fold at the
+same container width and every control is where it was.
+
+**Composer.**
+
+- **A mode menu, not a goal chip.** `composerModeOptions()` in
+  `lib/composer-commands.ts` now owns the gates, and both doors read it: the
+  `/` picker typed into the box and the `Chat · Goal · Learn · Setup` popover
+  in the toolbar. An unavailable row stays in the list and says why ("Available
+  in a project room") instead of leaving a gap. Picking anything but Goal while
+  the draft starts with a typed `/goal …` takes the prefix back off, which is
+  what the old toggle did.
+- **Attachments are pills.** Files and images are `[thumb] name · size ×`; a
+  pasted wall of text keeps a card, because the point of that chip is that you
+  can read what you pasted. Intake, upload, preview, remove and the dismissible
+  intake notice are untouched (F049, F050).
+- **The queue tray is glass**, with a count line above the rows. Steer still
+  belongs to the head only, Delete still to every exact `queueId` (F044).
+- An `@` button joins attach — it inserts the sigil and hands the caret over,
+  and the existing mention query takes it from there (F041).
+- `ModelPicker`'s floating popover is `glass-popover`. The contained one, in
+  the settings dialog, stays an ordinary card: it is already on a solid panel.
+  **The picker stayed in the header.** F075 places it in the composer and the
+  mockup draws it there, but F025 lists the model among the direct-chat header's
+  actions and `ChatView.controls.test.ts` pins that placement on purpose. Two
+  controls for one value is worse than either, so the model picker is glass
+  where it was, and phase 6 can move it once F025 and F075 are reconciled.
+
+**Delegation rows.** `ActivityRun` is now a frosted card of rows — status
+glyph, `member · tool`, status chip — instead of one folded pill, and it opens
+to the same individual chips. The grouping rules did not move: a step still
+running or failed is still never folded, so live progress is never hidden and
+never dressed up as settled.
+
+### Files
+
+| file | |
+| --- | --- |
+| `src/lib/project-context.ts` + `.test.ts` | pure: the project list, the room's goal and its percentage, up next (14 tests) |
+| `src/components/ProjectScreen.tsx` + `.test.ts` | the three-column frame; renders against a store fixture and reads the markup back |
+| `src/components/ProjectRail.tsx` | New project, rooms and their conversations, Archived, the workspace escape |
+| `src/components/ProjectContext.tsx` | Goal, Up next, Staffing |
+| `src/components/ComposerModeMenu.tsx` + `.test.ts` | the mode popover; `ComposerModeList` exported so the wording is testable without a click |
+| `src/components/ActivityRun.tsx` | the delegation card |
+| `src/components/ChatView.tsx`, `GroupView.tsx` | canvas header, glass conversation panel |
+| `src/components/Composer.tsx`, `ComposerAttachments.tsx`, `ComposerQueuedMessages.tsx` | mode menu, attachment pills, glass queue tray |
+| `src/lib/composer-commands.ts` + `.test.ts` | `composerModeOptions` — the one gate |
+| `src/components/GoalRunCard.tsx` | exports the goal run's status wording, so the receipt and the column cannot call it two things |
+| `src/components/ModelPicker.tsx`, `Sidebar.tsx`, `App.tsx`, `src/locales/en.json` | glass popover; `NewRoomPanel` exported; the Projects branch; 33 new strings |
+
+The store, IPC and the server were **not** touched. `activeView` is unchanged;
+`showProjects` is derived from `destination`, `group`, `noEngines` and
+`localVmWorkspaceBotId` the way phase 2 derived the landing.
+
+### FEATURES.md rows covered
+
+- **F018–F022** — the setup card, the roster, the bulletin strip, the folder
+  chip and the conversation tree are all still where they were and are now
+  presented on Projects: the room's own line in the header, membership from the
+  roster chip *or* the Staffing row, the bulletin directly under the title
+  (F020 asked for a collapsible strip below the title, not inside the scroll),
+  and each room's conversations in the rail. **Room setup itself was not
+  restyled** — it is a dense form and phase 6/8 owns its density; it still
+  renders, still gates the composer, and is still the first thing a new room
+  shows.
+- **F023, F024** — thread rename/delete/archive in the rail and the Archived
+  disclosure, on the shared `SidebarThreadRow`; the room's activity picker and
+  the header's task picker are unchanged.
+- **F025–F027** — the direct-chat header is the canvas header at conversation
+  scale; every action (find, export, stop, task picker, usage, model, call,
+  computer, inspector) is still there.
+- **F026** — the room header keeps members, responders, task picker, calls and
+  the working folder, with the roster as avatars plus a dashed `+`.
+- **F031, F033** — room reply and pin, and the quoted composer context, are
+  untouched.
+- **F039–F041** — drafts, reply and attachment recovery, Enter/Shift+Enter/IME,
+  Up-to-edit, and the @ picker (now with a button as well as the keyboard).
+- **F042** — the mode menu and the slash picker share one gate; see above.
+- **F043–F045** — thread reference chips, the queue tray with Steer/Delete and
+  Stop, and the contextual locks and the failed-send row are unchanged.
+- **F046, F048** — the permission and place pills stay in the composer.
+- **F049, F050** — attachment intake and image-capability validation unchanged;
+  only the chip's shape moved.
+- **F055, F075** — approvals untouched; the model picker is the same control on
+  a glass surface.
+
+### Checks run
+
+| check | result |
+| --- | --- |
+| `pnpm typecheck` | pass |
+| `pnpm lint` | pass |
+| `pnpm i18n:check` | pass (10 languages, 2332 English strings) |
+| `pnpm check:contrast` | pass — all 8 skins + bubble context |
+| `vite build` | pass |
+| `vitest run` on what I touched and what covers it (Project, ProjectScreen, GroupView layout + chip, ChatView controls + verify, ComposerModeMenu, ComposerQueuedMessages, ModelPicker, Home, project-context, composer-commands, home-context, Sidebar i18n/simple/thread row, TaskPicker ×2, BotThreads, BotProjects, drafts, store, ApprovalModeSelector, AttachmentPreview, AttachmentGallery) | pass — 416 tests |
+| whole-repo suite | not run; phase 11 owns it |
+
+### The formatting trap, for whoever comes next
+
+`npx prettier --write` on this repo is **not** a no-op: there is no prettier
+config and prettier is not in `package.json`, so it reformats the whole file to
+its own defaults and buries a real change under a thousand lines of reflow.
+It happened here and was undone — the committed diff touches only the lines
+this phase means to touch. **`prettier --check` is not part of the gate here**;
+`pnpm run checks` is lint + typecheck + locale. Write code in the surrounding
+style instead.
+
+### Open, deferred, or unfinished
+
+- **Nobody has looked at any of it.** Every check is structural. The glass
+  conversation inset, the 26px title next to a long room name, the popovers,
+  and the rail's density are unverified pixels. Phase 1 and phase 2 both
+  recorded the same gap; three phases of the redesign now rest on structure
+  alone. **What would settle it:** launch an isolated fixture per
+  `docs/verification/README.md`, open a room with two or three conversations
+  and a goal run, and look at the three columns. Phase 11 QA.
+- **The model picker did not move to the composer** even though the mockup
+  puts it there and F075 says so. Deferred to the agent that owns F025 (phase
+  5/6) so the two rows stop disagreeing.
+- **Room setup was not restyled** — only re-parented into the glass panel.
+- **Delegation rows carry only settled statuses.** A run folds only finished
+  steps, so a folded card reads *Done*; a step still running is still its own
+  live chip above the card. Showing *Running* and *Queued* inside one card
+  would mean changing what `groupActivityRuns` folds, which would move search
+  focus and live progress with it. Not worth it without evidence.
+- **No overflow menu.** The mockup's header is search · history · `…`; the
+  headers keep every icon they had. Folding them into one menu is a real piece
+  of work with real risk (several of those controls portal their own popovers)
+  and belongs to the phase that owns message actions.
+- **The bot⇄bot channel is not a project.** It is left out of the rail on
+  purpose — `ask_bot` creates those to mirror an exchange — and stays in the
+  workspace sheet, which is the same list the sidebar always showed.
+- **Archived lives in the Projects rail** even though archived conversations
+  belong to assistants rather than rooms. The alternative was leaving them with
+  no route from this screen; the sheet still carries them too.
+- `src/lib/sky-texture.test.ts` still fails its own coverage bound (0.46 vs
+  `< 0.45`), inherited from phase 2. Untouched here.
+
+### For the next agent
+
+- Reuse `ProjectScreen`, `GlassPanel`, `GlassCard`, `GlassPopover` and the
+  `--sky-*` tokens. The Projects frame is the second copy of Home's frame by
+  design, not a second pattern.
+- `showProjects` is a gate, not a mode. Keep it derived.
+- The conversation's glass panel is `<main>`'s child, not `<main>` itself. Any
+  component added to either header lands on the sky automatically; anything
+  added below it lands on glass.
+- `composerModeOptions()` is the one gate for slash commands and the mode
+  menu. Do not re-derive availability in a component.
+- Do not run prettier. See above.

@@ -1,6 +1,6 @@
 import { track } from "@/lib/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
-import { ArrowUp, BookOpen, Clock, Mic, Paperclip, Square, Target, Users, X } from "lucide-react";
+import { ArrowUp, AtSign, BookOpen, Clock, Mic, Paperclip, Square, Target, Users, X } from "lucide-react";
 import { useStore, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { activeLocale, t } from "@/lib/i18n";
@@ -28,6 +28,7 @@ import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { PlaceChip } from "./PlaceChip";
 import { FullAccessWarning } from "./FullAccessWarning";
 import { ApprovalModeSelector } from "./ApprovalModeSelector";
+import { ComposerModeMenu } from "./ComposerModeMenu";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
 import {
   appendPastedText,
@@ -60,9 +61,11 @@ import { skillAuthoringEnabled } from "@/lib/feature-flags";
 import { mentionChoicesForQuery } from "@/lib/mentions";
 import { serializeThreadRefs, threadTokenFromPaste, threadTokenSpacing } from "@/lib/thread-refs";
 import {
+  composerModeOptions,
   composerSlashTrigger,
   goalTextFromComposer,
   replaceComposerSlashTrigger,
+  type ComposerModeId,
   type ComposerSlashCommand,
 } from "@/lib/composer-commands";
 
@@ -244,8 +247,10 @@ export function Composer({
   // ── Slash commands and @mentions ─────────────────────────────────────
   const slash = composerSlashTrigger(text, caret);
   const locale = activeLocale();
-  const commandCandidates = useMemo(() => {
-    if (!slash || slash.start === dismissedSlashAt) return [];
+  /* One gate, two doors. The mode menu in the toolbar and the `/` picker in
+     the box read the same availability, so a row cannot exist in one and not
+     in the other. */
+  const modes = useMemo(() => {
     const supportsAgents = (candidate?: Bot) =>
       Boolean(
         candidate &&
@@ -253,29 +258,28 @@ export function Composer({
             (instance) => instance.instanceId === candidate.modelSelection.instanceId,
           )?.capabilities?.agentsMcp,
       );
-    const available: ComposerSlashCommand[] = [];
-    if (group && !group.dm) available.push({
-      id: "goal",
-      label: "/goal",
-      description: t("composer.command.goalDesc"),
+    return composerModeOptions({
+      // only a room has a team to run a goal
+      room: Boolean(group && !group.dm),
+      // /learn is skill authoring plus an engine that can write one
+      learn:
+        skillAuthoringEnabled(state.config) &&
+        (group ? (members ?? []).some(supportsAgents) : supportsAgents(bot)),
+      // setup needs the agents tools (propose_profile and friends) and a
+      // single bot: a room cannot set itself up
+      setup: Boolean(!group && supportsAgents(bot)),
     });
-    if (
-      skillAuthoringEnabled(state.config) &&
-      (group ? (members ?? []).some(supportsAgents) : supportsAgents(bot))
-    ) {
-      available.push({
-        id: "learn",
-        label: "/learn",
-        description: t("composer.command.learnDesc"),
-      });
-    }
-    // Setup mode needs the agents tools (propose_profile and friends) and a
-    // single bot: a room cannot set itself up.
-    if (!group && supportsAgents(bot)) available.push({
-      id: "setup",
-      label: "/setup",
-      description: t("composer.command.setupDesc"),
-    });
+  }, [group, members, bot, state.config, state.instances]);
+  const commandCandidates = useMemo(() => {
+    if (!slash || slash.start === dismissedSlashAt) return [];
+    const byId: Record<string, ComposerSlashCommand> = {
+      goal: { id: "goal", label: "/goal", description: t("composer.command.goalDesc") },
+      learn: { id: "learn", label: "/learn", description: t("composer.command.learnDesc") },
+      setup: { id: "setup", label: "/setup", description: t("composer.command.setupDesc") },
+    };
+    const available = modes
+      .filter((mode) => mode.id !== "chat" && mode.available)
+      .map((mode) => byId[mode.id as "goal" | "learn" | "setup"]);
     const query = slash.query.toLowerCase();
     return available.filter(
       (command) =>
@@ -283,8 +287,9 @@ export function Composer({
         command.id.startsWith(query) ||
         command.description.toLowerCase().includes(query),
     );
-  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale]);
+  }, [slash, dismissedSlashAt, modes, locale]);
   const commandPickerOpen = commandCandidates.length > 0;
+  const mode: ComposerModeId = effectiveChannelMode === "goal" ? "goal" : "chat";
 
   // Tag another bot; the agent reaches it via ask_bot.
   const mention = mentionQueryAt(text, caret);
@@ -482,6 +487,40 @@ export function Composer({
   };
 
   const hasContent = Boolean(effectiveText.trim()) || attachments.length > 0;
+  /* Goal mode is one-shot and reversible from the same place it was turned on:
+     a typed `/goal …` becomes the mode itself, so choosing anything else has
+     to take the prefix back off the draft or the words would send as a
+     literal command. */
+  const applyMode = (next: ComposerModeId) => {
+    markDraftEdited(draftId);
+    if (next !== "goal" && typedGoalText !== null) {
+      const nextCaret = Math.max(0, caret - (text.length - typedGoalText.length));
+      editText(typedGoalText);
+      setCaret(nextCaret);
+      setChannelMode("chat");
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        inputRef.current?.setSelectionRange(nextCaret, nextCaret);
+      });
+      return;
+    }
+    setChannelMode(next === "goal" ? "goal" : "chat");
+  };
+
+  /** The @ picker is driven by what is typed; this is the same door without
+   *  the keyboard — insert the sigil, hand the caret over, let the existing
+   *  query logic take it from there. */
+  const startMention = () => {
+    const next = `${text}@`;
+    editText(next);
+    setCaret(next.length);
+    setDismissedAt(null);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setSelectionRange(next.length, next.length);
+    });
+  };
+
   const retryFailedSend = (failed: FailedComposerSend) => {
     const failedMode = failed.channelMode ?? "chat";
     if (failed.requestText.includes("<attached-image ") && !imageTargetsSupport(failed.requestText, failedMode)) {
@@ -892,42 +931,19 @@ export function Composer({
                 onClick={() => fileInput.current?.click()}
                 aria-label={t("composer.attach")}
                 title={t("composer.attach")}
-                className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-control hover:text-ink"
+                className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-secondary outline-none hover:bg-control hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/60"
               >
                 <Paperclip size={17} />
               </button>
-              {group && !group.dm && (
-                <button
-                  type="button"
-                  aria-pressed={effectiveChannelMode === "goal"}
-                  aria-label={t("composer.goal.aria")}
-                  title={t("composer.goal.title")}
-                  onClick={() => {
-                    markDraftEdited(draftId);
-                    if (typedGoalText !== null) {
-                      const nextCaret = Math.max(0, caret - (text.length - typedGoalText.length));
-                      editText(typedGoalText);
-                      setCaret(nextCaret);
-                      setChannelMode("chat");
-                      requestAnimationFrame(() => {
-                        inputRef.current?.focus();
-                        inputRef.current?.setSelectionRange(nextCaret, nextCaret);
-                      });
-                      return;
-                    }
-                    setChannelMode((current) => current === "goal" ? "chat" : "goal");
-                  }}
-                  className={cn(
-                    "flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[13px] transition-colors",
-                    effectiveChannelMode === "goal"
-                      ? "border-accent/35 bg-accent/10 text-accent"
-                      : "border-hairline/20 bg-transparent text-ink-secondary hover:bg-raised hover:text-ink",
-                  )}
-                >
-                  <Target size={14} aria-hidden="true" />
-                  {effectiveChannelMode === "goal" ? "/goal" : t("composer.goal.chip")}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={startMention}
+                aria-label={t("composer.mention.aria")}
+                title={t("composer.mention.agent")}
+                className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-secondary outline-none hover:bg-control hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/60"
+              >
+                <AtSign size={17} />
+              </button>
               {modeBot && approvalEngine && !remoteClient && (
                 <ApprovalModeSelector
                   approvalMode={modeBot.approvalMode}
@@ -1062,6 +1078,17 @@ export function Composer({
             className="block max-h-[9rem] min-h-6 w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[15px] leading-6 placeholder:text-ink-secondary focus:outline-none"
           />
           <div className="flex items-center gap-1">
+          {/* The mode menu sits with the send button, not with the attach and
+              permissions: it is a choice about this message, and it offers
+              the same four doors the `/` picker does. */}
+          {!locked && (
+            <ComposerModeMenu
+              options={modes}
+              value={mode}
+              onSelect={applyMode}
+              disabled={Boolean(approval) || attachmentPending}
+            />
+          )}
           {/* Stop stays a stop. Stop-then-steer is named beside the queued
               message above, where its effect is visible before activation. */}
           {busy && !locked && (
