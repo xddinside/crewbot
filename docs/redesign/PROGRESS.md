@@ -106,6 +106,40 @@ F062 (Ctrl+K), F064 (attention), F066 (avatar, shortcuts), F082 (all eight
 skins), F085 (Help & About still reachable). The other 130 rows keep their
 existing route; nothing was removed.
 
+### Checks run
+
+| check | result |
+| --- | --- |
+| `pnpm typecheck` | pass |
+| `pnpm lint` | pass |
+| `pnpm i18n:check` | pass (10 languages, 2273 strings) |
+| `pnpm check:electron` | pass (124 modules) |
+| `pnpm check:contrast` | pass — all 8 skins + bubble context |
+| `vitest run src/lib/sky-texture.test.ts src/lib/shell-nav.test.ts src/lib/skins.test.ts` | pass (19 new + 5 existing) |
+| `vite build` | pass |
+| `vitest run` (whole repo) | **not completed** — see below |
+
+**The whole-repo suite was started and stopped before it finished.** It is slow
+(it spawns harness servers and drives a browser) and phase 11 owns it. Three
+files had failed by the time it was stopped:
+
+- `server/steer-e2e.test.ts` — a pure server test with **zero `src/`
+  references**. A renderer change cannot have caused it. Deferred.
+- `scripts/testing/team-canvas-ui.e2e.test.ts` and
+  `scripts/testing/control-omb-ui.e2e.test.ts` — both drive the real app in a
+  browser against a live harness server. **These could in principle be
+  affected by the shell rewrite**, so this is genuinely unverified, not
+  cleared. `control-omb-ui` reads the transcript landmark and mentions the
+  sidebar only in a comment; `team-canvas-ui` exercises the team canvas, which
+  phase 1 did not touch.
+
+**What would settle it:** run `npx vitest run scripts/testing/control-omb-ui.e2e.test.ts
+scripts/testing/team-canvas-ui.e2e.test.ts` once in an isolated fixture per
+`docs/verification/README.md`, and re-run `server/steer-e2e.test.ts` against
+the base commit to confirm it was already failing. Do that before phase 3
+changes the conversation surface, not after — once phase 3 lands, a failure
+here can no longer be attributed.
+
 ### Two decisions worth knowing
 
 1. **The composer fade mask is now frosted, not opaque** (`bg-glass-mask`).
