@@ -2180,9 +2180,8 @@ their grounds are warm or green and a blue plate would not belong on them.
 | `ConfirmDialog`, `CallView`, `OptionCard`, `BotPickerList`, `PermissionsSection`, `RoutineCalendarPage`, `LocalComputerSection`, `onboarding/reel/scenes/Automations` | `text-white` on a filled accent/danger → the per-skin ink token |
 | `src/lib/sky-texture.test.ts` | the coverage bound |
 
-The store, IPC, the server and every feature behaviour are untouched. The diff
-is 40 files (39 edited, `COVERAGE.md` added), +576/−77 with the two
-documents counted.
+The store, IPC, the server and every feature behaviour are untouched. The whole
+phase is 49 files changed, 740 insertions, 94 deletions, `COVERAGE.md` included.
 
 ## What the whole-repository suite found
 
