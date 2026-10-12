@@ -1776,3 +1776,293 @@ changed.
   workspaces / backups / recovery screens. This phase restyled the sections
   that live inside it (connections, engines, usage, voice) and changed nothing
   about how they are reached.
+
+---
+
+# Phase 10 — settings, workspaces, recovery, onboarding, remote access
+
+Mockups 11 and 12. The screens that were a modal now stand on the sky, the two
+places that hid four things behind one scroll became the mockup's tabbed
+screens, and the one honest answer about voice on Linux is now the honest
+answer about voice on Linux.
+
+**Settings is a page, not a dialog over a scrim.** The centred
+`bg-black/50` wrapper, the `bg-panel` frame, the `aria-modal`, the
+backdrop-click-to-close and the twenty-line Tab trap are all gone. What is left
+is a `flex-1` child of the shell column: a rail of section buttons standing
+directly on the canvas, a page title, and the section's cards below it. The
+rail, the search box and the heading carry no fill; the cards are glass. Two
+behaviour notes, both deliberate and both inherited from what phase 9 did to
+the Apps page: **there is no backdrop to click** (a page has no scrim — Escape
+and the X both close it), and **there is no Tab trap** (a trap inside a
+full-height page strands the top bar above it). Focus still lands on the search
+box on open, and the element that opened Settings gets it back.
+
+**The section registry is data, and the rules are pure.** `lib/settings-view.ts`
+owns the list, the order, the search keywords, the capability subset a build
+may offer, and which section a request resolves to. `SettingsModal.tsx` keeps
+only the icon components, so `settings-view.test.ts` pins all of it in plain
+Node (18 tests) and the rail, the empty state and the section switcher cannot
+disagree. Three capability rules are unchanged in behaviour and now say
+themselves in one place: a paired remote client sees Appearance / Workspaces /
+Remote access and nothing else; Workspaces needs the desktop's environment
+bridge; Organisation needs the organisation bridge; Fleet needs a fleet agent;
+People is email sign-in, which a browser host has and a desktop does not.
+
+**Backups & recovery is two tabs, not one scroll.** *Portable archive* is the
+encrypted `.ombbackup` this workspace exports and restores; *Company snapshots*
+is the organization's server-side list. They are different data with different
+gates, and the tab decides which is on screen. The second tab is **not offered
+unless it can work**: `companyBackupsAvailable(connection)` is now an exported
+predicate and `companyBackupsReachable()` reads the newest connection snapshot,
+so a workspace with no company connection gets one tab, not a dead one. Nothing
+was removed — export with password + confirm, native download, upload, validate,
+the preview with counts/warnings/exclusions, the literal `REPLACE` gate, the
+trust warning, the restore, the pending-restore notice, and the company's
+create / schedule / quota / restore / delete dialogs with their own
+`BACK UP THIS WORKSPACE DAILY` and `DELETE` gates are all still there.
+
+**Remote access is three tabs.** *Server devices* is always there and holds
+`ServerPairingCard` plus the remote-client pairing form — minting a code is the
+one remote path a paired client still has, because its requests already carry
+the server's session (MOCA-84). *Companion* and *Domain* belong to the machine
+that owns the server, so `remoteAccessTabs({ remoteClient })` offers a paired
+client the first tab alone. The pairing card is now the mockup's *Client
+access*: the code and its QR sit on one inset plate inside the card, the scope
+radio, Create, and a device list of hairlines — no card per device.
+
+**The recovery gate is glass on the sky.** `WorkspaceBackupRecovery` was a
+`bg-app` full-screen block. It is now the ASCII sky with one `GlassSheet`: the
+recovering / restart-required line, Retry, and the continue-without-drafts
+escape. It still blocks the composer from mounting, and the marker, the
+client-state fetch, the reload and the escape are unchanged.
+
+**`/pair` and sign-in float on the sky.** `PairPage` paints `AsciiSky` and puts
+the whole form in one glass sheet. The workspace switch stays above it and
+outside it — available before sign-in, which is the point of it being there at
+all. Unauthenticated `/`, email OTP, pairing code, device label, resend,
+already-connected and the legacy tokens all behave as before.
+
+**Onboarding wears a named step rail.** `onboarding/Stepper.tsx` replaces the
+dots above the welcome card: About you · Engines · Permissions · Remote access ·
+Meet Maus, each one done (a filled check), current (the accent pill), or todo.
+The labels come from `beatsFor()`, so they name the beats that are actually
+running — `phone` reads *Remote access* because that is what it connects. A
+seven-beat flow (the feature reel on) falls back to the dots, because five words
+squeezed into a narrow row are worse than a dot. The welcome card itself is now
+`glass-sheet`, and the guided-tour spotlight is `glass-popover`.
+
+**Linux voice says so.** `callCapabilityHelp` gained a Linux branch under
+`unsupported-platform`: the label is *Calls aren't available on this Linux
+device yet*, the reason says dictation and speak-replies are out too and that
+text chat does everything a call does, and the action opens **Voice & alerts
+settings** rather than pointing at a Mac. `composer.dictation.unavailable` now
+names this device instead of "this build". No capability was added and none is
+claimed; `VoiceSettings` already disables the built-in-voice chip off macOS.
+
+**Profile is a real form.** Name and email were two inputs with placeholder-only
+labels — unreadable once filled. They are labelled rows now, with a monogram
+beside them, saving on blur exactly as before.
+
+### Files
+
+| file | |
+| --- | --- |
+| `src/lib/settings-view.ts` + `.test.ts` | pure: the 13-section registry, search, the capability subset, section resolution, both tab sets (18 tests) |
+| `src/components/SettingsModal.tsx` | the page: rail on the canvas, title, glass cards, both tabbed sections, the footer links |
+| `src/components/SettingsModal.page.test.ts` | the frame, the capability subset, and what each tab mounts (13 tests) |
+| `src/components/SettingsPrimitives.tsx` | `Card` is glass now; `SettingRow` and `CommandLine` unchanged |
+| `src/components/CompanyBackupSettings.tsx` | `companyBackupsAvailable` as a predicate, `companyBackupsReachable()` for the tab, the dialog is a glass sheet |
+| `src/components/WorkspaceBackupSettings.tsx` | the recovery gate is a glass sheet on the sky; the preview plate is an inset |
+| `src/components/ServerPairingCard.tsx`, `RemoteComputerSection.tsx`, `CompanionSection.tsx`, `CustomDomainSettings.tsx`, `ComputerSharingSettings.tsx` | Client-access plate, hairline device lists, inset plates, `ui-button` where a hand-rolled button was |
+| `src/components/ConnectedWorkspacesSettings.tsx` | the workspace list stands on the canvas — no card, hairlines only |
+| `src/components/OrganizationSettings.tsx`, `PeopleSection.tsx`, `WorkspacesSection.tsx`, `SkinPicker.tsx` | inset plates, accent ink on buttons, the selected skin is a glass card with an accent ring |
+| `src/components/onboarding/Stepper.tsx` + `.test.ts`, `WelcomeFlow.tsx`, `Spotlight.tsx` | the named rail, the glass welcome card, the glass popover (6 tests) |
+| `src/pair/PairPage.tsx` | sky + one glass sheet; the workspace switch stays above it |
+| `src/lib/call-capability.ts`, `CallView.tsx`, `CallView.availability.test.ts` | the Linux reason and the Voice-settings route |
+| `src/locales/*` | 16 new English strings; 4 renamed section labels |
+
+The store, IPC and the server were **not** touched. `appSettingsSection` keeps
+all thirteen ids and `toggleAppSettings` keeps every caller — the avatar menu,
+the sidebar, `CanvasComputers`, `ComputerPanel` and the workspace deep link all
+still open the same sections.
+
+### FEATURES.md rows covered
+
+- **F078** — 13 sections, search / select / empty state / the remote subset,
+  now with the rail rendered as buttons and `data-settings-section` on each.
+- **F079** — Profile name/email with labels, language (system + the locale
+  list), analytics consent, all on blur as before.
+- **F080** — room timeout 5-minute default and per-bot concurrency 1–10 default
+  3 with their validation, untouched in General.
+- **F081** — replay app tour and replay welcome separately, with the error path.
+- **F082** — all eight skins with their working miniatures, thread visibility,
+  tool-call visibility; no light/dark binary was introduced.
+- **F083** — skill authoring and the built-in browser as independent switches,
+  plus browser profiles.
+- **F084** — the full update row: check, download, prepare, install, restart,
+  handoff, progress, error, quit-and-reopen.
+- **F085** — redacted diagnostics export with its saved path and error, and the
+  About / Help / Feedback / Docs / Releases / Repository / License footer the
+  mockup draws. Attribution is unchanged.
+- **F106** — saved workspaces with Current / Switch / Forget, connect by
+  address or pairing link, optional name, hosted sign-in, `npx crewbot pair`,
+  and computer access — all on the canvas list, plus the desktop switcher above
+  the sign-in page.
+- **F107** — shared computer folders, capability-gated, with the same limits.
+- **F108, F109** — both connection types keep their own form and status; the
+  owner/admin code scope, the code, the expiry, the QR, the link, the device
+  list with last-seen and sign-out.
+- **F110, F111** — the companion route, email verification, secure-route
+  checks, QR / manual pair, expiry, regenerate, Tailscale / Wi-Fi, device
+  revoke, cloud-view permission, keep-awake, start-stop, sign-out, retry.
+- **F112** — DNS copy / verify / save / remove, the public URL, the Caddy
+  guide, the missing-IP case and the unsupported gate.
+- **F113** — enrollment, the security code, cancel, branding, models,
+  expiry, refresh, reauth and the explicit disconnect confirmation.
+- **F114** — invite by email, role, the sign-in link, remove.
+- **F115** — the fleet workspaces table, create with slug / admin / members /
+  cap / key, provision logs, users, suspend, resume, delete with keep-data,
+  upgrade-all. Still gated on a fleet agent.
+- **F116, F117** — both backup kinds behind their own tab, the preview with
+  counts / warnings / exclusions, the literal `REPLACE` and `DELETE` gates, the
+  daily opt-in with its own sentence, quota, progress, cancel, retention.
+- **F118** — the boot marker, the recover / restart / retry / continue-without-
+  drafts gate, now as a glass sheet on the sky.
+- **F131, F132** — the Linux entries show the unavailable reason and the way
+  to the one place it could change.
+- **F133, F134** — the welcome flow keeps its skippable beats and the guided
+  tour its anchors; the step rail names them.
+- **F137** — abbreviated address, reveal, hide, copy and the copied state.
+
+### Checks run
+
+| check | result |
+| --- | --- |
+| `pnpm run checks` (typecheck · lint · i18n · electron) | pass, 4/4 |
+| `pnpm check:contrast` | pass — 8 skins + bubble context |
+| `vite build` | pass |
+| `vitest run src/components src/lib` | **1954 pass, 1 fail** |
+| whole-repo suite, server / e2e | **not run**; phase 11 owns them |
+
+The one failure is `src/lib/sky-texture.test.ts > leaves most of the field empty`
+(0.46 against a `< 0.45` bound) — the inherited failure phases 2, 4, 5, 6, 8 and
+9 recorded. Untouched here, and still settled only by the decision phase 2
+named: whether 0.46 or the bound is the intent.
+
+### Existing assertions that changed
+
+Four, all because the markup they pointed at no longer exists.
+
+1. `SettingsPrimitives.test.ts` asserted `Card` renders `bg-card`. It now
+   asserts `glass-card` **and** `not.toContain("bg-card")` — the card is the
+   frosted surface and the rail beside it is not.
+2. `SettingsModal.appearance.test.ts` asserted the section switcher was a
+   `<select>` (`<option value="backups" selected="">`). The switcher is a rail
+   of buttons now, so the file reads it the way a person does:
+   `data-settings-section="backups"` plus `aria-current="page"`. Same seven
+   cases, same intent.
+3. `SettingsModal.i18n.test.ts` asserted a `sm:hidden` `<select>` **and** a
+   `sm:flex` `<nav>`. There is one control now: a `<nav aria-label="Settings">`
+   that is never hidden, because the page stacks it above the content on a
+   narrow window rather than swapping in a second control at one size.
+4. `CallView.availability.test.ts`'s "non-Mac desktop" case now passes
+   `win32` as the host platform, because that branch is where the macOS copy
+   still applies; the fixture defaulted to `darwin`, which after the Linux
+   branch would have been a lie.
+
+### Deliberate deviations from the mockup
+
+1. **The two execution rows stay in General, not under Appearance.** The mockup
+   draws *Advanced — parallel threads per bot, room turn timeout* inside the
+   Appearance card. `FEATURES.md` F080 places them at *Settings / General /
+   Execution*, and the audit is the preservation contract. They are unchanged
+   in General; a person who expected them under Appearance will find them one
+   section up.
+2. **The onboarding step labels are the beats' own, not the mockup's five.**
+   The mockup draws About you · Engines · Permissions · Remote access · Meet
+   Maus. The real beat list also carries the feature reel, so a hard-coded
+   five would be a fiction on a fresh workspace with the reel on. `phone`
+   reads *Remote access* because that is what it connects; every other label is
+   the beat's name.
+3. **The onboarding "Connect to your crewbot" panel is not rebuilt.** The
+   mockup draws a machine chip, two engine-ready chips, an email-code field and
+   a pairing-code field. `PhoneSetupFlow` already does all of that through the
+   companion pairing state machine, with the secure-route and six-digit-code
+   rules behind it. Drawing a second form beside it would be a second route to
+   the same pairing.
+4. **The Appearance card has no density selector.** The mockup's right column
+   shows *List density — Comfortable*. There is no such preference in the
+   store, and inventing one would be a feature nobody asked for.
+5. **The settings footer links out; About stayed a dialog.** The mockup's
+   footer is a line of small links, and that is what the page now carries. The
+   About dialog still exists and still holds the version, platform and licence
+   it always did — the footer is an addition, not a replacement.
+
+### Open, deferred, or unfinished
+
+- **Nobody has looked at any of it.** Ten phases now rest on structure. The
+  settings rail at 1440px (does the rail plus a comfortable reading measure fit
+  the content column, and does the glass read against a pale sky), the two-tab
+  Backups screen, the three-tab Remote access screen, the skin grid with the
+  new accent ring, the welcome card's step rail, and `/pair` on the sky are all
+  unverified pixels. **What would settle it:** an isolated fixture per
+  `docs/verification/README.md` — a workspace with one saved desktop
+  environment, a connected organization holding cloud backups, a companion
+  route, a custom domain, four conversations, and a fresh profile — then open
+  Settings and walk Workspaces → Backups → Remote access → Fleet, and walk
+  `/pair` with a code. Phase 11 QA.
+- **`SettingsModal` lost the backdrop click and the Tab trap**, for the reasons
+  above. Anyone who closed settings by clicking the dark edge now has Escape or
+  the X.
+- **The settings page scrolls as one column.** The rail scrolls away with the
+  content on a short window; a sticky rail would be the obvious fix and was not
+  built because nobody has seen whether it is wanted.
+- **Four renamed section labels** — `settings.section.desktopWorkspaces` →
+  *Workspaces*, `settings.section.workspaces` → *Fleet*,
+  `settings.section.computer` → *Computers*, `settings.section.backups` →
+  *Backups & recovery*. Their translations were pruned from all nine other
+  packs, so those four labels fall back to English there until a translator
+  picks them up. Same for the 16 new strings and for
+  `composer.dictation.unavailable`.
+- **`companyBackupsReachable()` reads the last connection snapshot** from a
+  module-level variable the panel's subscription publishes. It is correct on
+  any render after the first snapshot, and the first render of the Backups
+  section shows one tab until it arrives. Making the rail subscribe to the
+  organization bridge itself would fix that flicker and is the obvious next
+  move; it was left alone because the panel already owns that subscription and
+  duplicating it would be the second copy of a thing phases 8 and 9 just
+  removed.
+- **`voiceOptions`'s `system` entry is still `darwin`-only**, so the voice
+  card's fourth chip is disabled on Linux with the reason. Correct, and it
+  means that card has no Linux screenshot.
+- **The welcome flow's `Reel` beat label is English-only** ("What you can do"),
+  as are the other five step labels. They fall back, as every new key does.
+
+### For the next agent
+
+- `lib/settings-view.ts` is the settings screen's decision layer. Add a section
+  there with its `labelKey`, icon name and English keywords; do not re-derive
+  availability or tab membership in a component. `remoteSections()` is the one
+  place a paired client's subset is written down.
+- `SettingsModal` is a **page**: a `flex-1` child of the shell column with no
+  scrim, no backdrop click and no Tab trap. If it ever needs to be modal again,
+  that is a revert, not an addition.
+- `BackupsSection` and `RemoteAccessSection` both use `SectionTabs`, one
+  `Glass.tsx` pill. Adding a third tab means a name in
+  `backupsSurfaces` / `remoteAccessTabs` and a branch — and a test in
+  `settings-view.test.ts`, because those two functions are where the rule
+  lives.
+- `companyBackupsAvailable` is the capability predicate and
+  `companyBackupsReachable` the rail's question. The panel returns null when
+  the first is false; both read the same predicate so the tab and the panel
+  can never disagree.
+- `onboarding/Stepper.tsx` takes names, not beat ids. `WelcomeFlow` maps
+  `beats` through `beatStepLabel` and falls back to `ProgressDots` above five
+  beats — if the beat list grows, check that fallback still reads well.
+- `callCapabilityHelp` is where a platform's voice answer lives. The Linux
+  branch is inside `unsupported-platform`, so a future Linux speech stack is one
+  branch to remove, and `CallView` renders `open-voice-settings` by dispatching
+  to the same bot settings the voice-setup branch uses.
+- Phase 11 owns the full-suite run, the whole-repo QA sweep and every piece of
+  visual verification named above.
