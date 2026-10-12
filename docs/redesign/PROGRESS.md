@@ -1529,3 +1529,250 @@ that menu, add it as a `<button>` with the label in a single `<span>`.**
 - Phase 9 owns the webhook workflow. The tab frame is done; the Setup /
   Activity detail is not.
 - Do not run prettier. See phase 3's note.
+
+## Phase 9 — Apps, MCP, webhooks, engines, models and usage
+
+From `24fc3902`.
+
+### What changed
+
+**Mockup 09 first: `PluginsPanel` stopped being a modal.** It was
+`fixed inset-0 z-50`, a `bg-black/55` scrim and a `bg-panel` box 1040px wide
+with `shadow-2xl shadow-black/50` — the largest opaque thing in the app, and
+the only screen that still drew a window. It is now a **page in the shell's
+column** under the top bar (`flex min-h-0 flex-1 flex-col overflow-hidden`,
+`role="dialog"` without `aria-modal`), so the sky reaches the edges and the
+top bar, the wordmark and the destination pill stay on screen above it. That
+is the one wiring change in this phase, and it is a presentation move: the
+store's `pluginsOpen` / `pluginsSurface`, the four entry points (avatar menu,
+sidebar tools row, sidebar more menu, a bot's Access section) and the guided
+tour's `apps-panel` / `apps-close` anchors are all unchanged.
+
+- **The page is the mockup's page.** Breadcrumb (`Tools / Apps & tools`), a
+  26px title, one line of why, the **Apps · MCP servers** pill, and then two
+  columns: a transparent rail on the left and one glass card on the right.
+  Standing on the sky: the rail, the **Marketplace · Connected** segmented
+  pill with its count, the search field, the stale banner, the not-configured
+  notice, the per-bot allowance notice, the self-hosted note and every error.
+  Glass: the selected app's detail card, and nothing else.
+- **Selecting an app is a selection, not a connect.** The rail row carries the
+  icon, the name and one line (accounts, or the action that is about to happen)
+  and a `›`; the card carries the status chip, the blurb, the one Connect /
+  Continue / Retry / Add account button, **Continue sign-in** when the OAuth URL
+  survived the remount, the accounts with their Disconnect, and the Composio
+  note. Nothing was removed: pending, failure, retry, alias, disconnect,
+  stale, self-hosted-only, popup-blocked and the 5s/24-try poll are the same
+  code on the same data.
+- **MCP.** The add/edit form is a `GlassSheet` — the mockup's *Add MCP server*
+  panel — and the three transports are the three it draws (Local stdio ·
+  Remote HTTP · SSE) over the app's own `transport` + `type` pair, so
+  switching to Remote and back keeps the command you typed. The JSON importer
+  is a second sheet. Server rows and the Claude-user-MCP opt-in are
+  `GlassCard`s; the trust notice is now a sentence rather than a plate.
+
+**The webhook workflow phase 8 left open.** Setup/Activity moved from an
+underline row under the title into a **segmented pill in the card header**,
+so the card's content starts at the top. A **verification banner** now states
+in words what the store already enforced: an unverified webhook cannot be
+enabled, and that used to be a disabled button with no reason. The command
+plate is its own `GlassCard`. The header ellipsis menu is **gone**: Copy setup
+command · Edit · Pause/Enable · Delete is one footer row, which is the
+mockup's row and the only place each of those appears. Deliveries are glass
+rows. Nothing was removed — rotate, copy-once URL, ingress state, delete
+confirmation, the open-chat link and the 30-delivery cap are unchanged.
+
+**Mockup 10: engines.** `EngineCard` is a `GlassCard`, and its state word is
+now four words instead of two. An engine that is available but has never
+signed in says **Sign in**; a missing binary says **Not found**; an available
+engine with a pending update or a live warning says **Update available** /
+**Needs attention** instead of the same green chip as a settled one. The
+Advanced disclosure, the provider icon picker, the CLI path fields, both
+sign-in plates and the install command rows all take the shared glass recipe.
+`ClaudeSignIn` lost three token names (`border-line`, `bg-surface`,
+`border-accent-border`) that the redesign's stylesheet does not declare.
+
+**Connections.** `ApiKeyRow` keeps its write-only field and its
+replace/clear/save-when-empty button, and the row header now reads
+**Configured** / **Not configured** from one helper rather than a
+`configured &&` inline. The help popover is a `GlassPopover`. Which of
+test / replace / clear a row offers is a rule in the shared layer, not a
+rendering decision.
+
+**Usage and voice.** The app-wide Usage section gains the mockup's headline —
+cost, volume and the cache reads inside that volume — standing on the canvas
+above the per-bot table; cost stays `—` rather than `$0.00` when nothing was
+metered. The period select, group pills and CSV export are the shared pill
+shape. The voice card is a `GlassCard`, and its four engines are the mockup's
+chips with the two that cannot run here disabled **with the reason**, which is
+what the engine picker already did.
+
+**`Glass.tsx` grew `useSheetFocus`.** Three sheets each carried their own
+twenty-line copy of the same focus trap, and the copies had drifted (one
+forgot Shift+Tab). It lives beside the primitive now.
+
+### Files
+
+| file | |
+| --- | --- |
+| `src/lib/apps-tools-view.ts` + `.test.ts` | pure: app rail line, detail status and sections, MCP transports and probe result, webhook state, verification banner, delivery wording and merge (25 tests) |
+| `src/lib/engines-view.ts` + `.test.ts` | pure: engine ready/state/subtitle/version, credential actions and state word, usage headline, voice engines and why one cannot be picked (19 tests) |
+| `src/components/PluginsPanel.tsx` | the page: rail, glass detail card, both pills, every notice |
+| `src/components/McpServersPanel.tsx` | `McpSheet` / `McpServerForm` / `McpImportSheet`, glass rows, three transports |
+| `src/components/WebhooksPanel.tsx` | header pill, verification banner, glass command card, footer of actions, glass deliveries |
+| `src/components/EngineLibrary.tsx`, `EnginesSettings.tsx`, `EngineSetup.tsx` | glass engine cards, four-state chip, Advanced row, picker, install rows |
+| `src/components/CodexDeviceSignIn.tsx`, `ClaudeSignIn.tsx`, `ProviderIconPicker.tsx`, `ClaudeAccountSettings.tsx` | glass plates, legacy tokens gone |
+| `src/components/ApiKeys.tsx` | glass help popover, hairline fields, configured-word from the layer |
+| `src/components/UsageSection.tsx`, `UsageHistory.tsx`, `VoiceSettings.tsx` | the headline, the pills, the voice chips |
+| `src/components/AvatarImageGenerator.tsx`, `BotProfileAvatarCard.tsx` | glass, and `ring-offset-card` → the glass background so a selected swatch has no opaque seam |
+| `src/components/Glass.tsx` | `useSheetFocus` |
+| `src/locales/en.json` | 50 new strings |
+
+The store, IPC and the server were **not** touched. `activeView` is unchanged
+and Apps & tools is still reached the same four ways.
+
+### FEATURES.md rows covered
+
+- **F086** — write-only keys for Anthropic / OpenAI-compatible + base URL / xAI
+  / Box / VPS / OpenCode Go / Composio: save, test, clear, help, the
+  configured state and the never-shown value. The `ApiKeyRow` row is the one
+  these are rendered by and it is unchanged apart from its surfaces.
+- **F087** — engine list with a setup card, refresh, readiness, version, auth,
+  update and warning notices, and the managed read-only engine. **F091** — the
+  Advanced CLI disclosure, the detected/manual picker, probe, save-anyway,
+  reset, update and the provider icon upload/reset, all on the same disclosure.
+- **F088** — managed / native / terminal install commands, copy, open
+  terminal, guide, the Node prerequisite and the first-use blocked chat
+  (`NoEngines`) are untouched; only their surfaces moved.
+- **F089, F090** — the Codex device code, the Claude paste challenge and the
+  browser redirect keep their real transports, their inline position inside
+  the engine card, their cancel/expiry/recheck paths, and Claude's multiple
+  accounts with name, config directory, default, status, check, sign-out,
+  remove and the assigned-account block.
+- **F092, F093** — Marketplace / Connected, search, refresh, per-app status,
+  accounts, alias, add, pending, retry, disconnect and the stale error, plus
+  the per-bot allowance notice (see the deviation below).
+- **F094, F095** — stdio / HTTP / SSE, args, env, headers, write-only values
+  behind blank lines, JSON import, the test result with its tool list, the
+  enabled toggle, removal, the Claude user-MCP opt-in and per-agent selection
+  in the bot's Access section.
+- **F128, F129** — webhook bot, name, default instructions, local vs cloud,
+  event filter, the editor, Setup / Activity, status, verification, the copy
+  command distinct from a terminal, the once-only private URL, rotate, the
+  turn-on review, pause, delete and the rejected/duplicate reasons in Activity.
+- **F130** — ElevenLabs / Fish / Chatterbox keys and URL-model, the voice
+  choice, preview and speak-replies, and the remote-client lock, all still in
+  `VoiceSettings` behind the same `workspaceConfigurationLocked` prop.
+- **F136** — Generate with AI, the provider choice, the custom URL and model
+  validation, the write-only key, the 400-character limit, busy/error and the
+  save-before-generating rule. Untouched in behaviour.
+
+### Checks run
+
+| check | result |
+| --- | --- |
+| `pnpm run checks` (typecheck · lint · i18n · electron) | pass, 4/4 |
+| `pnpm check:contrast` | pass — 8 skins + bubble context |
+| `vite build` | pass |
+| `vitest run src/components src/lib` | **1916 pass, 1 fail** |
+| whole-repo suite, `cron-routines-ui.e2e`, `apps-*.e2e` | **not run**; phase 11 owns them |
+
+The one failure is `src/lib/sky-texture.test.ts > leaves most of the field
+empty` (0.46 against a `< 0.45` bound) — the inherited failure phases 2, 4, 5,
+6 and 8 recorded. Untouched here, and still settled only by the decision phase
+2 named: whether 0.46 or the bound is the intent.
+
+### Deliberate deviations from the mockup
+
+1. **The app detail has no per-app "Assigned bots" chips.** The mockup draws
+   Atlas and Forge as granted GitHub. `bot.composio` is a **workspace-wide**
+   per-bot allowance, not a per-app grant — there is nothing in the store that
+   says which bot may use which app. Drawing per-app chips would have been
+   fiction. The allowance stays one notice above the rail, exactly as it was.
+2. **The webhook Setup tab has no "Execution" button.** The mockup's footer
+   carries one; the nearest real thing is opening the latest run's thread,
+   which belongs to the Activity row that owns it. One invented button was not
+   worth a second route to the same conversation.
+3. **An engine card is glass, not a plate.** The mockup draws them as filled
+   cards; on a pale sky a filled card is exactly the thing the redesign is
+   removing, so the engine is frosted and the rail around it is transparent.
+4. **The connection rows are not a separate list.** Mockup 10 draws Connections
+   as its own block beside the engines. They are the same thing in this app —
+   both live in Settings, and the section list is phase 10's — so the rows
+   were restyled where they are rather than given a second home.
+
+### One existing assertion was changed
+
+`EngineLibrary.test.ts > never displays a stale signed-out account identity`
+asserted that an available-but-unauthenticated engine renders **Needs setup**.
+It now asserts **Sign in**. The test's subject is the stale identity (it still
+asserts the email never appears); the string was only evidence that the row is
+not treated as ready, and "Sign in" is the more precise evidence — it is the
+state the mockup draws, and it sends a person to the right place. No behaviour
+changed.
+
+### Open, deferred, or unfinished
+
+- **Nobody has looked at any of it.** Nine phases now rest on structure. The
+  apps page at 1440px (does the rail plus a 900px card fit, and does the card
+  read as glass against a pale sky), the MCP sheet's three-transport pill, the
+  webhook card with its header pill and footer row, and the engine cards at
+  two per row are all unverified pixels. **What would settle it:** an isolated
+  fixture per `docs/verification/README.md`, a workspace with two connected
+  apps, one MCP server, one webhook with a delivery, and two engines (one
+  signed out, one with an update pending), then open Apps, MCP and Webhooks.
+  Phase 11 QA.
+- **The apps page drops the backdrop click-to-close.** It was a modal with a
+  scrim; a page has no scrim to click. Escape closes it and the X is still
+  there, but anyone who relied on clicking the dark edge has to use one of
+  those. This is the one behaviour change in the phase.
+- **The apps page also drops the Tab trap**, because a trap inside a
+  full-height page strands the top bar above it. Focus still lands on the
+  search box on open.
+- **The card follows the rail.** With no app selected the first visible app is
+  shown, and a selection the current search cannot show falls to the top of
+  what is listed. A person who picks an app and then searches sees a different
+  app's card; nobody has tried this and it may want an explicit "nothing
+  selected" state instead.
+- **`engineCardSubtitle`'s `accounts` option is never passed.** It is tested
+  and available for a caller that has the account count, but `EngineCard` does
+  not have it — a Claude account list lives inside the card body, not on the
+  header row. "N accounts" is therefore dead code today. Better than a
+  fabricated count; someone should either wire it or drop it.
+- **`voiceOptions`'s `system` entry is `darwin`-only, and phase 10 parks
+  macOS.** The chip therefore appears only on a Mac build, which is correct
+  but means the voice card's four-chip layout has no Linux screenshot.
+- **Usage's headline says "All time", not "This month".** The per-bot figures
+  the store banks are per settled turn with no month boundary, so a monthly
+  headline would have to be a lie or a new query. The mockup's "This month" is
+  available on the History tab, which does have real date ranges.
+- **The new 50 strings are English-only** in the other nine packs; they fall
+  back to English, as every new key does. `WebhooksPanel` still has a ring of
+  hard-coded English around them, which phase 8 left and this phase did not
+  sweep.
+- **`ClaudeSignIn`'s remaining hard-coded copy** ("Paste this code…") is still
+  a literal; only its surface moved.
+
+### For the next agent
+
+- `resolveApp()` in `lib/apps-tools-view.ts` is the one place an app's
+  included/pending/failed/accounts state is decided. The rail row and the card
+  under it both read it; do not re-derive it in a component.
+- `webhookStateView`, `webhookVerificationBanner` and `webhookOutcome` are the
+  three webhooks wordings. The rail, the banner and the delivery rows all read
+  them, and `TONE_TEXT` / `DELIVERY_DOT` in the panel keep the ink and the dot
+  in step.
+- `MCP_TRANSPORTS` + `mcpDraftWithTransport` are the only place the three
+  transports are mapped onto the app's `transport` + `type` pair.
+- `useSheetFocus(sheetRef, onClose)` is how a sheet takes focus now. Use it
+  rather than writing a fourth trap; put `data-initial-focus` on the control
+  that should have it.
+- `PluginsPanel` is a **page**, not an overlay: it renders as a flex child of
+  the shell column, has no scrim, no backdrop click and no Tab trap. If it ever
+  needs to be modal again, that is a revert, not an addition.
+- `EngineLibrary` still re-exports `engineReady`; three callers import it from
+  there and one (`engines-view.ts`) owns it. Do not add a second readiness
+  rule.
+- Phase 10 owns Settings itself — its nav, the section registry and the
+  workspaces / backups / recovery screens. This phase restyled the sections
+  that live inside it (connections, engines, usage, voice) and changed nothing
+  about how they are reached.
