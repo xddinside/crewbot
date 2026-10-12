@@ -219,7 +219,7 @@ export function Spotlight({
         <div
           role="dialog"
           className={cn(
-            "flex items-start gap-3 rounded-2xl border border-hairline/50 bg-panel p-3.5 shadow-[0_24px_60px_-20px_rgba(0,0,0,0.6)]",
+            "glass-popover flex items-start gap-3 p-3.5",
             rect
               ? beside
                 ? "origin-left"

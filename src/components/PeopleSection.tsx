@@ -130,7 +130,7 @@ export function CopyLink({ link }: { link: string }) {
     }
   };
   return (
-    <div className="mt-3 rounded-lg border border-hairline/40 bg-inset p-3 text-[12.5px]">
+    <div className="mt-3 rounded-xl bg-inset/60 p-3 text-[12.5px] ring-1 ring-hairline/40">
       <div className="mb-1 text-ink-secondary">{t("people.link")}</div>
       <div className="flex items-center gap-2">
         <code className="min-w-0 flex-1 select-all break-all text-ink">{link}</code>
@@ -217,7 +217,7 @@ export function PeopleSection() {
   if (!canPairDevices(session)) return null;
   return (
     <Card title={t("people.title")} subtitle={t("people.subtitle")}>
-      {emailOffered === false && <p className="mb-3 rounded-lg border border-warning/25 bg-warning/5 px-3 py-2 text-[12.5px] text-ink-secondary">{t("people.notHosted")}</p>}
+      {emailOffered === false && <p className="mb-3 rounded-xl bg-warning/5 px-3 py-2 text-[12.5px] text-ink-secondary ring-1 ring-warning/25">{t("people.notHosted")}</p>}
       <form className="flex flex-wrap items-center gap-2" onSubmit={(event) => { event.preventDefault(); void invite(); }}>
         <input
           value={draft}
@@ -231,7 +231,7 @@ export function PeopleSection() {
           <option value="member">{t("people.roleMember")}</option>
           <option value="admin">{t("people.roleAdmin")}</option>
         </select>
-        <button type="submit" disabled={busy || !draft.trim()} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-white hover:brightness-110 disabled:opacity-60">
+        <button type="submit" disabled={busy || !draft.trim()} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-60">
           {busy ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}{t("people.invite")}
         </button>
         <button type="button" onClick={() => void load()} disabled={loading || busy} aria-label={t("people.refresh")} title={t("people.refresh")} className="rounded-md p-1.5 text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-50"><RefreshCw size={13} className={cn(loading && "animate-spin")} /></button>

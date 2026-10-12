@@ -20,7 +20,7 @@ function Miniature({ skin }: { skin: SkinId }) {
     <div
       data-skin={skin}
       aria-hidden="true"
-      className="flex h-[78px] w-full overflow-hidden rounded-lg bg-app ring-1 ring-hairline/60"
+      className="flex h-[74px] w-full overflow-hidden rounded-lg bg-app ring-1 ring-hairline/60"
     >
       {/* rail */}
       <div className="flex w-[11px] shrink-0 flex-col items-center gap-[3px] bg-panel pt-[5px]">
@@ -76,7 +76,7 @@ export function SkinPicker() {
   return (
     // Four columns keep each miniature useful while allowing the collection
     // to grow into a second row; Settings already scrolls on short windows.
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
       {SKINS.map((skin) => {
         const selected = skin.id === active;
         return (
@@ -89,10 +89,12 @@ export function SkinPicker() {
             }}
             aria-pressed={selected}
             className={cn(
-              "flex flex-col gap-2 rounded-xl border p-2 text-left transition-colors",
+              // Glass cards: the selected one keeps the accent ring, so a
+              // chosen skin reads as chosen without an opaque fill behind it.
+              "flex flex-col gap-2 rounded-xl p-2 text-left transition-shadow motion-reduce:transition-none",
               selected
-                ? "border-accent-border bg-control"
-                : "border-hairline/60 hover:border-hairline hover:bg-control/50",
+                ? "glass-card ring-2 ring-accent-border"
+                : "bg-raised/50 ring-1 ring-hairline/50 hover:bg-raised/70",
             )}
           >
             <Miniature skin={skin.id} />

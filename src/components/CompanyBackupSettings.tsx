@@ -21,6 +21,33 @@ const dateLabel = (entry: CompanyBackupEntry) => {
     : t("companyBackup.unknownDate");
 };
 
+/** The capability gate, as a predicate on one connection snapshot. Three
+ * things have to hold together: a live organization connection, that
+ * connection's right to hold cloud backups, and a named organization and
+ * account behind it. The panel and the Settings rail ask the same question, so
+ * a workspace with no company connection is never offered a tab that could
+ * only ever be empty. */
+export function companyBackupsAvailable(
+  connection: ManagedDesktopState | null | undefined,
+): connection is ManagedDesktopState {
+  return connection?.status === "connected"
+    && connection.cloudBackups === true
+    && Boolean(connection.organization?.id)
+    && Boolean(connection.organization?.name?.trim())
+    && Boolean(connection.email);
+}
+
+/** The newest organization snapshot this window has seen. The panel below
+ * subscribes to it asynchronously; the Settings rail needs an answer while it
+ * renders the tabs, so the subscription publishes here too. */
+let lastConnection: ManagedDesktopState | null = null;
+
+export function companyBackupsReachable(): boolean {
+  return Boolean(window.ogb?.companyBackups)
+    && window.ogb?.remoteClient?.active !== true
+    && companyBackupsAvailable(lastConnection);
+}
+
 /** Local connection snapshots are allowed here; cloud calls start only below the capability gate. */
 export function CompanyBackupSettings() {
   const organization = window.ogb?.remoteClient?.active ? undefined : window.ogb?.organization;
@@ -35,6 +62,7 @@ export function CompanyBackupSettings() {
     const receive = (next: ManagedDesktopState) => {
       if (generation.current !== current) return;
       revision.current++;
+      lastConnection = next;
       setConnection(next);
     };
     const unsubscribe = organization?.onState(receive);
@@ -43,8 +71,8 @@ export function CompanyBackupSettings() {
     }).catch(() => { /* Fail closed without advertising company features. */ });
     return () => { generation.current++; unsubscribe?.(); };
   }, [organization]);
-  if (!bridge || connection?.status !== "connected" || connection.cloudBackups !== true || !connection.organization?.id || !connection.organization.name?.trim() || !connection.email) return null;
-  return <ConnectedCompanyBackupSettings key={`${connection.organization.id}:${connection.email}:${connection.deviceId ?? ""}`} connection={connection} bridge={bridge} />;
+  if (!bridge || !companyBackupsAvailable(connection)) return null;
+  return <ConnectedCompanyBackupSettings key={`${connection.organization?.id}:${connection.email}:${connection.deviceId ?? ""}`} connection={connection} bridge={bridge} />;
 }
 
 /** A new connection identity remounts this panel, clearing passwords and staged previews. */
@@ -210,7 +238,7 @@ export function ConnectedCompanyBackupSettings({ connection, bridge }: { connect
   return <Card title={t("companyBackup.title")} subtitle={t("companyBackup.account", { organization: connection.organization?.name ?? "", email: connection.email ?? "" })}>
     <div className="flex flex-col gap-3">
       <p className="text-[13px] text-ink-secondary">{t("companyBackup.managedScope")}</p>
-      {bridge.configureSchedule && schedule && <div className="rounded-lg border border-hairline/40 p-3">
+      {bridge.configureSchedule && schedule && <div className="rounded-xl bg-inset/60 p-3 ring-1 ring-hairline/40">
         <div className="flex items-center justify-between gap-3">
           <div><div className="text-[14px] font-medium">{t("companyBackup.daily")}</div><p className="mt-1 text-[12px] text-ink-secondary">{t("companyBackup.scheduleHelp")}</p></div>
           <Switch aria-label={t("companyBackup.daily")} checked={schedule.enabled} disabled={action !== null || !state || (!schedule.enabled && disabled)} onClick={() => schedule.enabled ? void configureSchedule(false) : openDialog({ kind: "schedule" })} />
@@ -220,7 +248,7 @@ export function ConnectedCompanyBackupSettings({ connection, bridge }: { connect
         {schedule.lastBackupAt && Number.isFinite(schedule.lastBackupAt) && <p className="mt-1 text-[12px] text-ink-secondary">{t("companyBackup.lastScheduledBackup", { date: scheduledDate(schedule.lastBackupAt) })}</p>}
         {schedule.message && <p role="status" className="mt-1 break-words text-[12px] text-ink-secondary">{schedule.message}</p>}
       </div>}
-      {needsRestart ? <p role="status" className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-[13px] text-ink">{t("backup.restart")}</p> : <>
+      {needsRestart ? <p role="status" className="rounded-xl bg-warning/10 p-3 text-[13px] text-ink ring-1 ring-warning/30">{t("backup.restart")}</p> : <>
         <div className="flex flex-wrap gap-2">
           <button type="button" className="ui-button" disabled={disabled} onClick={() => openDialog({ kind: "create" })}>{t("companyBackup.create")}</button>
           <button type="button" className="ui-button" disabled={action !== null || state?.busy || needsRestart || loading} onClick={() => void refresh()}>{t("companyBackup.refresh")}</button>
@@ -240,7 +268,7 @@ export function ConnectedCompanyBackupSettings({ connection, bridge }: { connect
     {dialog && <dialog ref={nativeDialog} aria-labelledby="company-backup-dialog-title" onKeyDown={(event) => {
       // The enclosing Settings dialog has its own window-level keyboard trap.
       if (event.key === "Escape" || event.key === "Tab") event.stopPropagation();
-    }} onCancel={(event) => { event.preventDefault(); if (!action) closeDialog(); }} className="fixed inset-0 m-auto max-h-[85dvh] w-[min(34rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-hairline/50 bg-app p-5 text-ink shadow-xl backdrop:bg-black/45">
+    }} onCancel={(event) => { event.preventDefault(); if (!action) closeDialog(); }} className="glass-sheet fixed inset-0 m-auto max-h-[85dvh] w-[min(34rem,calc(100vw-2rem))] overflow-y-auto p-5 text-ink backdrop:bg-black/35">
       <div className="flex flex-col gap-3">
         <h3 id="company-backup-dialog-title" className="text-[16px] font-semibold">{title}</h3>
         {needsRestart && <p role="status" className="text-[13px] text-warning">{t("backup.restart")}</p>}

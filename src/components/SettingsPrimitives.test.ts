@@ -18,12 +18,15 @@ describe("settings primitives", () => {
     expect(html).not.toContain("bg-card");
   });
 
-  it("keeps the form card surface and native switch semantics", () => {
+  it("gives the form card the frosted surface and keeps native switch semantics", () => {
     const html = renderToStaticMarkup(createElement(Card, {
       title: "Profile",
       children: createElement(Switch, { checked: true, disabled: true, "aria-label": "Analytics" }),
     }));
-    expect(html).toContain("bg-card");
+    // The card is the one place in settings where work happens, so it is glass;
+    // the rail beside it stays on the sky.
+    expect(html).toContain("glass-card");
+    expect(html).not.toContain("bg-card");
     expect(html).toContain('type="button" role="switch" aria-checked="true"');
     expect(html).toContain('aria-label="Analytics"');
     expect(html).toContain('disabled=""');

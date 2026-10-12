@@ -92,7 +92,7 @@ export function RemoteComputerSection() {
         <p className="text-[13px] text-ink-secondary">{t("remote.client.desktopOnly")}</p>
       ) : state.active ? (
         <div className="flex flex-col gap-4">
-          <div className="flex items-start gap-3 rounded-lg border border-success/25 bg-success/10 px-3 py-3">
+          <div className="flex items-start gap-3 rounded-xl bg-inset/60 px-3 py-3 ring-1 ring-hairline/40">
             <Laptop size={18} className="mt-0.5 shrink-0 text-success" />
             <div className="min-w-0">
               <div className="text-[14px] font-medium text-ink">
@@ -108,7 +108,7 @@ export function RemoteComputerSection() {
             type="button"
             disabled={busy}
             onClick={() => void disconnect()}
-            className="flex w-fit items-center gap-2 rounded-lg border border-danger/30 px-3 py-2 text-[13px] text-danger hover:bg-danger/10 disabled:opacity-50"
+            className="ui-button w-fit text-danger disabled:opacity-50"
           >
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Unplug size={14} />}
             {t("remote.client.disconnect")}
@@ -138,7 +138,7 @@ export function RemoteComputerSection() {
               <p className="text-[12.5px] leading-relaxed text-ink-secondary">
                 {t("remote.client.server.hint")}
               </p>
-              <code className="select-all rounded-lg bg-inset px-3 py-2 text-[12px] text-ink">
+              <code className="select-all rounded-lg bg-inset px-3 py-2 text-[12px] text-ink ring-1 ring-hairline/40">
                 npx crewbot pair --client
               </code>
               <label className="flex flex-col gap-1.5 text-[12px] text-ink-secondary">
@@ -195,7 +195,7 @@ export function RemoteComputerSection() {
           <button
             type="submit"
             disabled={busy || (serverMode ? !serverLink.trim() : endpoint.trim() === "" || code.length !== 6)}
-            className="flex w-fit items-center gap-2 rounded-lg bg-accent px-3 py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-50"
+            className="flex w-fit items-center gap-2 rounded-lg bg-accent px-3 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50"
           >
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Laptop size={14} />}
             {serverMode ? t("remote.client.server.connect") : t("remote.client.pair")}

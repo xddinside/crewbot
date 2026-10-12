@@ -52,7 +52,7 @@ export function ComputerSharingSettings({ workspace, onClose }: { workspace: { i
       <fieldset disabled={busy || !state} className="flex flex-col gap-3 disabled:opacity-50">
         <legend className="mb-2 font-medium text-ink">Shared folders</legend>
         {folders.length === 0 && <p className="text-[12px] text-ink-secondary">No folders shared. New folders are read-only by default.</p>}
-        {folders.map(folder => <div key={folder.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-hairline/40 p-3">
+        {folders.map(folder => <div key={folder.id} className="flex flex-wrap items-center gap-3 rounded-xl bg-inset/60 p-3 ring-1 ring-hairline/40">
           <div className="min-w-0 flex-1"><p className="font-medium text-ink">{folder.name}</p><p className="break-all text-[12px] text-ink-secondary">{folder.path}</p></div>
           <label className="flex items-center gap-2 text-[12px] text-ink-secondary"><input type="checkbox" checked={folder.write} onChange={event => setFolders(current => current.map(entry => entry.id === folder.id ? { ...entry, write: event.target.checked } : entry))} />Allow edits</label>
           <button type="button" aria-label={`Remove ${folder.name}`} onClick={() => setFolders(current => current.filter(entry => entry.id !== folder.id))} className="rounded p-1 text-ink-secondary hover:bg-control"><X size={14} /></button>
@@ -60,7 +60,7 @@ export function ComputerSharingSettings({ workspace, onClose }: { workspace: { i
         <button type="button" disabled={folders.length >= 20} onClick={() => void perform(async () => {
           const folder = await bridge.chooseFolder();
           if (mounted.current && folder) setFolders(current => current.some(entry => entry.path === folder.path) ? current : [...current, folder]);
-        })} className="flex w-fit items-center gap-2 rounded-lg border border-hairline/40 px-3 py-2 text-ink hover:bg-control"><FolderPlus size={14} />Choose folder</button>
+        })} className="ui-button w-fit"><FolderPlus size={14} />Choose folder</button>
         <p className="text-[12px] text-ink-secondary">Small files only (256 KB). Folder access does not follow links or delete files.</p>
       </fieldset>
       <fieldset disabled={busy || !state} className="flex flex-col gap-3 border-t border-hairline/40 pt-3 disabled:opacity-50">
@@ -76,7 +76,7 @@ export function ComputerSharingSettings({ workspace, onClose }: { workspace: { i
         })} className="rounded-lg bg-accent px-3 py-2 font-medium text-accent-ink disabled:opacity-50">{state?.enabled ? "Save access" : "Share selected access"}</button>
         {state?.enabled && <button type="button" disabled={busy} onClick={() => void perform(async () => {
           const next = await bridge.revoke(workspace.id); if (mounted.current) apply(next);
-        })} className="rounded-lg border border-hairline/40 px-3 py-2 text-danger disabled:opacity-50">Stop sharing</button>}
+        })} className="ui-button text-danger disabled:opacity-50">Stop sharing</button>}
       </div>
       {state?.enabled && <p className="text-[12px] text-ink-secondary">Stopping blocks new requests and cancels running work where possible. An action already sent to an app may still finish.</p>}
     </div>

@@ -170,7 +170,7 @@ export function CallTargetButton({
           id={helpId}
           role="group"
           aria-label="Call unavailable"
-          className="animate-pop-in absolute right-0 z-30 mt-1.5 w-[280px] rounded-xl border border-hairline bg-panel p-3 text-left shadow-2xl"
+          className="glass-popover animate-pop-in absolute right-0 z-30 mt-1.5 w-[288px] p-3 text-left"
         >
           <div className="text-[13px] font-medium text-ink">Call unavailable</div>
           <div className="mt-1 text-[12px] leading-[1.45] text-ink-secondary">{reason}</div>
@@ -181,9 +181,25 @@ export function CallTargetButton({
                 setHelpOpen(false);
                 void window.ogb?.workspaces?.menu();
               }}
-              className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:brightness-110"
+              className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-[var(--color-accent-ink)] hover:brightness-110"
             >
               Choose This computer
+            </button>
+          )}
+          {capabilityHelp?.action === "open-voice-settings" && (
+            // Linux has no call stack yet, so this opens the one place voice
+            // is configured — the same route the voice-setup branch below
+            // takes, which keeps the two from drifting.
+            <button
+              type="button"
+              onClick={() => {
+                setHelpOpen(false);
+                if (setupBotId && setupBotId !== targetId) dispatch({ type: "select", id: setupBotId });
+                dispatch({ type: "toggleSettings", open: true, section: "voice" });
+              }}
+              className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-[var(--color-accent-ink)] hover:brightness-110"
+            >
+              Voice &amp; alerts settings
             </button>
           )}
           {voiceSetupRequired && (
@@ -194,7 +210,7 @@ export function CallTargetButton({
                 if (setupBotId && setupBotId !== targetId) dispatch({ type: "select", id: setupBotId });
                 dispatch({ type: "toggleSettings", open: true, section: "voice" });
               }}
-              className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:brightness-110"
+              className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-[var(--color-accent-ink)] hover:brightness-110"
             >
               Open agent settings
             </button>

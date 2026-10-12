@@ -1,16 +1,37 @@
-// App settings, as a real modal with sections rather than one long panel.
+// App settings, as a real page rather than one long panel.
+//
+// The page stands on the sky: the rail, the search box, the page title and
+// every heading sit directly on the canvas, and the only frosted surfaces are
+// the cards where work happens — the same rule the rest of the redesign
+// follows. Which sections exist, how they are searched and which one a
+// request resolves to are decisions rather than rendering, so they live in
+// `lib/settings-view.ts` and the rail reads one answer.
+//
 // Per-bot settings (persona, model, computer) live in BotSettingsDialog — this
 // is the stuff shared by every bot: who you are, your keys, and the
 // machine your bots can borrow.
 import { useEffect, useRef, useState } from "react";
-import { Archive, Coins, FlaskConical, KeyRound, Monitor, Palette, Search, TabletSmartphone, Terminal, User, Users, X, Building2 } from "lucide-react";
-import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
+import { Archive, Boxes, Coins, FlaskConical, KeyRound, Monitor, Palette, Search, TabletSmartphone, Terminal, User, Users, X, Building2 } from "lucide-react";
+import { api, useStore, type ConfigStatus } from "@/state/store";
 import { analyticsEnabled, setAnalyticsEnabled } from "@/lib/analytics";
 import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
-import { localeChoices, type LocaleKey } from "@/locales";
+import { localeChoices } from "@/locales";
 import { t } from "@/lib/i18n";
 import { withTourReset } from "@/lib/guided-tour";
 import { completionPatch } from "@/lib/onboarding";
+import {
+  availableSettingsSections,
+  backupsSurfaces,
+  remoteAccessTabs,
+  resolveBackupsSurface,
+  resolveRemoteAccessTab,
+  resolveSettingsSection,
+  visibleSettingsSections,
+  type BackupsSurface,
+  type RemoteAccessTab,
+  type SettingsSection,
+  type SettingsSectionIcon,
+} from "@/lib/settings-view";
 import { ApiKeyRow, OpenAiCompatUrl, VpsConnection } from "./ApiKeys";
 import { useUpdaterState } from "@/lib/updater";
 import { McpAccessSettings } from "./McpAccessSettings";
@@ -32,40 +53,45 @@ import { SkinPicker } from "./SkinPicker";
 import { RoomTurnTimeoutSettings } from "./RoomTurnTimeoutSettings";
 import { ThreadConcurrencySettings } from "./ThreadConcurrencySettings";
 import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
-import { CompanyBackupSettings } from "./CompanyBackupSettings";
+import { CompanyBackupSettings, companyBackupsReachable } from "./CompanyBackupSettings";
+import { GlassPanel, SEGMENT_ACTIVE, SEGMENT_IDLE, SEGMENT_RAIL } from "./Glass";
+import {
+  APP_REPOSITORY,
+  DOCS_URL,
+  FEEDBACK_URL,
+  HELP_CENTER_URL,
+  LICENSE_URL,
+  RELEASES_URL,
+  appVersion,
+  openExternalLink,
+} from "@/lib/app-links";
 import { cn } from "@/lib/cn";
 import { setShowThreads, useShowThreads } from "@/lib/thread-preferences";
+
+// Icons stay here so the registry in `lib/settings-view.ts` is plain data and
+// its rules can be tested without a renderer.
+const SECTION_ICONS: Record<SettingsSectionIcon, typeof User> = {
+  user: User,
+  workspaces: Building2,
+  organization: Building2,
+  palette: Palette,
+  flask: FlaskConical,
+  key: KeyRound,
+  terminal: Terminal,
+  remote: TabletSmartphone,
+  monitor: Monitor,
+  coins: Coins,
+  people: Users,
+  backups: Archive,
+  fleet: Boxes,
+};
+
+const sectionLabel = (section: SettingsSection) => t(section.labelKey);
 
 // `labelKey`, not a label: t() reads the active pack when it is called, so a
 // label resolved here at module scope would freeze the language the app booted
 // in. The English keywords stay untranslated — they are a search index, and a
 // pack that omits them still matches what people type.
-const SECTIONS: Array<{
-  id: AppSettingsSection;
-  labelKey: LocaleKey;
-  icon: typeof User;
-  keywords: string[];
-}> = [
-  { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "analytics", "updates", "threads", "parallel", "concurrency"] },
-  { id: "desktopWorkspaces", labelKey: "settings.section.desktopWorkspaces", icon: Building2, keywords: ["workspace", "cloud", "hosted", "vps", "server", "connect", "pair", "switch", "local"] },
-  { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "sign in", "enroll", "managed", "models", "disconnect"] },
-  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "display"] },
-  { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
-  { id: "connections", labelKey: "settings.section.connections", icon: KeyRound, keywords: ["keys", "api", "composio", "box", "xai", "vps", "mcp", "tokens", "external", "bots"] },
-  { id: "engines", labelKey: "settings.section.engines", icon: Terminal, keywords: ["models", "claude", "grok", "providers", "cli"] },
-  { id: "companion", labelKey: "settings.section.companion", icon: TabletSmartphone, keywords: ["companion", "device", "phone", "desktop", "client", "host", "pair", "pairing", "mobile", "https", "secure", "tailscale", "wifi", "remote", "advanced", "domain", "dns", "self-hosted", "server", "caddy"] },
-  { id: "computer", labelKey: "settings.section.computer", icon: Monitor, keywords: ["vm", "virtual", "desktop"] },
-  { id: "usage", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing"] },
-  { id: "people", labelKey: "settings.section.people", icon: Users, keywords: ["people", "users", "invite", "sign in", "members", "admins", "access"] },
-  { id: "backups", labelKey: "settings.section.backups", icon: Archive, keywords: ["export", "import", "restore", "full backup", "password", "recovery"] },
-  { id: "workspaces", labelKey: "settings.section.workspaces", icon: Building2, keywords: ["clients", "tenants", "fleet", "workspaces"] },
-];
-
-function sectionMatches(section: (typeof SECTIONS)[number], query: string): boolean {
-  if (!query) return true;
-  return [t(section.labelKey), ...section.keywords].some((part) => part.toLowerCase().includes(query));
-}
-
 /** Name + email, persisted to /api/config {profile} on blur. */
 function ProfileFields() {
   const { state, dispatch } = useStore();
@@ -467,26 +493,139 @@ function DiagnosticsRow() {
   );
 }
 
+/** Backups & recovery is two different things that share a screen: the
+ * portable encrypted archive of *this* workspace, and the organization's
+ * server-side snapshots. The mockup draws them as two tabs and they are two
+ * different data sources, so the tab decides which one is on screen and a
+ * workspace with no company connection never gets a dead tab. */
+function BackupsSection() {
+  const [requested, setRequested] = useState<BackupsSurface>("archive");
+  const surfaces = backupsSurfaces(companyBackupsReachable());
+  const surface = resolveBackupsSurface(requested, surfaces);
+  return (
+    <div className="flex flex-col gap-4">
+      <SectionTabs
+        label={t("settings.section.backups")}
+        options={surfaces.map((id) => ({ id, label: t(`settings.backups.tab.${id}`) }))}
+        active={surface}
+        onSelect={setRequested}
+      />
+      {surface === "archive" ? <WorkspaceBackupSettings /> : <CompanyBackupSettings />}
+    </div>
+  );
+}
+
+/** Remote access, split the way the mockup splits it. `Server devices` is
+ * always there — minting a code is the one remote path a paired client can
+ * still use, because its requests already carry the server's session
+ * (MOCA-84). The companion route and the domain belong to the machine that
+ * owns the server, so a paired client is not offered them. */
+function RemoteAccessSection({ remoteActive }: { remoteActive: boolean }) {
+  const { state } = useStore();
+  const [requested, setRequested] = useState<RemoteAccessTab>("server");
+  const tabs = remoteAccessTabs({ remoteClient: remoteActive });
+  const tab = resolveRemoteAccessTab(requested, tabs);
+  return (
+    <div className="flex flex-col gap-4">
+      <SectionTabs
+        label={t("settings.section.companion")}
+        options={tabs.map((id) => ({ id, label: t(`settings.remote.tab.${id}`) }))}
+        active={tab}
+        onSelect={setRequested}
+      />
+      {tab === "server" && (
+        <>
+          <RemoteComputerSection />
+          {/* mints an admin/client session token for anything that isn't the phone companion
+              flow (MCP clients, `crewbot pair`, a second desktop app), and pairs phones to a
+              hosted server. Shown for the desktop app's own server (#950) AND when this desktop is
+              a remote client of a hosted workspace: its requests carry that server's session, and
+              Settings there is the only place that server's phones can be paired from (MOCA-84).
+              The server decides who may act — an owner or an admin session — not this gate. */}
+          <ServerPairingCard />
+        </>
+      )}
+      {tab === "companion" && <CompanionSection profileEmail={state.config?.profile?.email} />}
+      {tab === "domain" && <CustomDomainSettings />}
+    </div>
+  );
+}
+
+/** The pill that switches a section between two or three surfaces of the same
+ * subject. One shape, from `Glass.tsx`, so it is the same control as the top
+ * bar's destination nav rather than a third recipe. */
+function SectionTabs<T extends string>({
+  label,
+  options,
+  active,
+  onSelect,
+}: {
+  label: string;
+  options: Array<{ id: T; label: string }>;
+  active: T;
+  onSelect: (id: T) => void;
+}) {
+  return (
+    <div role="tablist" aria-label={label} className={SEGMENT_RAIL}>
+      {options.map(({ id, label: text }) => (
+        <button
+          key={id}
+          type="button"
+          role="tab"
+          aria-selected={active === id}
+          onClick={() => onSelect(id)}
+          className={cn(active === id ? SEGMENT_ACTIVE : SEGMENT_IDLE, "transition-colors motion-reduce:transition-none")}
+        >
+          {text}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The mockup's footer row: the outward links, small and unmissable, at the
+ * bottom of the page rather than buried in an About dialog. Everything here
+ * already existed in the profile menu and the About window — this is the same
+ * set of links in one line, including the licence attribution. */
+function SettingsFooter() {
+  const links = [
+    { label: t("settings.footer.help"), url: HELP_CENTER_URL },
+    { label: t("settings.footer.feedback"), url: FEEDBACK_URL },
+    { label: t("settings.footer.docs"), url: DOCS_URL },
+    { label: t("settings.footer.releases"), url: RELEASES_URL },
+    { label: t("settings.footer.repository"), url: APP_REPOSITORY },
+    { label: t("settings.footer.license"), url: LICENSE_URL },
+  ];
+  return (
+    <footer className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-hairline/30 pt-4 text-[12px] text-ink-secondary">
+      <span className="text-ink">{t("settings.footer.version", { version: appVersion() })}</span>
+      {links.map(({ label, url }) => (
+        <button key={url} type="button" onClick={() => void openExternalLink(url)} className="rounded transition-colors hover:text-ink">
+          {label}
+        </button>
+      ))}
+    </footer>
+  );
+}
+
 export function SettingsModal() {
   const { state, dispatch } = useStore();
   const remoteActive = window.ogb?.remoteClient?.active === true;
-  const section: AppSettingsSection =
-    (remoteActive && !["appearance", "desktopWorkspaces"].includes(state.appSettingsSection)) || state.appSettingsSection === "remote"
-      ? "companion"
-      : state.appSettingsSection;
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   useEffect(() => window.ogb?.environments?.onOpenSettings?.(() => setQuery("")), []);
-  const q = query.trim().toLowerCase();
-  const availableSections = SECTIONS.filter((entry) => !remoteActive || entry.id === "companion" || entry.id === "appearance" || entry.id === "desktopWorkspaces")
-    .filter((entry) => entry.id !== "desktopWorkspaces" || Boolean(window.ogb?.environments))
-    .filter((entry) => entry.id !== "organization" || Boolean(window.ogb?.organization))
+
+  const availableSections = availableSettingsSections({
+    remoteClient: remoteActive,
+    environments: Boolean(window.ogb?.environments),
+    organization: Boolean(window.ogb?.organization),
     // the operator's screen for other workspaces exists only where a fleet agent does
-    .filter((entry) => entry.id !== "workspaces" || workspacesAvailable(state.config))
+    fleet: workspacesAvailable(state.config),
     // sign-in by email is a hosted server's; the desktop app pairs devices under Remote access
-    .filter((entry) => entry.id !== "people" || !window.ogb);
-  const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q));
-  const sectionLabelKey = SECTIONS.find((entry) => entry.id === section)?.labelKey;
+    hostedPeople: !window.ogb,
+  });
+  const visibleSections = visibleSettingsSections(availableSections, query, sectionLabel);
+  const section = resolveSettingsSection(state.appSettingsSection, visibleSections, remoteActive);
   const nextVisibleSection = visibleSections.some((entry) => entry.id === section) ? undefined : visibleSections[0]?.id;
 
   useEffect(() => {
@@ -497,42 +636,18 @@ export function SettingsModal() {
 
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const dialog = dialogRef.current;
-    const search = dialog?.querySelector<HTMLInputElement>("[data-settings-search]");
+    const page = pageRef.current;
+    const search = page?.querySelector<HTMLInputElement>("[data-settings-search]");
     if (search?.checkVisibility()) search.focus();
-    else dialog?.focus();
+    else page?.focus();
 
+    // A page, not a dialog over a scrim: there is no backdrop to click and no
+    // Tab trap to strand the top bar above it. Escape and the X close it.
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        dispatch({ type: "toggleAppSettings", open: false });
-        return;
-      }
-      if (event.key !== "Tab" || !dialog) return;
-
-      const focusable = Array.from(
-        dialog.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((element) => element.checkVisibility());
-      if (focusable.length === 0) {
-        event.preventDefault();
-        dialog.focus();
-        return;
-      }
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const active = document.activeElement;
-      if (event.shiftKey && (active === first || !dialog.contains(active))) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus();
-      }
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      dispatch({ type: "toggleAppSettings", open: false });
     };
-
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
@@ -540,26 +655,26 @@ export function SettingsModal() {
     };
   }, [dispatch]);
 
+  const currentLabel = visibleSections.find((entry) => entry.id === section)?.labelKey;
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-6"
-      onMouseDown={(e) => e.target === e.currentTarget && dispatch({ type: "toggleAppSettings", open: false })}
+      ref={pageRef}
+      role="dialog"
+      aria-labelledby="app-settings-title"
+      tabIndex={-1}
+      className="flex min-h-0 flex-1 flex-col overflow-hidden outline-none"
     >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="app-settings-title"
-        tabIndex={-1}
-        className={cn("flex max-h-[calc(100dvh-24px)] w-full overflow-hidden rounded-2xl border border-hairline/50 bg-panel shadow-2xl outline-none", section === "engines" ? "h-[720px] max-w-[1040px]" : "h-[560px] max-w-[860px]")}
-      >
-        {/* section nav */}
-        <span id="app-settings-title" className="sr-only">{t("settings.title")}</span>
-        <nav className="hidden min-h-0 w-[190px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-hairline/40 bg-app/30 p-3 sm:flex">
-          <div className="shrink-0 px-2 py-3 text-[15px] font-semibold text-ink">
-            {t("settings.title")}
-          </div>
-          <div className="mb-2 mt-1 flex min-h-8 shrink-0 items-center gap-2 rounded-lg border border-transparent bg-control/70 px-2.5 py-2 focus-within:border-focus">
+      <span id="app-settings-title" className="sr-only">
+        {currentLabel ? t(currentLabel) : t("settings.title")}
+      </span>
+
+      {/* The rail and the page heading stand on the sky. The only frosted
+          surface here is the search box, which is a control that needs to read
+          as raised. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-5 pb-8 pt-5 sm:px-8 lg:flex-row lg:gap-10">
+        <nav aria-label={t("settings.title")} className="w-full shrink-0 lg:w-[228px]">
+          <div className="flex min-h-9 items-center gap-2 rounded-full bg-raised/70 px-3.5 py-2 ring-1 ring-hairline/40 focus-within:ring-focus">
             <Search size={14} className="shrink-0 text-ink-secondary" />
             <input
               data-settings-search
@@ -576,45 +691,42 @@ export function SettingsModal() {
               className="w-full bg-transparent text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none"
             />
           </div>
-          {visibleSections.length === 0 && (
-            <div className="px-2.5 py-4 text-[12.5px] leading-relaxed text-ink-secondary">
-              {t("settings.noMatch", { query: query.trim() })}
-            </div>
+          {visibleSections.length === 0 ? (
+            <p className="mt-4 px-1 text-[12.5px] leading-relaxed text-ink-secondary">{t("settings.noMatch", { query: query.trim() })}</p>
+          ) : (
+            <ul className="mt-3 flex flex-col gap-0.5 lg:mt-4">
+              {visibleSections.map(({ id, labelKey, icon }) => {
+                const Icon = SECTION_ICONS[icon];
+                const active = section === id;
+                return (
+                  <li key={id}>
+                    <button
+                      data-settings-section={id}
+                      onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: id })}
+                      aria-current={active ? "page" : undefined}
+                      className={cn(
+                        "flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors motion-reduce:transition-none",
+                        active ? "bg-raised text-ink" : "text-ink-secondary hover:bg-raised/50 hover:text-ink",
+                      )}
+                    >
+                      <Icon size={15} className={cn("shrink-0", active && "text-accent-text")} />
+                      {t(labelKey)}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           )}
-          {visibleSections.map(({ id, labelKey, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: id })}
-              aria-current={section === id ? "page" : undefined}
-              className={cn(
-                "flex min-h-9 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors motion-reduce:transition-none",
-                section === id ? "bg-control text-ink" : "text-ink-secondary hover:bg-control/50 hover:text-ink",
-              )}
-            >
-              <Icon size={15} className="shrink-0" />
-              {t(labelKey)}
-            </button>
-          ))}
         </nav>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-hairline/30 px-3 py-3 sm:px-5">
-            <select
-              aria-label={t("settings.title")}
-              value={section}
-              onChange={(event) => {
-                setQuery("");
-                dispatch({ type: "toggleAppSettings", open: true, section: event.target.value as AppSettingsSection });
-              }}
-              className="min-w-0 rounded-lg bg-control px-3 py-2 text-[14px] text-ink sm:hidden"
-            >
-              {availableSections.map(({ id, labelKey }) => (
-                <option key={id} value={id}>{t(labelKey)}</option>
-              ))}
-            </select>
-            <span className="hidden text-[15px] font-semibold text-ink sm:block">
-              {sectionLabelKey ? t(sectionLabelKey) : null}
-            </span>
+        <div className="min-w-0 flex-1">
+          <header className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h2 className="text-[26px] font-semibold tracking-[-0.02em] text-ink">
+                {currentLabel ? t(currentLabel) : t("settings.title")}
+              </h2>
+              <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">{t("settings.subtitle")}</p>
+            </div>
             <button
               onClick={() => dispatch({ type: "toggleAppSettings", open: false })}
               aria-label={t("settings.close")}
@@ -623,9 +735,9 @@ export function SettingsModal() {
             >
               <X size={18} />
             </button>
-          </div>
+          </header>
 
-          <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 py-4 sm:px-5 sm:pb-5">
+          <div className="mt-5 flex flex-col gap-4">
             {section === "desktopWorkspaces" && <ConnectedWorkspacesSettings />}
             {section === "organization" && window.ogb?.organization && !remoteActive && <OrganizationSettings />}
             {section === "general" && (
@@ -633,19 +745,19 @@ export function SettingsModal() {
                 <Card title={t("settings.profile.title")} subtitle={t("settings.profile.subtitle")}>
                   <ProfileFields />
                 </Card>
-                <div>
+                <GlassPanel className="px-4">
                   <LanguageRow />
                   <AnalyticsRow />
-                </div>
+                </GlassPanel>
                 <Card title={t("settings.roomTurns.title")} subtitle={t("settings.roomTurns.subtitle")}>
                   <RoomTurnTimeoutSettings />
                 </Card>
                 <ThreadConcurrencySettings />
-                <div>
+                <GlassPanel className="px-4">
                   {!remoteActive && <ReplayTourRow />}
                   <UpdatesRow />
                   <DiagnosticsRow />
-                </div>
+                </GlassPanel>
               </>
             )}
 
@@ -654,10 +766,10 @@ export function SettingsModal() {
                 <Card title={t("settings.skin.title")} subtitle={t("settings.skin.subtitle")}>
                   <SkinPicker />
                 </Card>
-                <div>
+                <GlassPanel className="px-4">
                   <ShowThreadsRow />
                   {!remoteActive && <ToolCallsRow />}
-                </div>
+                </GlassPanel>
               </>
             )}
 
@@ -670,58 +782,40 @@ export function SettingsModal() {
 
             {section === "connections" && (
               <>
-              <McpAccessSettings />
-              <Card
-                title={t("settings.connections.title")}
-                subtitle={t("settings.connections.subtitle")}
-              >
-                <div className="flex flex-col gap-4">
-                  {state.config?.composio.mode === "managed" ? (
-                    <div className="rounded-lg border border-success/25 bg-success/10 px-3 py-2 text-[13px] text-success">
-                      {t("settings.connections.ready")}
-                    </div>
-                  ) : null}
-                  <div className="text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary">{t("keys.providers.title")}</div>
-                  <p className="-mt-3 text-[12px] leading-relaxed text-ink-secondary">{t("keys.providers.subtitle")}</p>
-                  <ApiKeyRow section="anthropic" testProvider="anthropic" />
-                  <ApiKeyRow section="openaiCompat" testProvider="openaiCompat" />
-                  <OpenAiCompatUrl />
-                  <ApiKeyRow section="xai" testProvider="xai" />
-                  <div className="pt-2 text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary">{t("keys.integrations.title")}</div>
-                  <ApiKeyRow section="box" />
-                  <VpsConnection />
-                  <ApiKeyRow section="opencodeGo" />
-                  <details className="rounded-lg border border-hairline/40 bg-inset px-3 py-2">
-                    <summary className="cursor-pointer text-[13px] text-ink-secondary">{t("settings.connections.selfHost")}</summary>
-                    <div className="mt-3">
-                      <ApiKeyRow section="composio" />
-                    </div>
-                  </details>
-                </div>
-              </Card>
+                <McpAccessSettings />
+                <Card title={t("settings.connections.title")} subtitle={t("settings.connections.subtitle")}>
+                  <div className="flex flex-col gap-4">
+                    {state.config?.composio.mode === "managed" ? (
+                      <div className="rounded-lg border border-success/25 bg-success/10 px-3 py-2 text-[13px] text-success">
+                        {t("settings.connections.ready")}
+                      </div>
+                    ) : null}
+                    <div className="text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary">{t("keys.providers.title")}</div>
+                    <p className="-mt-3 text-[12px] leading-relaxed text-ink-secondary">{t("keys.providers.subtitle")}</p>
+                    <ApiKeyRow section="anthropic" testProvider="anthropic" />
+                    <ApiKeyRow section="openaiCompat" testProvider="openaiCompat" />
+                    <OpenAiCompatUrl />
+                    <ApiKeyRow section="xai" testProvider="xai" />
+                    <div className="pt-2 text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary">{t("keys.integrations.title")}</div>
+                    <ApiKeyRow section="box" />
+                    <VpsConnection />
+                    <ApiKeyRow section="opencodeGo" />
+                    <details className="rounded-lg border border-hairline/40 bg-inset px-3 py-2">
+                      <summary className="cursor-pointer text-[13px] text-ink-secondary">{t("settings.connections.selfHost")}</summary>
+                      <div className="mt-3">
+                        <ApiKeyRow section="composio" />
+                      </div>
+                    </details>
+                  </div>
+                </Card>
               </>
             )}
 
-            {section === "engines" && (
-              <EnginesSettings />
-            )}
+            {section === "engines" && <EnginesSettings />}
 
-            {section === "backups" && <><WorkspaceBackupSettings /><CompanyBackupSettings /></>}
+            {section === "backups" && <BackupsSection />}
 
-            {section === "companion" && (
-              <>
-                <RemoteComputerSection />
-                {!remoteActive && <CustomDomainSettings />}
-                {/* mints an admin/client session token for anything that isn't the phone companion
-                    flow (MCP clients, `crewbot pair`, a second desktop app), and pairs phones to a
-                    hosted server. Shown for the desktop app's own server (#950) AND when this desktop is
-                    a remote client of a hosted workspace: its requests carry that server's session, and
-                    Settings there is the only place that server's phones can be paired from (MOCA-84).
-                    The server decides who may act — an owner or an admin session — not this gate. */}
-                <ServerPairingCard />
-                {!remoteActive && <CompanionSection profileEmail={state.config?.profile?.email} />}
-              </>
-            )}
+            {section === "companion" && <RemoteAccessSection remoteActive={remoteActive} />}
 
             {section === "computer" && <LocalComputerSection />}
 
@@ -729,6 +823,8 @@ export function SettingsModal() {
             {section === "people" && <PeopleSection />}
             {section === "workspaces" && <WorkspacesSection />}
           </div>
+
+          <SettingsFooter />
         </div>
       </div>
     </div>

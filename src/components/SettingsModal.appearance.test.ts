@@ -53,10 +53,18 @@ afterEach(() => {
 
 const render = () => renderToStaticMarkup(createElement(SettingsModal));
 
+// The section switcher is a rail of buttons on the canvas now, not a <select>
+// of options inside a dialog. Read it the way a person reads it: does the rail
+// offer this section, and is it the one on screen?
+const railButton = (html: string, id: string) =>
+  html.match(new RegExp(`<button[^>]*data-settings-section="${id}"[^>]*>`))?.[0] ?? "";
+const railOffers = (html: string, id: string) => railButton(html, id) !== "";
+const railCurrent = (html: string, id: string) => railButton(html, id).includes('aria-current="page"');
+
 describe("Settings → Appearance", () => {
   it("groups skins, thread visibility, and tool-call display with preservation copy", () => {
     const html = render();
-    expect(html).toContain('<option value="appearance" selected="">Appearance</option>');
+    expect(railCurrent(html, "appearance")).toBe(true);
     expect(html).toContain("Midnight");
     expect(html).toContain('aria-label="Show threads"');
     expect(html).toContain('aria-label="Show tool calls in chat"');
@@ -94,12 +102,12 @@ describe("Settings → Appearance", () => {
   it("makes local appearance available remotely without exposing server settings", () => {
     vi.stubGlobal("window", { ogb: { remoteClient: { active: true } } });
     const html = render();
-    expect(html).toContain('<option value="appearance" selected="">Appearance</option>');
-    expect(html).toContain('<option value="companion">Remote access</option>');
-    expect(html).not.toContain('<option value="general">');
-    expect(html).not.toContain('<option value="connections">');
-    expect(html).not.toContain('<option value="engines">');
-    expect(html).not.toContain('<option value="backups">');
+    expect(railCurrent(html, "appearance")).toBe(true);
+    expect(railOffers(html, "companion")).toBe(true);
+    expect(railOffers(html, "general")).toBe(false);
+    expect(railOffers(html, "connections")).toBe(false);
+    expect(railOffers(html, "engines")).toBe(false);
+    expect(railOffers(html, "backups")).toBe(false);
     expect(html).toContain("Midnight");
     expect(html).toContain('aria-label="Show threads"');
     expect(html).not.toContain('aria-label="Show tool calls in chat"');
@@ -108,7 +116,7 @@ describe("Settings → Appearance", () => {
   it("offers full backups in local Settings", () => {
     fixture.section = "backups";
     const html = render();
-    expect(html).toContain('<option value="backups" selected="">Backups</option>');
+    expect(railCurrent(html, "backups")).toBe(true);
     expect(html).toContain("Export full backup");
     expect(html).toContain('type="file" accept=".ombbackup"');
     expect(html).toContain("Older team backups and shareable templates");
@@ -127,7 +135,7 @@ describe("Settings → Appearance", () => {
     fixture.section = "desktopWorkspaces";
     vi.stubGlobal("window", { ogb: { environments: {} } });
     const local = render();
-    expect(local).toContain('<option value="desktopWorkspaces" selected="">Connected workspaces</option>');
+    expect(railCurrent(local, "desktopWorkspaces")).toBe(true);
     expect(local).toContain("Workspace address or pairing link");
     expect(local).toContain("Name (optional)");
     expect(local).toContain("Your workspaces");
@@ -141,7 +149,7 @@ describe("Settings → Appearance", () => {
     fixture.section = "organization";
     vi.stubGlobal("window", { ogb: { organization: {} } });
     const local = render();
-    expect(local).toContain('<option value="organization" selected="">Organisation</option>');
+    expect(railCurrent(local, "organization")).toBe(true);
     expect(local).toContain("personal and local models");
     fixture.section = "appearance";
     vi.stubGlobal("window", {});

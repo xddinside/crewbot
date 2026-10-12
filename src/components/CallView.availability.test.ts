@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { callCapabilityHelp } from "@/lib/call-capability";
 
-function capabilities(dictation: DesktopCapabilities["dictation"]): DesktopCapabilities {
+function capabilities(
+  dictation: DesktopCapabilities["dictation"],
+  platform: DesktopCapabilities["host"]["platform"] = "darwin",
+): DesktopCapabilities {
   return {
     host: {
-      platform: "darwin",
+      platform,
       label: "macOS",
       session: "unknown",
       packaged: true,
@@ -61,9 +64,25 @@ describe("call capability guidance", () => {
       engine: "none",
       onDevice: false,
       reasonCode: "unsupported-platform",
-    }), false);
+    }, "win32"), false);
     expect(help?.label).toBe("Calls currently need macOS");
     expect(help).not.toHaveProperty("action");
+  });
+
+  // Linux is the platform this app supports. Voice is not on it yet, so the
+  // entry names this device, says text chat still works, and offers the one
+  // place a person could look — rather than pointing at a Mac.
+  it("names this Linux device and offers a setup route instead of another platform", () => {
+    const help = callCapabilityHelp(capabilities({
+      available: false,
+      engine: "none",
+      onDevice: false,
+      reasonCode: "unsupported-platform",
+    }, "linux"), false);
+    expect(help?.label).toBe("Calls aren't available on this Linux device yet");
+    expect(help?.reason).toContain("Text chat does everything a call does");
+    expect(help).not.toHaveProperty("reason", expect.stringContaining("macOS"));
+    expect(help?.action).toBe("open-voice-settings");
   });
 
   it("distinguishes a broken local speech service from an unsupported device", () => {

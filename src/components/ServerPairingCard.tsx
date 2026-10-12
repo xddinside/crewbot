@@ -50,8 +50,8 @@ export function lastSeen(lastSeenAt: number, now = Date.now()): string {
   return t("remote.serverPairing.daysAgo", { days: Math.round(minutes / 1440) });
 }
 
-const button = "rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-ink disabled:opacity-50";
-const quiet = "rounded-md border border-line px-3 py-1.5 text-[13px] text-ink hover:bg-surface";
+const button = "ui-button bg-accent text-accent-ink disabled:opacity-50";
+const quiet = "ui-button";
 
 /** Settings → Remote access: mint a one-time pairing code with a QR for
  * the phone app (or for a non-phone client — MCP, `crewbot pair`, a
@@ -141,8 +141,8 @@ export function ServerPairingCard({ initialSession = null }: { initialSession?: 
   }
 
   return (
-    <Card title={t("remote.serverPairing.title")} subtitle={t("remote.serverPairing.subtitle")}>
-      <div className="mt-3 flex flex-wrap items-center gap-3">
+    <Card title={t("remote.serverPairing.clientAccess")} subtitle={t("remote.serverPairing.subtitle")}>
+      <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-1.5 text-[13px] text-ink">
           <input type="radio" name="server-pairing-scope" checked={scope === "admin"} onChange={() => setScope("admin")} />
           {t("remote.serverPairing.scope.admin")}
@@ -156,22 +156,24 @@ export function ServerPairingCard({ initialSession = null }: { initialSession?: 
         </button>
       </div>
       {offer ? (
-        <div className="mt-4 rounded-lg border border-line bg-surface p-4">
+        // The code and its QR are one plate inside the card: they are read
+        // together, and they are the one thing here that is a secret.
+        <div className="mt-4 flex flex-wrap items-center gap-4 rounded-xl bg-inset/60 p-4 ring-1 ring-hairline/40">
           {expired ? (
             <p className="text-[13px] text-ink-secondary">{t("remote.serverPairing.expired")}</p>
           ) : (
             <div className="flex flex-wrap items-start gap-5">
               {offer.url ? (
-                <div className="rounded-md bg-white p-2">
-                  <QRCodeSVG value={offer.url} size={160} level="M" bgColor="#ffffff" fgColor="#111111" />
+                <div className="rounded-lg bg-white p-2">
+                  <QRCodeSVG value={offer.url} size={148} level="M" bgColor="#ffffff" fgColor="#111111" />
                 </div>
               ) : null}
               <div className="min-w-[200px] flex-1">
-                <div className="font-mono text-[18px] tracking-[0.14em] text-ink">{offer.code}</div>
+                <div className="font-mono text-[20px] font-medium tracking-[0.14em] text-ink">{offer.code}</div>
                 <div className="mt-1 text-[12.5px] text-ink-secondary">{t("remote.serverPairing.expires", { minutes: minutesLeft(offer.expiresAt, now) })}</div>
                 {offer.url ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <code className="break-all text-[12px] text-ink-secondary">{offer.url}</code>
+                    <code className="min-w-0 max-w-full break-all text-[12px] text-ink-secondary">{offer.url}</code>
                     <button type="button" onClick={() => void copyLink()} className={quiet}>
                       {copied ? t("remote.serverPairing.copied") : t("remote.serverPairing.copyLink")}
                     </button>
@@ -188,14 +190,16 @@ export function ServerPairingCard({ initialSession = null }: { initialSession?: 
       {devices.length === 0 ? (
         <p className="mt-1 text-[12.5px] text-ink-secondary">{t("remote.serverPairing.noDevices")}</p>
       ) : (
-        <ul className="mt-1 divide-y divide-line">
+        // One row a device: which, who, when, and the one action that applies.
+        // A hairline between rows and nothing else — this list is reference
+        // information, not a set of cards.
+        <ul className="mt-1 divide-y divide-hairline/40">
           {devices.map((device) => (
-            <li key={device.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-[13px]">
-              <span className="text-ink">
+            <li key={device.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-[13px]">
+              <span className="min-w-0 text-ink">
                 {device.label}
                 {device.email ? <span className="text-ink-secondary"> · {device.email}</span> : null}
-                <span className="text-ink-secondary">
-                  {" · "}
+                <span className="block text-[12px] text-ink-secondary">
                   {device.scopes.includes("admin") ? t("remote.serverPairing.scope.admin") : t("remote.serverPairing.scope.client")}
                   {" · "}
                   {t("remote.serverPairing.seen", { when: lastSeen(device.lastSeenAt, now) })}
@@ -211,7 +215,7 @@ export function ServerPairingCard({ initialSession = null }: { initialSession?: 
           ))}
         </ul>
       )}
-      {error ? <p className="mt-3 text-[13px] text-danger">{error}</p> : null}
+      {error ? <p className="mt-3 break-words text-[13px] text-danger">{error}</p> : null}
     </Card>
   );
 }

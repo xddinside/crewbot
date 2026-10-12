@@ -58,30 +58,33 @@ export function ConnectedWorkspacesSettings() {
   };
   if (!bridge) return <p className="text-[13px] text-ink-secondary">Manage workspace connections in the desktop app.</p>;
   const computerWorkspace = saved?.environments.find(entry => entry.id === computerId);
+  // The list stands on the canvas: no card behind it, hairline dividers only.
+  // One desktop app, wherever the bots live — switching never merges two
+  // workspaces' data, and saying so up front is the promise the row makes.
   return <>
     <p className="text-[13px] leading-relaxed text-ink-secondary">One desktop app, wherever your bots live. Switching workspaces does not move or replace your bots, conversations, or provider accounts.</p>
-    <Card title="Your workspaces" subtitle="Saved on this computer. Your hosted bots keep running when you switch away.">
+    <section aria-label="Your workspaces">
       {!saved ? <p role="status" className="text-[13px] text-ink-secondary">{error ? "Saved workspaces could not be loaded." : "Loading workspaces…"}</p> :
-        <ul className="divide-y divide-hairline/40">
+        <ul className="mt-1 divide-y divide-hairline/40">
           {[{ id: "local", name: "This computer", origin: "" }, ...saved.environments].map((entry) => {
             const active = entry.id === saved.activeId;
             const Icon = entry.id === "local" ? Laptop : Cloud;
-            return <li key={entry.id} className="flex items-center gap-3 py-3">
+            return <li key={entry.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
               <Icon size={18} className="shrink-0 text-ink-secondary" />
               <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-medium text-ink">{entry.name}</div>
                 <div className="break-all text-[12px] text-ink-secondary">{entry.origin || "Local bots and conversations"}</div></div>
               {active ? <span className="flex shrink-0 items-center gap-1 text-[12px] text-ink-secondary"><Check size={13} />Current</span> :
                 <button type="button" disabled={busy} aria-label={`Switch to ${entry.name}`} onClick={() => void perform(async () => { await bridge.switch(entry.id); return true; })}
-                  className="rounded-md px-2 py-1.5 text-[12px] text-ink hover:bg-control disabled:opacity-50">Switch</button>}
-              {entry.id !== "local" && sharingOffered && <button type="button" disabled={busy} aria-label={`Computer access for ${entry.name}`} onClick={() => setComputerId(entry.id)} className="rounded-md px-2 py-1.5 text-[12px] text-ink hover:bg-control">Computer access</button>}
+                  className="ui-button">{busy ? <Loader2 size={13} className="animate-spin" /> : null}Switch</button>}
+              {entry.id !== "local" && sharingOffered && <button type="button" disabled={busy} aria-label={`Computer access for ${entry.name}`} onClick={() => setComputerId(entry.id)} className="ui-button">Computer access</button>}
               {entry.id !== "local" && <button type="button" disabled={busy} aria-label={`Forget ${entry.name}`} title={`Forget ${entry.name}`}
-                onClick={() => void perform(() => bridge.forget(entry.id))} className="rounded-md p-1.5 text-ink-secondary hover:bg-control hover:text-danger disabled:opacity-50"><Trash2 size={14} /></button>}
+                onClick={() => void perform(() => bridge.forget(entry.id))} className="ui-icon-button shrink-0 text-danger hover:text-danger"><Trash2 size={14} /></button>}
             </li>;
           })}
         </ul>}
-    </Card>
+    </section>
     {sharingOffered && computerWorkspace && <ComputerSharingSettings key={computerWorkspace.id} workspace={computerWorkspace} onClose={() => setComputerId(null)} />}
-    <Card title="Connect hosted workspace" subtitle="Already running crewbot on a VPS, server, or another computer? Connect it here.">
+    <Card title="Connect workspace" subtitle="Already running crewbot on a VPS, server, or another computer? Connect it here.">
       <form className="flex flex-col gap-3" onSubmit={(event) => {
         event.preventDefault();
         if (address.trim()) void perform(() => bridge.addFromLink(address.trim(), name.trim()));
@@ -89,11 +92,11 @@ export function ConnectedWorkspacesSettings() {
         <label className="flex flex-col gap-1.5 text-[12px] text-ink-secondary">Workspace address or pairing link
           <input required value={address} disabled={busy} onChange={(event) => setAddress(event.target.value)}
             placeholder="https://bots.yourcompany.com" autoCapitalize="none" autoCorrect="off" autoComplete="off" spellCheck={false}
-            className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-accent/50" />
+            className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-focus" />
         </label>
         <label className="flex flex-col gap-1.5 text-[12px] text-ink-secondary">Name (optional)
           <input value={name} disabled={busy} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="My cloud workspace"
-            className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-accent/50" />
+            className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-focus" />
         </label>
         <p className="text-[12px] leading-relaxed text-ink-secondary">Paste a pairing link from your server’s Settings → Remote access, or enter its address and sign in there. Your desktop stays connected afterward.</p>
         <details className="text-[12px] text-ink-secondary"><summary className="cursor-pointer">Need a pairing code?</summary>

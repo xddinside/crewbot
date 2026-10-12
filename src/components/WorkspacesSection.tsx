@@ -138,7 +138,7 @@ function NewWorkspaceForm({ domain, onCreated, disabled }: { domain: string; onC
       <p className="text-[11.5px] leading-relaxed text-ink-secondary">{t("workspaces.createHint")}</p>
       {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
       <div className="flex justify-end">
-        <button type="submit" disabled={disabled || saving} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-white hover:brightness-110 disabled:opacity-60">
+        <button type="submit" disabled={disabled || saving} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-60">
           {saving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}{saving ? t("workspaces.creating") : t("workspaces.create")}
         </button>
       </div>
@@ -166,7 +166,7 @@ function UsersForm({ slug, onDone }: { slug: string; onDone: (log: string[]) => 
     }
   };
   return (
-    <div className="mt-2 rounded-lg border border-hairline/40 p-3">
+    <div className="mt-2 rounded-xl bg-inset/60 p-3 ring-1 ring-hairline/40">
       <div className="mb-2 text-[12.5px] font-medium text-ink">{t("workspaces.usersTitle", { slug })}</div>
       <div className="flex flex-wrap items-center gap-2">
         <input value={email} onChange={(e) => setEmail(e.target.value)} type="text" placeholder="person@example.com or @example.com" aria-label={t("workspaces.email")} disabled={busy !== null} className="min-w-[16rem] flex-1 rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none disabled:opacity-50" />
@@ -256,13 +256,13 @@ export function WorkspacesSection({ load = fetchFleet }: { load?: () => Promise<
           <button type="button" onClick={() => setCreating((value) => !value)} disabled={busy !== null} className="ml-auto flex items-center gap-1.5 rounded-lg border border-hairline/40 px-3 py-1.5 text-[12px] text-ink-secondary hover:bg-raised/50 hover:text-ink disabled:opacity-50"><Plus size={13} />{t("workspaces.new")}</button>
           <button type="button" onClick={() => void upgrade()} disabled={busy !== null || !fleet?.workspaces.length} className="rounded-lg border border-hairline/40 px-3 py-1.5 text-[12px] text-ink-secondary hover:bg-raised/50 hover:text-ink disabled:opacity-50">{busy === "*" ? t("workspaces.working") : t("workspaces.upgradeAll")}</button>
         </div>
-        {creating && fleet && <div className="mb-4 rounded-xl border border-hairline/40 p-3"><NewWorkspaceForm domain={fleet.domain} disabled={busy !== null} onCreated={(lines, created) => { setCreating(false); setLog(lines); setInviteLink(`https://${created.slug}.${fleet.domain}/pair?email=${encodeURIComponent(created.admin)}`); void refresh(); }} /></div>}
+        {creating && fleet && <div className="mb-4 rounded-xl bg-inset/60 p-3 ring-1 ring-hairline/40"><NewWorkspaceForm domain={fleet.domain} disabled={busy !== null} onCreated={(lines, created) => { setCreating(false); setLog(lines); setInviteLink(`https://${created.slug}.${fleet.domain}/pair?email=${encodeURIComponent(created.admin)}`); void refresh(); }} /></div>}
         {inviteLink && <div className="mb-4"><CopyLink link={inviteLink} /></div>}
         {error && <p role="alert" className="mb-2 text-[12px] text-danger">{error}</p>}
         {fleet ? <WorkspacesTable fleet={fleet} onAct={(slug, action) => void act(slug, action)} busy={busy} /> : loading ? <div className="flex items-center gap-2 text-[13px] text-ink-secondary"><Loader2 size={14} className="animate-spin" />{t("common.checking")}</div> : null}
         {usersFor && <UsersForm slug={usersFor} onDone={(lines) => { setLog(lines); void refresh(); }} />}
         {log.length > 0 && (
-          <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-inset p-2 text-[11.5px] text-ink-secondary">{log.join("\n")}</pre>
+          <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-inset/60 p-2 text-[11.5px] text-ink-secondary ring-1 ring-hairline/40">{log.join("\n")}</pre>
         )}
       </Card>
       <ConfirmDialog

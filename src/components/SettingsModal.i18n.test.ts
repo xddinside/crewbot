@@ -58,11 +58,14 @@ describe("Settings → General", () => {
     expect(en).toContain("Maximum turn length");
   });
 
-  it("offers a labeled compact section picker without removing desktop navigation", async () => {
+  it("offers a labeled section rail that answers to the language picker", async () => {
     const html = await renderSettings();
-    expect(html).toMatch(/<select[^>]*aria-label="Settings"[^>]*sm:hidden/);
-    expect(html).toContain('<option value="companion">Remote access</option>');
-    expect(html).toMatch(/<nav[^>]*hidden[^>]*sm:flex/);
+    // The rail is the switcher. It is a labelled <nav> of buttons, and it is
+    // never hidden: the page stacks it above the content on a narrow window
+    // rather than swapping in a second control that only exists at one size.
+    expect(html).toMatch(/<nav[^>]*aria-label="Settings"/);
+    expect(html).toContain('data-settings-section="companion"');
+    expect(html).not.toMatch(/<select[^>]*aria-label="Settings"/);
     expect(html).toContain('id="app-settings-title" class="sr-only"');
   });
 });

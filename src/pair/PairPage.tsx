@@ -1,4 +1,14 @@
+// The page a pairing link opens: /pair#code=XXXX-XXXX-XXXX. Also what the
+// app shows instead of itself when a remote browser has no session yet.
+// When the server has a sign-in allow-list, "sign in with your email" comes
+// first and the pairing code stays one link away.
+//
+// There is no window here either: the sky is painted first, the form floats on
+// it as one glass sheet, and the workspace switch stays reachable above it —
+// before sign-in, as much as after.
 import { useEffect, useState } from "react";
+import { AsciiSky } from "../components/AsciiSky";
+import { GlassSheet } from "../components/Glass";
 import { DesktopWorkspaceSwitcher } from "../components/DesktopWorkspaceSwitcher";
 
 import {
@@ -13,8 +23,8 @@ import {
   type SessionState,
 } from "../lib/session";
 
-const input = "mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-[14px] text-ink outline-none focus:border-accent-border";
-const button = "mt-5 w-full rounded-md bg-accent px-4 py-2 text-[14px] font-medium text-accent-ink disabled:opacity-50";
+const input = "mt-1 w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-accent-border";
+const button = "mt-5 w-full rounded-lg bg-accent px-4 py-2 text-[14px] font-medium text-accent-ink disabled:opacity-50";
 const fieldLabel = "mt-4 block text-[12px] font-medium text-ink-secondary";
 
 /** The page a pairing link opens: /pair#code=XXXX-XXXX-XXXX. Also what the
@@ -88,27 +98,33 @@ export function PairPage({ initialCode, initialEmail = null, reason }: { initial
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-app px-6 text-ink">
-      <div className="absolute left-3 top-12 max-w-[280px]"><DesktopWorkspaceSwitcher /></div>
-      <div className="w-full max-w-[420px]">
-        <h1 className="text-[20px] font-semibold">{mode === "email" ? "Sign in to" : "Connect to"} {environment?.label ?? "this crewbot"}</h1>
-        <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-secondary">
-          {environment ? `Version ${environment.version} on ${environment.platform}. ` : ""}
-          {mode === "email"
-            ? sent
-              ? `We emailed an 8-digit code to ${email}. It works once and expires in ten minutes.`
-              : "Enter your email and we will send you a one-time code."
-            : "Enter the pairing code shown on the server. Codes work once and expire after five minutes."}
-        </p>
-        {reasonWorthShowing(reason) && !connected ? <p className="mt-3 text-[13px] text-ink-secondary">{reasonWorthShowing(reason)}</p> : null}
-        {connected ? (
-          <p className="mt-4 text-[13.5px]">
-            This browser is already connected.{" "}
-            <a href="/" className="text-accent underline">
-              Open the app
-            </a>
+    <>
+      <AsciiSky />
+      <main className="relative flex min-h-dvh items-center justify-center px-6 py-16 text-ink">
+        <div className="absolute left-4 top-4 z-10 max-w-[280px]">
+          <DesktopWorkspaceSwitcher />
+        </div>
+        <GlassSheet className="w-full max-w-[440px] p-6 sm:p-8">
+          <h1 className="text-[26px] font-semibold tracking-[-0.02em]">
+            {mode === "email" ? "Sign in to" : "Connect to"} {environment?.label ?? "this crewbot"}
+          </h1>
+          <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-secondary">
+            {environment ? `Version ${environment.version} on ${environment.platform}. ` : ""}
+            {mode === "email"
+              ? sent
+                ? `We emailed an 8-digit code to ${email}. It works once and expires in ten minutes.`
+                : "Enter your email and we will send you a one-time code."
+              : "Enter the pairing code shown on the server. Codes work once and expire after five minutes."}
           </p>
-        ) : mode === "email" ? (
+          {reasonWorthShowing(reason) && !connected ? <p className="mt-3 text-[13px] text-ink-secondary">{reasonWorthShowing(reason)}</p> : null}
+          {connected ? (
+            <p className="mt-4 text-[13.5px]">
+              This browser is already connected.{" "}
+              <a href="/" className="text-accent underline">
+                Open the app
+              </a>
+            </p>
+          ) : mode === "email" ? (
           <form onSubmit={submitEmail}>
             <label className={fieldLabel} htmlFor="signin-email">
               Email
@@ -194,7 +210,8 @@ export function PairPage({ initialCode, initialEmail = null, reason }: { initial
             ) : null}
           </form>
         )}
-      </div>
-    </main>
+        </GlassSheet>
+      </main>
+    </>
   );
 }

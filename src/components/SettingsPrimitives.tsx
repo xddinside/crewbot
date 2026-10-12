@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type ComponentProps } from "react";
 import { Check, Copy } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { GlassCard } from "./Glass";
 
 export function Switch({
   checked,
@@ -29,6 +30,8 @@ export function Switch({
   );
 }
 
+/** A compact content card. Frosted, like every other surface where work
+ *  happens — the settings rail beside it stays on the canvas. */
 export function Card({
   title,
   subtitle,
@@ -39,11 +42,11 @@ export function Card({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl bg-card p-4">
+    <GlassCard className="p-4">
       {title && <div className="text-[15px] font-medium text-ink">{title}</div>}
       {subtitle && <div className={title ? "mt-0.5 text-[13px] leading-relaxed text-ink-secondary" : "text-[13px] leading-relaxed text-ink-secondary"}>{subtitle}</div>}
       {children && <div className={title || subtitle ? "mt-4" : undefined}>{children}</div>}
-    </div>
+    </GlassCard>
   );
 }
 

@@ -296,7 +296,7 @@ export function CompanionSection({ profileEmail = "" }: { profileEmail?: string 
         )}
       </Card>
 
-      <details className="rounded-xl border border-hairline/40 bg-card">
+      <details className="glass-card overflow-hidden">
         <summary className="cursor-pointer px-4 py-3.5 text-[13px] font-medium text-ink">
           {t("remote.advanced")}
         </summary>

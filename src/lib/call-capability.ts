@@ -1,12 +1,19 @@
+// Why this renderer cannot start a call, in the words the person needs.
+//
+// Three things are distinct and must stay distinct: this window is looking at
+// someone else's workspace; the installed app that does support calls exists
+// elsewhere; and this device's own platform does not carry the speech stack.
+// Linux is the supported platform for this app, and calls are not on it yet,
+// so the Linux entry says that plainly and offers the two ways forward —
+// Settings → Voice, or just keep typing. Nothing here claims a capability that
+// does not exist.
+
 export type CallCapabilityHelp = {
   label: string;
   reason: string;
-  action?: "choose-local-workspace";
+  action?: "choose-local-workspace" | "open-voice-settings";
 };
 
-/** Explain why this renderer cannot start a call. Keep the remote-workspace
- * case distinct: the installed Mac app is already present, but this page is
- * intentionally denied access to the Mac microphone. */
 export function callCapabilityHelp(
   capabilities: DesktopCapabilities,
   speechServiceAvailable: boolean,
@@ -26,6 +33,17 @@ export function callCapabilityHelp(
           reason: "Open this workspace in crewbot for macOS to make calls with on-device speech recognition.",
         };
       case "unsupported-platform":
+        // The supported platform today is Linux, and voice calls are not on it
+        // yet. Name the device and the two real ways forward rather than
+        // pointing at a Mac the person may not have.
+        if (capabilities.host.platform === "linux") {
+          return {
+            label: "Calls aren't available on this Linux device yet",
+            reason:
+              "Voice calls need on-device speech recognition, which the Linux app doesn't have yet. Dictation and voice replies are unavailable here too. Text chat does everything a call does.",
+            action: "open-voice-settings",
+          };
+        }
         return {
           label: "Calls currently need macOS",
           reason: "Calls are available on macOS for now because speech recognition runs on-device.",

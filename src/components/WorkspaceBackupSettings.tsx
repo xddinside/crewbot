@@ -4,6 +4,8 @@ import type { WorkspaceBackupSummary } from "../../shared/workspace-backup";
 import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { applyWorkspaceClientState, collectWorkspaceClientState, WORKSPACE_RESTORE_MARKER } from "@/lib/workspace-backup-client";
+import { AsciiSky } from "./AsciiSky";
+import { GlassSheet } from "./Glass";
 import { Card } from "./SettingsPrimitives";
 
 type BackupStatus = { busy: boolean; pendingRestore?: boolean; lastRestoreId?: string };
@@ -12,7 +14,9 @@ const buttonClass = "inline-flex items-center justify-center gap-2 rounded-lg bg
 const validPassword = (value: string) => value.length >= 12 && value.length <= 1024;
 
 export function WorkspaceBackupSummaryView({ summary }: { summary: WorkspaceBackupSummary }) {
-  return <div className="rounded-lg border border-hairline/50 bg-inset p-3">
+  // The staged archive's contents: what is in it, what it will cost, and what
+  // it will not carry. A person reads this before typing REPLACE.
+  return <div className="rounded-xl bg-inset/60 p-3 ring-1 ring-hairline/40">
     <h3 className="text-[14px] font-medium text-ink">{t("backup.preview")}</h3>
     <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[13px]">
       <dt className="text-ink-secondary">{t("backup.date")}</dt><dd className="break-words text-ink">{new Date(summary.createdAt).toLocaleString()}</dd>
@@ -132,7 +136,7 @@ export function WorkspaceBackupSettings() {
     <p className="text-[13px] leading-relaxed text-ink-secondary">{t("backup.excluded")}</p>
     <p className="text-[13px] leading-relaxed text-ink-secondary">{t("backup.privacy")}</p>
     {error && <p role="alert" className="break-words text-[13px] text-danger">{error}</p>}
-    {status?.pendingRestore ? <div role="status" className="rounded-xl border border-warning/40 bg-warning/10 p-4 text-[13px] text-ink">{t("backup.restart")}</div> : <>
+    {status?.pendingRestore ? <div role="status" className="rounded-xl bg-warning/10 p-4 text-[13px] text-ink ring-1 ring-warning/30">{t("backup.restart")}</div> : <>
       {(!status || status.busy) && <div role="status" className="flex items-center gap-3 text-[13px] text-ink-secondary"><span>{status?.busy ? t("backup.serverBusy") : t("backup.checkStatus")}</span><button type="button" onClick={() => void refresh()} className="underline">{t("connectors.action.retry")}</button></div>}
       <Card title={t("backup.export")} subtitle={t("backup.passwordHint")}>
         <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); void exportBackup(); }}>
@@ -199,13 +203,20 @@ export function WorkspaceBackupRecovery({ children }: { children: ReactNode }) {
       window.location.reload();
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   };
-  return <main className="flex h-dvh flex-col items-center justify-center gap-4 bg-app p-6 text-ink">
-    <p className="max-w-lg text-[14px]">{restartRequired ? t("backup.restart") : t("backup.recovering")}</p>
-    {error && <p role="alert" className="max-w-lg break-words text-[13px] text-danger">{error}</p>}
-    {(error || restartRequired) && <button type="button" className={buttonClass} onClick={() => { setRestartRequired(false); setAttempt((value) => value + 1); }}>{t("connectors.action.retry")}</button>}
-    {error && <>
-      <p className="max-w-lg text-[13px] text-ink-secondary">{t("backup.skipDraftsHint")}</p>
-      <button type="button" className="rounded-lg border border-hairline/50 bg-control px-3 py-2 text-[13px] font-medium text-ink" onClick={continueWithoutDrafts}>{t("backup.skipDrafts")}</button>
-    </>}
-  </main>;
+  // A gate, not a page: it blocks the whole app until this browser has
+  // recovered its own drafts. The sky is still the ground, and the card is the
+  // one place that needs to read as on top of it.
+  return <div className="relative flex h-dvh flex-col items-center justify-center p-6 text-ink">
+    <AsciiSky />
+    <GlassSheet className="relative flex w-full max-w-lg flex-col gap-4 p-6">
+      <h1 className="text-[20px] font-semibold tracking-[-0.015em]">{t("backup.recoveryTitle")}</h1>
+      <p className="text-[14px]">{restartRequired ? t("backup.restart") : t("backup.recovering")}</p>
+      {error && <p role="alert" className="break-words text-[13px] text-danger">{error}</p>}
+      {(error || restartRequired) && <button type="button" className={buttonClass} onClick={() => { setRestartRequired(false); setAttempt((value) => value + 1); }}>{t("connectors.action.retry")}</button>}
+      {error && <>
+        <p className="text-[13px] text-ink-secondary">{t("backup.skipDraftsHint")}</p>
+        <button type="button" className="rounded-lg border border-hairline/50 bg-control px-3 py-2 text-[13px] font-medium text-ink" onClick={continueWithoutDrafts}>{t("backup.skipDrafts")}</button>
+      </>}
+    </GlassSheet>
+  </div>;
 }

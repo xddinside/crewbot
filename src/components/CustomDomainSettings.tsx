@@ -39,7 +39,7 @@ export function CustomDomainDnsRecord({ domain, serverIpv4 }: { domain: string; 
     [t("settings.domain.recordValue"), serverIpv4],
   ] as const;
   return (
-    <section aria-label={t("settings.domain.dnsRecord")} className="space-y-2 rounded-lg border border-hairline/50 p-3">
+    <section aria-label={t("settings.domain.dnsRecord")} className="space-y-2 rounded-xl bg-inset/60 p-3 ring-1 ring-hairline/40">
       <p className="text-[12px] font-medium text-ink">{t("settings.domain.dnsRecord")}</p>
       <dl className="space-y-2">
         {rows.map(([label, value]) => (
@@ -74,13 +74,13 @@ export function customDomainProxyExample(status: Pick<CustomDomainStatus, "appPo
 
 export function CustomDomainGuide({ status }: { status: CustomDomainStatus }) {
   return (
-    <details className="rounded-lg border border-hairline/50 bg-inset px-3 py-2.5 text-[12px] text-ink-secondary">
+    <details className="rounded-xl bg-inset/60 px-3 py-2.5 text-[12px] text-ink-secondary ring-1 ring-hairline/40">
       <summary className="cursor-pointer font-medium text-ink">{t("settings.domain.guide")}</summary>
       <ol className="mt-3 list-decimal space-y-3 pl-4 leading-relaxed">
         <li>{t("settings.domain.dns")}</li>
         <li>
           {t("settings.domain.proxy")}
-          <pre className="mt-2 overflow-x-auto rounded-md bg-app p-3 text-[11px] leading-relaxed text-ink"><code>{customDomainProxyExample(status)}</code></pre>
+          <pre className="mt-2 overflow-x-auto rounded-lg bg-control/70 p-3 text-[11px] leading-relaxed text-ink"><code>{customDomainProxyExample(status)}</code></pre>
           <p className="mt-2">{t("settings.domain.proxyHint")}</p>
         </li>
         <li>{t("settings.domain.verifyHint")}</li>
@@ -143,15 +143,15 @@ export function CustomDomainSettings() {
           <>
             <form onSubmit={(event) => { event.preventDefault(); if (domain.trim() && !busy) void save(false); }} className="space-y-2">
               <label htmlFor="custom-domain" className="block text-[13px] font-medium text-ink">{t("settings.domain.label")}</label>
-              <input id="custom-domain" type="text" value={domain} disabled={busy !== null} onChange={(event) => { setDomain(event.target.value); setNotice(null); setError(null); }} placeholder="bots.yourcompany.com" autoCapitalize="none" autoCorrect="off" spellCheck={false} className="w-full rounded-lg border border-hairline/50 bg-inset px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary focus:border-accent focus:outline-none disabled:opacity-50" />
+              <input id="custom-domain" type="text" value={domain} disabled={busy !== null} onChange={(event) => { setDomain(event.target.value); setNotice(null); setError(null); }} placeholder="bots.yourcompany.com" autoCapitalize="none" autoCorrect="off" spellCheck={false} className="w-full rounded-lg border border-hairline/50 bg-inset px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary focus:border-focus focus:outline-none disabled:opacity-50" />
               <CustomDomainDnsRecord domain={domain} serverIpv4={status.serverIpv4} />
               <p className="text-[11.5px] leading-relaxed text-ink-secondary">{t("settings.domain.httpsNeeded")}</p>
               <div className="flex flex-wrap gap-2 pt-1">
-                <button type="submit" disabled={!domain.trim() || busy !== null} className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-white hover:brightness-110 disabled:opacity-50">
+                <button type="submit" disabled={!domain.trim() || busy !== null} className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50">
                   {busy === "saving" ? <Loader2 size={14} className="animate-spin" /> : <Globe size={14} />}
                   {busy === "saving" ? t("settings.domain.verifying") : t("settings.domain.verify")}
                 </button>
-                {status.customDomain && <button type="button" disabled={busy !== null} onClick={() => void save(true)} className="rounded-lg bg-control px-3 py-2 text-[12px] font-medium text-ink hover:bg-raised-hover disabled:opacity-50">{busy === "removing" ? t("settings.domain.removing") : t("settings.domain.remove")}</button>}
+                {status.customDomain && <button type="button" disabled={busy !== null} onClick={() => void save(true)} className="ui-button disabled:opacity-50">{busy === "removing" ? t("settings.domain.removing") : t("settings.domain.remove")}</button>}
               </div>
             </form>
             {status.publicUrl && <p className="break-all text-[11.5px] text-ink-secondary">{t("settings.domain.current")}: <span className="text-ink">{status.publicUrl}</span></p>}

@@ -84,7 +84,7 @@ export function OrganizationSettings() {
       {connection?.status === "signed-out" && <div className="flex flex-col gap-3">
         <p className="text-[13px] text-ink-secondary">{t("organization.signInHelp")}</p>
         <button type="button" disabled={busy} onClick={() => void perform(() => bridge.begin({ portalOrigin: DEFAULT_PORTAL_ORIGIN }))}
-          className="w-fit rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-50">{busy ? t("organization.working") : t("organization.signIn")}</button>
+          className="w-fit rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50">{busy ? t("organization.working") : t("organization.signIn")}</button>
         <details className="text-[12px] text-ink-secondary">
           <summary className="w-fit cursor-pointer hover:text-ink">{t("organization.advanced")}</summary>
           <form className="mt-2 flex flex-col gap-2" onSubmit={(event) => {
@@ -95,7 +95,7 @@ export function OrganizationSettings() {
             <label className="flex flex-col gap-1.5">{t("organization.address")}
               <input type="url" required value={address} disabled={busy} onChange={(event) => setAddress(event.target.value)}
                 placeholder={DEFAULT_PORTAL_ORIGIN} autoCapitalize="none" autoCorrect="off" autoComplete="off" spellCheck={false} maxLength={2048}
-                className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-accent/50" />
+                className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-focus" />
             </label>
             <button type="submit" disabled={busy || !address.trim()} className="ui-button w-fit">{t("organization.customSignIn")}</button>
           </form>
@@ -122,7 +122,7 @@ export function OrganizationSettings() {
               <span className="text-ink-secondary">{provider.configured ? t("organization.modelCount", { count: provider.models.length }) : t("organization.notConfigured")}</span>
             </li>)}</ul> : <p className="text-[13px] text-ink-secondary">{t("organization.noModels")}</p>}
         </> : null}
-        {confirmDisconnect ? <div role="group" aria-label={t("organization.disconnectTitle")} className="rounded-lg border border-hairline/40 p-3">
+        {confirmDisconnect ? <div role="group" aria-label={t("organization.disconnectTitle")} className="rounded-xl bg-inset/60 p-3 ring-1 ring-hairline/40">
           <p className="text-[13px] text-ink">{t("organization.disconnectWarning")}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" autoFocus disabled={busy} className="ui-button" onClick={() => setConfirmDisconnect(false)}>{t("organization.keepConnection")}</button>

@@ -33,6 +33,7 @@ import { PhoneBeat } from "./beats/PhoneBeat";
 import { QuietButton } from "./beats/shared";
 import { withViewTransition } from "./view-transition";
 import { ProgressDots } from "./ProgressDots";
+import { Stepper } from "./Stepper";
 import { FeatureReel } from "./reel/FeatureReel";
 
 /** The guide's resting face per beat; beats may override it as they learn
@@ -45,6 +46,11 @@ const MASCOT_FOR_BEAT: Record<BeatId, MausState> = {
   phone: "sending",
   bot: "celebrate",
 };
+
+/** The rail's name for a beat. Short on purpose: five of them sit in one row. */
+function beatStepLabel(beat: BeatId): string {
+  return t(`onboarding.step.${beat}`);
+}
 
 function beatTitle(beat: BeatId): string | null {
   switch (beat) {
@@ -198,6 +204,10 @@ export function WelcomeFlow({
 
   const hello = beat === "hello";
   const title = beatTitle(beat);
+  // A rail of names only fits a handful of steps. The feature reel alone can
+  // make a seven-beat flow, and words squeezed into that would be worse than
+  // the dots that were here.
+  const namedSteps = beats.length <= 5;
   const logo = hello ? brand().logo : undefined;
   const beatProps = { onNext: advance, onSkip: advance, setMascot, bump };
   const current = beats.indexOf(beat) + 1;
@@ -205,10 +215,18 @@ export function WelcomeFlow({
   return (
     <div
       className={cn(
-        "flex items-center justify-center bg-app p-3 sm:p-8",
+        "flex flex-col items-center justify-center gap-4 p-3 sm:p-8",
         embedded ? "relative h-full w-full" : "fixed inset-0 z-50",
       )}
     >
+      {namedSteps && (
+        <Stepper
+          steps={beats.map(beatStepLabel)}
+          index={current - 1}
+          label={t("onboarding.stepper")}
+          className="max-w-full"
+        />
+      )}
       <div
         ref={cardRef}
         role="dialog"
@@ -216,7 +234,7 @@ export function WelcomeFlow({
         aria-label={t("onboarding.dialog")}
         tabIndex={-1}
         onKeyDown={onKeyDown}
-        className="welcome-card relative flex max-h-full w-full flex-col overflow-y-auto rounded-2xl border border-hairline/40 bg-panel p-5 sm:p-8 shadow-[0_30px_80px_-28px_rgba(0,0,0,0.45),0_8px_24px_-12px_rgba(0,0,0,0.25)] outline-none"
+        className="welcome-card glass-sheet relative flex max-h-full w-full flex-col overflow-y-auto p-5 outline-none sm:p-8"
         style={{ maxWidth: beatWidth(beat) }}
       >
         <QuietButton onClick={() => void finish("skipped")} className="absolute right-4 top-4">
