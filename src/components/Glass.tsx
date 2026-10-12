@@ -12,7 +12,7 @@
 // measure them. These components are thin on purpose: a class name, an
 // element, the props.
 
-import type { HTMLAttributes, ReactNode, Ref } from "react";
+import { useEffect, useRef, type HTMLAttributes, type ReactNode, type Ref, type RefObject } from "react";
 import { cn } from "@/lib/cn";
 
 /** The shape of each glass surface. `blur` is the backdrop radius, `radius`
@@ -89,4 +89,61 @@ export function GlassPopover({ className, as: Element = "div", ...rest }: GlassB
  */
 export function GlassSheet({ className, as: Element = "div", ...rest }: GlassBaseProps) {
   return <Element {...(glassProps<HTMLDivElement>({ shape: "sheet", className, ...rest }) as HTMLAttributes<HTMLElement>)} />;
+}
+
+/**
+ * A sheet owns its focus while it is open: focus lands on the first control
+ * (or whatever carries `data-initial-focus`), Tab and Shift+Tab walk the
+ * sheet without escaping it, Escape closes it, and the element that opened it
+ * gets focus back on the way out.
+ *
+ * This lives next to the primitive because there is otherwise one copy of
+ * these twenty lines per sheet, and the copies drift — one of them forgets
+ * Shift+Tab, another never restores focus.
+ */
+export function useSheetFocus(sheet: RefObject<HTMLElement | null>, onClose: () => void) {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const node = sheet.current;
+    if (!node) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusable = () =>
+      Array.from(
+        node.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => !element.hasAttribute("hidden"));
+    (node.querySelector<HTMLElement>("[data-initial-focus]") ?? focusable()[0] ?? node).focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const controls = focusable();
+      if (controls.length === 0) {
+        event.preventDefault();
+        node.focus();
+        return;
+      }
+      const first = controls[0]!;
+      const last = controls[controls.length - 1]!;
+      if (event.shiftKey && (document.activeElement === first || !node.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    node.addEventListener("keydown", onKeyDown);
+    return () => {
+      node.removeEventListener("keydown", onKeyDown);
+      if (previous?.getClientRects().length) previous.focus();
+    };
+  }, [sheet]);
 }

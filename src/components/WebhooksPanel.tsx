@@ -7,20 +7,24 @@ import {
   ExternalLink,
   Laptop,
   Loader2,
-  MoreHorizontal,
-  Pause,
   Play,
   Plus,
   RotateCw,
   Send,
-  Trash2,
   Webhook,
   X,
 } from "lucide-react";
 
 import { BotAvatar } from "@/components/Avatar";
-import { GlassCard, GlassSheet } from "@/components/Glass";
+import { GlassCard, GlassSheet, useSheetFocus } from "@/components/Glass";
+import {
+  webhookDeliveries,
+  webhookOutcome,
+  webhookStateView,
+  webhookVerificationBanner,
+} from "@/lib/apps-tools-view";
 import { cn } from "@/lib/cn";
+import { t } from "@/lib/i18n";
 import type { RoutineRun, RoutineRunOn } from "@/lib/routines";
 import {
   loadWebhookCredentials,
@@ -28,8 +32,25 @@ import {
   saveWebhookCredential,
   webhookCredentialStore,
 } from "@/lib/webhook-credentials";
-import { webhookActivationDefaults, type WebhookAttempt, type WebhookCredential, type WebhookTrigger, type WebhookTriggerInput } from "@/lib/webhooks";
+import { webhookActivationDefaults, type WebhookCredential, type WebhookTrigger, type WebhookTriggerInput } from "@/lib/webhooks";
 import { api, useStore, type Bot } from "@/state/store";
+
+/** One ink per state, shared by the rail and the delivery rows, so a webhook
+ *  cannot read amber in the list and grey in the log. */
+const TONE_TEXT = {
+  danger: "text-danger",
+  attention: "text-accent",
+  warning: "text-warning",
+  connected: "text-success",
+  muted: "text-ink-secondary",
+} as const;
+
+const DELIVERY_DOT = {
+  danger: "bg-danger",
+  attention: "animate-pulse bg-accent",
+  connected: "bg-success",
+  muted: "bg-ink-secondary/50",
+} as const;
 
 function relativeTime(at?: number) {
   if (!at) return "Never";
@@ -53,28 +74,8 @@ function suggestedName(prompt: string, bot?: Bot) {
   return first || `${bot?.name ?? "MAUS"} webhook`;
 }
 
-function statusFor(webhook: WebhookTrigger) {
-  if (webhook.verificationPending) return { label: "Waiting for test", tone: "text-accent", dot: "bg-accent animate-pulse" };
-  if (webhook.verifiedAt && !webhook.enabled) return { label: "Ready to enable", tone: "text-warning", dot: "bg-warning" };
-  if (webhook.enabled) return { label: "Active", tone: "text-success", dot: "bg-success" };
-  return { label: "Paused", tone: "text-ink-secondary", dot: "bg-ink-secondary/50" };
-}
 
-function outcomeTone(outcome: WebhookAttempt["outcome"], run?: RoutineRun) {
-  if (outcome === "rejected" || run?.status === "failed" || run?.status === "missed") return "text-danger";
-  if (run && ["queued", "running", "waiting"].includes(run.status)) return "text-accent";
-  if (run?.status === "completed" || outcome === "captured" || outcome === "accepted") return "text-success";
-  return "text-ink-secondary";
-}
 
-function outcomeLabel(outcome: WebhookAttempt["outcome"], run?: RoutineRun) {
-  if (run) return run.status === "waiting" ? "Needs you" : run.status[0]!.toUpperCase() + run.status.slice(1);
-  if (outcome === "captured") return "Test received";
-  if (outcome === "duplicate") return "Duplicate";
-  if (outcome === "ignored") return "Ignored";
-  if (outcome === "rejected") return "Rejected";
-  return "Accepted";
-}
 
 function terminalCommand(credential: WebhookCredential) {
   return `curl -sS '${credential.url}' --json '{"task":"A customer wrote: This app saved me hours. Write a short thank-you reply."}'`;
@@ -90,46 +91,10 @@ function WebhookEditor({ webhook, bots, onClose, onCredential }: { webhook?: Web
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const dialogRef = useRef<HTMLDivElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
   const cloudInstance = state.instances.find((instance) => instance.driverKind === "boxAgent");
   const cloudReady = Boolean(state.config?.box.configured && cloudInstance?.snapshot.state === "available");
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    )).filter((element) => !element.hasAttribute("hidden"));
-    (dialog.querySelector<HTMLElement>("[data-initial-focus]") ?? focusable()[0] ?? dialog).focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        onCloseRef.current();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const controls = focusable();
-      if (!controls.length) return event.preventDefault();
-      const first = controls[0]!;
-      const last = controls[controls.length - 1]!;
-      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    dialog.addEventListener("keydown", onKey);
-    return () => {
-      dialog.removeEventListener("keydown", onKey);
-      if (previousFocus?.getClientRects().length) previousFocus.focus();
-      else document.querySelector<HTMLElement>('button[aria-label="Create a webhook"]')?.focus();
-    };
-  }, []);
+  useSheetFocus(dialogRef, onClose);
 
   const save = async () => {
     const bot = bots.find((candidate) => candidate.id === botId);
@@ -172,8 +137,6 @@ function WebhookEditor({ webhook, bots, onClose, onCredential }: { webhook?: Web
   );
 }
 
-interface ActivityItem { id: string; at: number; outcome: WebhookAttempt["outcome"]; eventName: string; preview: string; reason?: string; run?: RoutineRun }
-
 /** A destination-first webhook view: choose a MAUS endpoint on the left, then
  * either copy its setup command or inspect its deliveries on the right. */
 export function WebhooksPanel({
@@ -211,28 +174,16 @@ export function WebhooksPanel({
 
   const selected = state.webhooks.find((webhook) => webhook.id === selectedId) ?? null;
   const selectedBot = selected ? bots.find((bot) => bot.id === selected.botId) : undefined;
-  const attemptsByRun = useMemo(() => new Set(state.webhookAttempts.map((attempt) => attempt.runId).filter(Boolean)), [state.webhookAttempts]);
-  const activity = useMemo<ActivityItem[]>(() => {
+  const activity = useMemo(() => {
     if (!selected) return [];
-    const attempts = state.webhookAttempts
-      .filter((attempt) => attempt.webhookId === selected.id)
-      .map((attempt) => ({
-        id: attempt.id,
-        at: attempt.receivedAt,
-        outcome: attempt.outcome,
-        eventName: attempt.eventName || (attempt.outcome === "rejected" ? "Rejected request" : "Webhook event"),
-        preview: attempt.preview || "",
-        reason: attempt.reason,
-        run: attempt.runId ? runById.get(attempt.runId) : undefined,
-      }));
-    const legacy = state.routineRuns
-      .filter((run) => run.webhookId === selected.id && !attemptsByRun.has(run.id))
-      .map((run) => {
-        const summary = deliverySummary(run);
-        return { id: run.id, at: run.scheduledFor, outcome: "accepted" as const, eventName: summary.eventName, preview: summary.preview, run };
-      });
-    return [...attempts, ...legacy].sort((a, b) => b.at - a.at).slice(0, 30);
-  }, [attemptsByRun, runById, selected, state.routineRuns, state.webhookAttempts]);
+    return webhookDeliveries({
+      attempts: state.webhookAttempts,
+      runs: state.routineRuns,
+      webhookId: selected.id,
+      runById,
+      legacySummary: deliverySummary,
+    });
+  }, [runById, selected, state.routineRuns, state.webhookAttempts]);
 
   const invoke = async (webhook: WebhookTrigger, action: "toggle" | "delete") => {
     setWorking(`${webhook.id}:${action}`);
@@ -288,6 +239,7 @@ export function WebhooksPanel({
   const ingress = state.webhookIngress;
   const credential = selected ? credentials[selected.id] : undefined;
   const command = credential ? terminalCommand(credential) : "";
+  const verification = selected ? webhookVerificationBanner(selected) : null;
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
@@ -313,13 +265,13 @@ export function WebhooksPanel({
               <nav className="flex gap-1 overflow-x-auto md:block md:space-y-1 md:overflow-visible">
                 {state.webhooks.map((webhook) => {
                   const bot = bots.find((candidate) => candidate.id === webhook.botId);
-                  const status = statusFor(webhook);
+                  const status = webhookStateView(webhook);
                   return (
                     <button key={webhook.id} onClick={() => { setSelectedId(webhook.id); setTab("setup"); setError(""); }} className={cn("flex min-w-[210px] items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left transition-colors md:w-full md:min-w-0", webhook.id === selected.id ? "bg-accent/10 text-accent ring-1 ring-accent/30" : "text-ink-secondary hover:bg-raised/50 hover:text-ink")}>
                       {bot ? <BotAvatar bot={bot} state={webhook.enabled ? "idle" : "sleeping"} size={36} animated={false} label={bot.name} /> : <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-raised text-ink-secondary"><Webhook size={16} /></div>}
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[12.5px] font-medium">{webhook.name}</span>
-                        <span className="mt-0.5 flex items-center gap-1.5 text-[10px]"><span className={cn("size-1.5 rounded-full", status.dot)} /><span className={status.tone}>{status.label}</span></span>
+                        <span className="mt-0.5 flex items-center gap-1.5 text-[10px]"><span className={cn("size-1.5 shrink-0 rounded-full", status.dot)} /><span className={cn("truncate", TONE_TEXT[status.tone])}>{t(status.labelKey)}</span></span>
                       </span>
                     </button>
                   );
@@ -331,21 +283,26 @@ export function WebhooksPanel({
         <section className="min-w-0">
               <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-5 md:px-7 md:pt-6">
                 <div className="flex min-w-0 items-center gap-3">
-                  {selectedBot ? <BotAvatar bot={selectedBot} state={selected.enabled ? "idle" : "sleeping"} size={44} animated={false} label={selectedBot.name} /> : <div className="flex size-11 items-center justify-center rounded-xl bg-raised text-ink-secondary"><Webhook size={18} /></div>}
+                  {selectedBot ? <BotAvatar bot={selectedBot} state={selected.enabled ? "idle" : "sleeping"} size={44} animated={false} label={selectedBot.name} /> : <div aria-hidden="true" className="flex size-11 items-center justify-center rounded-xl border border-hairline/40 text-ink-secondary"><Webhook size={18} /></div>}
                   <div className="min-w-0">
-                    <h3 className="truncate text-[17px] font-semibold text-ink">{selected.name}</h3>
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10.5px] text-ink-secondary"><span>{selectedBot?.name ?? "Deleted MAUS"}</span><span>·</span><span>{selected.runOn === "cloud" ? "Cloud VM" : "This computer"}</span></div>
+                    <h3 className="truncate text-[17px] font-semibold tracking-[-0.015em] text-ink">{selected.name}</h3>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-secondary">
+                      <span>{selectedBot?.name ?? "Deleted MAUS"}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{selected.runOn === "cloud" ? "Cloud VM" : "This computer"}</span>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {!selected.verificationPending && <button disabled={Boolean(working)} onClick={() => void invoke(selected, "toggle")} className={cn("flex items-center gap-1.5 rounded-lg px-3 py-2 text-[11.5px] font-medium", selected.enabled ? "bg-raised text-ink-secondary hover:text-ink" : "bg-accent text-white hover:brightness-110")}>{selected.enabled ? <Pause size={13} /> : <Play size={13} />}{selected.enabled ? "Pause" : "Enable"}</button>}
-                  <details className="relative"><summary className="list-none rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink"><MoreHorizontal size={17} /></summary><div className="absolute right-0 top-full z-20 mt-1 w-[180px] rounded-xl border border-hairline/50 bg-card p-1.5 shadow-2xl"><button onClick={() => setEditor(selected)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] text-ink hover:bg-raised">Edit settings</button><button onClick={() => void invoke(selected, "delete")} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] text-danger hover:bg-danger/10"><Trash2 size={13} />Delete</button></div></details>
+                {/* Setup and Activity are two views of one endpoint, so they are
+                    one segmented pill in the header rather than an underline
+                    row that pushes the content down. */}
+                <div className="flex shrink-0 items-center gap-0.5 rounded-full bg-raised/60 p-1" role="tablist" aria-label="Webhook views">
+                  <button role="tab" aria-selected={tab === "setup"} onClick={() => setTab("setup")} className={cn("rounded-full px-3.5 py-1.5 text-[12.5px] font-medium transition-colors motion-reduce:transition-none", tab === "setup" ? "bg-accent text-[var(--color-accent-ink)]" : "text-ink-secondary hover:text-ink")}>Setup</button>
+                  <button role="tab" aria-selected={tab === "activity"} onClick={() => setTab("activity")} className={cn("flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-medium transition-colors motion-reduce:transition-none", tab === "activity" ? "bg-accent text-[var(--color-accent-ink)]" : "text-ink-secondary hover:text-ink")}>
+                    Activity
+                    {activity.length > 0 && <span className="rounded-full bg-raised px-1.5 py-0.5 text-[9.5px] tabular-nums text-ink-secondary">{activity.length}</span>}
+                  </button>
                 </div>
-              </div>
-
-              <div className="mt-5 flex gap-5 border-b border-hairline/35 px-5 md:px-7">
-                <button onClick={() => setTab("setup")} className={cn("border-b-2 px-0.5 pb-3 text-[12px] font-medium", tab === "setup" ? "border-accent text-ink" : "border-transparent text-ink-secondary hover:text-ink")}>Setup</button>
-                <button onClick={() => setTab("activity")} className={cn("flex items-center gap-1.5 border-b-2 px-0.5 pb-3 text-[12px] font-medium", tab === "activity" ? "border-accent text-ink" : "border-transparent text-ink-secondary hover:text-ink")}>Activity{activity.length > 0 && <span className="rounded-full bg-raised px-1.5 py-0.5 text-[9px] tabular-nums text-ink-secondary">{activity.length}</span>}</button>
               </div>
 
               {tab === "setup" ? (
@@ -353,11 +310,28 @@ export function WebhooksPanel({
                   <div className="max-w-[720px]">
                     <h4 className="text-[14px] font-semibold text-ink">Send a task</h4>
                     <p className="mt-1 text-[11.5px] leading-relaxed text-ink-secondary">Copy this command into Terminal and press Return. It starts a real task in {selectedBot?.name ?? "this MAUS"}&apos;s chat; edit the task text for whatever you want done.</p>
-                    {credential ? (
-                      <div className="mt-4 overflow-hidden rounded-xl border border-hairline/45 bg-inset">
-                        <div className="flex items-center justify-between border-b border-hairline/45 px-3.5 py-2"><span className="text-[9.5px] font-medium uppercase tracking-wider text-ink-secondary">Terminal</span><div className="flex items-center gap-1"><button onClick={() => void createAndCopyCommand(selected)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10.5px] font-medium text-ink-secondary hover:bg-raised hover:text-ink">{copiedId === selected.id ? <Check size={12} className="text-success" /> : <Copy size={12} />}{copiedId === selected.id ? "Copied" : "Copy command"}</button><button onClick={() => void createAndCopyCommand(selected, true)} className="rounded-lg p-1.5 text-ink-secondary hover:bg-raised hover:text-ink" title="Rotate private URL"><RotateCw size={12} /></button></div></div>
-                        <pre className="overflow-x-auto p-4 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all text-ink-secondary">{command}</pre>
+                    {verification && (
+                      /* The store refuses to enable an unverified webhook, so
+                         this is where that refusal is said out loud instead of
+                         at the moment a button quietly does nothing. */
+                      <div className={cn("mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-3.5 py-3", verification.tone === "warning" ? "border-warning/30 bg-warning/10" : "border-success/30 bg-success/10")}>
+                        <div className="min-w-0">
+                          <div className={cn("flex items-center gap-2 text-[11.5px] font-medium", verification.tone === "warning" ? "text-warning" : "text-success")}>
+                            {verification.tone === "warning" ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                            {t(verification.labelKey)}
+                          </div>
+                          {verification.sample && <p className="mt-1 max-w-[520px] truncate font-mono text-[10.5px] text-ink-secondary">{verification.sample}</p>}
+                        </div>
+                        {verification.canEnable && (
+                          <button disabled={Boolean(working)} onClick={() => void invoke(selected, "toggle")} className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-[11.5px] font-medium text-[var(--color-accent-ink)] transition hover:brightness-110 disabled:opacity-40"><Play size={12} />Turn on</button>
+                        )}
                       </div>
+                    )}
+                    {credential ? (
+                      <GlassCard className="mt-4 overflow-hidden p-0">
+                        <div className="flex items-center justify-between border-b border-hairline/35 px-3.5 py-2"><span className="text-[9.5px] font-medium uppercase tracking-wider text-ink-secondary">Terminal</span><div className="flex items-center gap-1"><button onClick={() => void createAndCopyCommand(selected)} className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10.5px] font-medium text-ink-secondary transition-colors hover:bg-raised/60 hover:text-ink">{copiedId === selected.id ? <Check size={12} className="text-success" /> : <Copy size={12} />}{copiedId === selected.id ? "Copied" : "Copy command"}</button><button onClick={() => void createAndCopyCommand(selected, true)} className="rounded-full p-1.5 text-ink-secondary transition-colors hover:bg-raised/60 hover:text-ink" title="Rotate private URL" aria-label="Rotate private URL"><RotateCw size={12} /></button></div></div>
+                        <pre className="overflow-x-auto p-4 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all text-ink-secondary">{command}</pre>
+                      </GlassCard>
                     ) : (
                       <div className="mt-4">
                         <p className="max-w-[560px] text-[10.5px] leading-relaxed text-ink-secondary">The private URL is shown once. Generate a replacement to copy your webhook command; any older command for this webhook will stop working.</p>
@@ -366,27 +340,47 @@ export function WebhooksPanel({
                     )}
                     <div className="mt-3 flex items-start gap-2 text-[10.5px] leading-relaxed text-ink-secondary"><Laptop size={12} className="mt-0.5 shrink-0" /><span>Keep crewbot open so it can receive requests.</span></div>
 
-                    {selected.verificationSample && !selected.enabled && <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-y border-success/20 bg-success/5 px-3.5 py-3"><div><div className="flex items-center gap-2 text-[11.5px] font-medium text-success"><Check size={13} />Request received</div><p className="mt-1 max-w-[520px] truncate font-mono text-[10px] text-ink-secondary">{selected.verificationSample.preview || "Empty payload"}</p></div><button disabled={Boolean(working)} onClick={() => void invoke(selected, "toggle")} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[11px] font-medium text-white hover:brightness-110"><Play size={12} />Turn on</button></div>}
 
-                    <div className="mt-7 border-t border-hairline/35 pt-5">
-                      <div className="grid gap-4 text-[11.5px] sm:grid-cols-2"><div><div className="text-[10px] uppercase tracking-wider text-ink-secondary">Tasks go to</div><div className="mt-1.5 font-medium text-ink">{selectedBot?.name ?? "Deleted MAUS"}</div></div><div><div className="text-[10px] uppercase tracking-wider text-ink-secondary">Runs on</div><div className="mt-1.5 font-medium text-ink">{selected.runOn === "cloud" ? "Cloud VM" : "This computer"}</div></div></div>
+                    <div className="mt-6 grid gap-4 text-[11.5px] sm:grid-cols-2">
+                      <div><div className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-secondary">Tasks go to</div><div className="mt-1.5 font-medium text-ink">{selectedBot?.name ?? "Deleted MAUS"}</div></div>
+                      <div><div className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-secondary">Runs on</div><div className="mt-1.5 font-medium text-ink">{selected.runOn === "cloud" ? "Cloud VM" : "This computer"}</div></div>
+                      <div><div className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-secondary">Event filter</div><div className="mt-1.5 font-medium text-ink">{selected.eventTypes?.length ? selected.eventTypes.join(", ") : "All events"}</div></div>
+                      <div><div className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-secondary">Deliveries</div><div className="mt-1.5 font-medium text-ink">{selected.deliveryCount}</div></div>
                     </div>
 
-                    <details className="group mt-5 border-t border-hairline/35 pt-4"><summary className="flex cursor-pointer list-none items-center justify-between text-[11.5px] font-medium text-ink"><span>Advanced</span><ChevronDown size={14} className="text-ink-secondary transition-transform group-open:rotate-180" /></summary><div className="mt-4 space-y-3 text-[10.5px] leading-relaxed text-ink-secondary">{selected.prompt ? <p><span className="font-medium text-ink">Default instruction:</span> {selected.prompt}</p> : <p>The task or message sent with each request becomes the MAUS instruction.</p>}{selected.eventTypes?.length ? <p><span className="font-medium text-ink">Accepted events:</span> {selected.eventTypes.join(", ")}</p> : <p>All event types are accepted.</p>}<button onClick={() => setEditor(selected)} className="rounded-lg border border-hairline/50 px-3 py-2 text-[11px] font-medium text-ink hover:bg-raised">Edit settings</button></div></details>
+                    <details className="group mt-5 border-t border-hairline/35 pt-4"><summary className="flex cursor-pointer list-none items-center justify-between text-[11.5px] font-medium text-ink"><span>Advanced</span><ChevronDown size={14} className="text-ink-secondary transition-transform group-open:rotate-180" /></summary><div className="mt-4 space-y-3 text-[10.5px] leading-relaxed text-ink-secondary">{selected.prompt ? <p><span className="font-medium text-ink">Default instruction:</span> {selected.prompt}</p> : <p>The task or message sent with each request becomes the MAUS instruction.</p>}{selected.eventTypes?.length ? <p><span className="font-medium text-ink">Accepted events:</span> {selected.eventTypes.join(", ")}</p> : <p>All event types are accepted.</p>}<p>Copying the command is all this does. It never opens a terminal, and the private URL belongs to this workspace alone.</p></div></details>
+
+                    {/* Every action on this endpoint, in one row. The mockup puts
+                        them here rather than behind a header ellipsis, and this
+                        is the one place each of them appears. */}
+                    <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-hairline/35 pt-4 text-[12.5px]">
+                      <button onClick={() => void createAndCopyCommand(selected)} className="inline-flex items-center gap-1.5 font-medium text-accent transition-opacity hover:opacity-80">{copiedId === selected.id ? <Check size={13} className="text-success" /> : <Copy size={13} />}{copiedId === selected.id ? "Copied" : "Copy setup command"}</button>
+                      <button onClick={() => setEditor(selected)} className="font-medium text-ink-secondary transition-colors hover:text-ink">Edit</button>
+                      {!selected.verificationPending && (
+                        <button disabled={Boolean(working)} onClick={() => void invoke(selected, "toggle")} className="font-medium text-ink-secondary transition-colors hover:text-ink disabled:opacity-40">{selected.enabled ? "Pause" : "Enable"}</button>
+                      )}
+                      <button disabled={Boolean(working)} onClick={() => void invoke(selected, "delete")} className="ml-auto font-medium text-danger transition-opacity hover:opacity-80 disabled:opacity-40">Delete</button>
+                    </div>
                   </div>
                 </div>
               ) : (
                 <div className="px-5 py-5 md:px-7">
                   <div className="mb-3"><h4 className="text-[13px] font-semibold text-ink">Recent deliveries</h4><p className="mt-1 text-[10.5px] text-ink-secondary">Accepted and rejected requests update automatically.</p></div>
-                  <div className="border-t border-hairline/35">
-                    {activity.length === 0 ? <div className="px-2 py-12 text-center text-[11.5px] text-ink-secondary">No requests yet. Use the command in Setup to send one.</div> : activity.map((item) => (
-                      <div key={item.id} className="flex items-center gap-2.5 border-b border-hairline/25 px-1 py-3.5">
-                        <span className={cn("size-2 shrink-0 rounded-full", item.outcome === "rejected" || item.run?.status === "failed" ? "bg-danger" : item.run && ["queued", "running", "waiting"].includes(item.run.status) ? "animate-pulse bg-accent" : item.outcome === "ignored" || item.outcome === "duplicate" ? "bg-ink-secondary/50" : "bg-success")} />
-                        <div className="min-w-0 flex-1"><div className="flex items-center gap-1.5 text-[11.5px]"><span className="truncate font-medium text-ink">{item.eventName}</span><span className="shrink-0 text-ink-secondary">· {relativeTime(item.at)}</span></div><div className="mt-0.5 truncate font-mono text-[10px] text-ink-secondary/85">{item.reason || item.preview || "Empty payload"}</div></div>
-                        <span className={cn("shrink-0 text-[10px] font-medium", outcomeTone(item.outcome, item.run))}>{outcomeLabel(item.outcome, item.run)}</span>
-                        {item.run?.threadId && selectedBot && <button onClick={() => { dispatch({ type: "select", id: selectedBot.id }); dispatch({ type: "switchTask", botId: selectedBot.id, threadId: item.run!.threadId! }); }} className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[10.5px] text-ink-secondary hover:bg-raised hover:text-ink" title="Open this execution in the MAUS chat"><ExternalLink size={11} />Open chat</button>}
-                      </div>
-                    ))}
+                  <div className="space-y-2">
+                    {activity.length === 0 ? <div className="py-12 text-center text-[11.5px] text-ink-secondary">No requests yet. Use the command in Setup to send one.</div> : activity.map((item) => {
+                      const outcome = webhookOutcome(item.outcome, item.run);
+                      return (
+                        <GlassCard key={item.id} className="flex items-center gap-3 px-3.5 py-3">
+                          <span className={cn("size-2 shrink-0 rounded-full", DELIVERY_DOT[outcome.tone])} aria-hidden="true" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 text-[12px]"><span className="truncate font-medium text-ink">{item.eventName}</span><span className="shrink-0 text-ink-secondary">· {relativeTime(item.at)}</span></div>
+                            <div className="mt-0.5 truncate font-mono text-[10.5px] text-ink-secondary/85">{item.reason || item.preview || "Empty payload"}</div>
+                          </div>
+                          <span className={cn("shrink-0 text-[11px] font-medium", TONE_TEXT[outcome.tone])}>{t(outcome.labelKey)}</span>
+                          {item.run?.threadId && selectedBot && <button onClick={() => { dispatch({ type: "select", id: selectedBot.id }); dispatch({ type: "switchTask", botId: selectedBot.id, threadId: item.run!.threadId! }); }} className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-raised/60 hover:text-ink" title="Open this execution in the MAUS chat"><ExternalLink size={11} />Open chat</button>}
+                        </GlassCard>
+                      );
+                    })}
                   </div>
                 </div>
               )}

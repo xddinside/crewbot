@@ -2,14 +2,29 @@
 // from /api/connectors/catalog — the full toolkit list with logos when a
 // Composio API key is configured, a curated set otherwise. Icons resolve
 // logo → favicon → monogram.
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Loader2, RefreshCw, Search, TriangleAlert, X } from "lucide-react";
+//
+// This is a page, not a modal. It fills the shell's column under the top bar
+// and stands directly on the sky: the rail, the search box, the segmented
+// pills and every notice are transparent, and the one glass surface is the
+// selected app's detail card — the place work happens. What an app *says* is
+// decided in `lib/apps-tools-view.ts`, so the rail row and the card under it
+// can never disagree.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronRight, ExternalLink, Loader2, Plus, RefreshCw, Search, TriangleAlert, X } from "lucide-react";
 import { api, useStore, type Bot, type InstanceInfo } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
+import {
+  appDetailStatus,
+  appRailSubtitle,
+  resolveApp,
+  type AppLine,
+  type AppResolved,
+} from "@/lib/apps-tools-view";
 import { readCachedInventory, writeCachedInventory } from "@/lib/connected-apps-cache";
 import { managedConnectorUnavailableReason } from "../../shared/connector-availability";
+import { GlassCard } from "@/components/Glass";
 import { McpServersPanel } from "./McpServersPanel";
 
 export interface ToolkitCard {
@@ -144,6 +159,21 @@ export function connectedInventoryCopy(phase: ConnectorInventoryPhase) {
   };
 }
 
+/** An `AppLine` as one string: the app's own words when it had any, otherwise
+ *  the catalog's. Never both, and never an empty line. */
+export function appLineText(line: AppLine): string {
+  if (line.label) return line.label;
+  if (!line.labelKey) return "";
+  return t(line.labelKey, line.params);
+}
+
+const TONE_CHIP: Record<ReturnType<typeof appDetailStatus>["tone"], string> = {
+  connected: "bg-success/12 text-success",
+  attention: "bg-warning/12 text-warning",
+  idle: "bg-raised text-ink-secondary",
+  muted: "bg-raised text-ink-secondary",
+};
+
 export function mergeCurrentConnectorStatus(
   current: Record<string, ConnectorStatus>,
   incoming: Record<string, ConnectorStatus>,
@@ -232,7 +262,7 @@ export function ServiceIcon({ card, className = "size-11" }: { card: Pick<Toolki
 export function PluginsPanel() {
   const { state, dispatch } = useStore();
   const remoteClient = window.ogb?.remoteClient?.active === true;
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
   const surface = state.pluginsSurface;
   const [cards, setCards] = useState<ToolkitCard[] | null>(null);
   const [source, setSource] = useState<"api" | "curated">("curated");
@@ -259,6 +289,9 @@ export function PluginsPanel() {
   const [error, setError] = useState<string | { key: LocaleKey } | null>(null);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"marketplace" | "connected">("marketplace");
+  /** which app's detail card is open. Null means "none chosen yet" — the rail
+   *  still lists everything, and the card area says so rather than guessing. */
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
 
   const pollTimers = useRef(new Map<string, ReturnType<typeof setInterval>>());
   const statusGenerations = useRef(new Map<string, number>());
@@ -378,45 +411,26 @@ export function PluginsPanel() {
   }, [loadConnectionInventory]);
 
   useEffect(() => {
-    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const dialog = dialogRef.current;
+    // A page, so no focus trap: the top bar above it stays reachable, and
+    // trapping Tab inside a full-height view would strand it. Escape still
+    // closes, and the search box still takes the first Tab stop.
+    const page = pageRef.current;
     const focusable = () =>
       Array.from(
-        dialog?.querySelectorAll<HTMLElement>(
+        page?.querySelectorAll<HTMLElement>(
           'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
         ) ?? [],
       );
 
-    (dialog?.querySelector<HTMLElement>("input") ?? focusable()[0] ?? dialog)?.focus();
+    (page?.querySelector<HTMLElement>("input") ?? focusable()[0] ?? page)?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        dispatch({ type: "togglePlugins", open: false });
-        return;
-      }
-      if (event.key !== "Tab" || !dialog) return;
-      const items = focusable();
-      if (items.length === 0) {
-        event.preventDefault();
-        dialog.focus();
-        return;
-      }
-      const first = items[0];
-      const last = items.at(-1)!;
-      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      dispatch({ type: "togglePlugins", open: false });
     };
 
     window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      returnFocus?.focus();
-    };
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [dispatch]);
 
   const openConnectUrl = async (url: string) => {
@@ -501,12 +515,26 @@ export function PluginsPanel() {
       .finally(() => setBusySlug(null));
   };
 
-  const matching = (cards ?? []).filter(
-    (c) => !search || `${c.label} ${c.slug} ${c.blurb}`.toLowerCase().includes(search.toLowerCase()),
-  );
-  const visible = matching.filter((card) =>
-    tab === "marketplace" || status[card.slug]?.connected || Boolean(status[card.slug]?.accounts?.length)
-  );
+  const resolveFor = (card: ToolkitCard): AppResolved =>
+    resolveApp(card, status[card.slug], {
+      busy: busySlug === card.slug,
+      unavailableReason: managedConnectorUnavailableReason(mode, card.slug)
+        ? t("connectors.selfHostOnlyReason")
+        : null,
+      pendingUrl: pendingUrls[card.slug],
+    });
+
+  const visible = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return (cards ?? [])
+      .filter((card) => !needle || `${card.label} ${card.slug} ${card.blurb}`.toLowerCase().includes(needle))
+      .filter((card) =>
+        tab === "marketplace" || status[card.slug]?.connected || Boolean(status[card.slug]?.accounts?.length))
+      .map(resolveFor);
+    // resolveFor reads the live inventory, so the list is rebuilt whenever any
+    // of it changes and the rail row can never hold a stale answer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cards, search, tab, status, busySlug, mode, pendingUrls]);
   const connectedCount = Object.values(status).filter((service) => service.connected || service.accounts?.length).length;
   const connectedEmptyCopy = connectedInventoryCopy(inventoryPhase);
   const close = () => dispatch({ type: "togglePlugins", open: false });
@@ -514,287 +542,392 @@ export function PluginsPanel() {
   const botsWithoutApps = hasUsableConnectedApps(configured, inventoryPhase, stale, status)
     ? botsMissingConnectedApps(state.bots, state.instances)
     : [];
+  // The card follows the rail. A selection the current filter cannot show is
+  // not a dead card; it falls to the top of what is actually listed.
+  const selected = visible.find((app) => app.card.slug === selectedSlug) ?? visible[0] ?? null;
+
+  const primaryAction = (app: AppResolved) => {
+    if (app.unavailableReason) return t("connectors.selfHostOnly");
+    if (app.busy) return null;
+    return connectorActionLabel(inventoryPhase, {
+      busy: app.busy,
+      included: app.included,
+      canContinue: app.canContinue,
+      pending: app.pending,
+      hasAccounts: app.accounts.length > 0,
+      failed: app.failed,
+    });
+  };
+
+  const runPrimaryAction = (app: AppResolved) => {
+    if (app.pending) {
+      if (pendingUrls[app.card.slug]) {
+        setError(null);
+        void openConnectUrl(pendingUrls[app.card.slug]).catch((e) => setError(e.message));
+      } else {
+        setAliasSlug(null);
+        setError(null);
+        void refreshStatus([app.card.slug]);
+        startPolling(app.card.slug);
+      }
+      return;
+    }
+    setAliasSlug((current) => (current === app.card.slug ? null : app.card.slug));
+    setAliasDraft("");
+  };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px] sm:p-6"
-      onMouseDown={(event) => event.target === event.currentTarget && close()}
+      ref={pageRef}
+      data-tour="apps-panel"
+      role="dialog"
+      aria-labelledby="plugins-title"
+      tabIndex={-1}
+      className="flex min-h-0 flex-1 flex-col overflow-hidden outline-none"
     >
-      <div
-        ref={dialogRef}
-        data-tour="apps-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="plugins-title"
-        tabIndex={-1}
-        className="animate-pop-in flex h-[min(780px,calc(100dvh-2rem))] w-full max-w-[1040px] flex-col overflow-hidden rounded-[24px] border border-hairline/50 bg-panel shadow-2xl shadow-black/50"
-      >
-        <header className="flex items-start justify-between gap-4 px-6 pb-3 pt-6 sm:px-8 sm:pt-7">
-          <div>
-            <h2 id="plugins-title" className="text-[22px] font-semibold tracking-[-0.01em] text-ink">{t("connectors.title")}</h2>
-            <p className="mt-1 text-[13px] text-ink-secondary">{t("connectors.subtitle")}</p>
+      {/* The header is the mockup's header, standing on the sky: breadcrumb,
+          title, one line of why, then the two controls. */}
+      <header className="flex items-start justify-between gap-4 px-5 pt-4 sm:px-8 sm:pt-6">
+        <div className="min-w-0">
+          <div className="text-[12px] text-ink-secondary">
+            {t("connectors.crumbTools")} <span aria-hidden="true">/</span>{" "}
+            <span className="text-ink">{t("connectors.crumbApps")}</span>
           </div>
-          <div className="flex items-center gap-1">
-            {surface === "apps" && (
-              <button
-                onClick={() => void loadConnectionInventory(true)}
-                disabled={refreshing}
-                className="rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-50"
-                title={t("connectors.refreshTitle")}
-              >
-                <RefreshCw size={17} className={cn(refreshing && "animate-spin")} />
-              </button>
-            )}
-            <button data-tour="apps-close"
-              onClick={close}
-              aria-label={t("connectors.closeAria")}
-              className="rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink"
+          <h1 id="plugins-title" className="mt-1.5 text-[26px] font-semibold tracking-[-0.02em] text-ink">
+            {t("connectors.heading")}
+          </h1>
+          <p className="mt-1 max-w-[520px] text-[13px] leading-relaxed text-ink-secondary">{t("connectors.subtitle")}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {surface === "apps" && (
+            <button
+              onClick={() => void loadConnectionInventory(true)}
+              disabled={refreshing}
+              className="rounded-lg p-2 text-ink-secondary transition-colors hover:bg-raised/60 hover:text-ink disabled:opacity-50"
+              title={t("connectors.refreshTitle")}
+              aria-label={t("connectors.refreshTitle")}
             >
-              <X size={21} />
+              <RefreshCw size={17} className={cn(refreshing && "animate-spin")} />
             </button>
-          </div>
-        </header>
+          )}
+          <button
+            data-tour="apps-close"
+            onClick={close}
+            aria-label={t("connectors.closeAria")}
+            className="rounded-lg p-2 text-ink-secondary transition-colors hover:bg-raised/60 hover:text-ink"
+          >
+            <X size={19} />
+          </button>
+        </div>
+      </header>
 
-        <div className="border-b border-hairline/40 px-6 sm:px-8">
-          <div className="flex gap-6" role="tablist" aria-label={t("connectors.typeAria")}>
-            {(["apps", "mcp"] as const).map((item) => (
+      {/* Apps ⇄ MCP. One pill, and the only always-present control here. */}
+      <div className="mt-4 shrink-0 px-5 sm:px-8">
+        <div
+          className="glass-panel flex w-fit items-center gap-0.5 rounded-full p-1"
+          role="tablist"
+          aria-label={t("connectors.typeAria")}
+        >
+          {(["apps", "mcp"] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              role="tab"
+              aria-selected={surface === item}
+              onClick={() => dispatch({ type: "togglePlugins", open: true, surface: item })}
+              className={cn(
+                "rounded-full px-4 py-1.5 text-[13px] font-medium transition-colors motion-reduce:transition-none",
+                surface === item
+                  ? "bg-accent text-[var(--color-accent-ink)]"
+                  : "text-ink-secondary hover:bg-raised/60 hover:text-ink",
+              )}
+            >
+              {item === "apps" ? t("connectors.tab.apps") : t("connectors.tab.mcp")}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {surface === "apps" ? (
+        <div className="mt-5 flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-5 pb-8 sm:px-8 lg:flex-row lg:gap-8 lg:overflow-hidden">
+          {/* The rail. Search, the two views, and the apps themselves — all of
+              it directly on the canvas, no plate, no shadow. */}
+          <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-[290px] lg:overflow-y-auto lg:pe-2">
+            <div className="flex w-fit items-center gap-0.5 rounded-full p-1 glass-panel" role="tablist" aria-label={t("connectors.viewAria")}>
               <button
-                key={item}
-                type="button"
                 role="tab"
-                aria-selected={surface === item}
-                onClick={() => dispatch({ type: "togglePlugins", open: true, surface: item })}
+                aria-selected={tab === "marketplace"}
+                onClick={() => setTab("marketplace")}
                 className={cn(
-                  "border-b-2 px-0.5 pb-3 pt-1 text-[13.5px] font-medium transition-colors",
-                  surface === item ? "border-accent text-ink" : "border-transparent text-ink-secondary hover:text-ink",
+                  "rounded-full px-3.5 py-1.5 text-[12.5px] font-medium transition-colors motion-reduce:transition-none",
+                  tab === "marketplace"
+                    ? "bg-accent text-[var(--color-accent-ink)]"
+                    : "text-ink-secondary hover:bg-raised/60 hover:text-ink",
                 )}
               >
-                {item === "apps" ? t("connectors.tab.apps") : t("connectors.tab.mcp")}
+                {t("connectors.tab.marketplace")}
               </button>
-            ))}
-          </div>
-        </div>
-
-        {surface === "apps" ? (
-          <>
-        {stale && (
-          // Say which of the two things is true. Silence here is what makes a
-          // remembered list indistinguishable from a confirmed one.
-          <div className="mx-6 mb-1 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[12.5px] text-warning sm:mx-8">
-            <TriangleAlert size={14} className="mt-px shrink-0" />
-            <span>
-              {t("connectors.stale")}
-            </span>
-          </div>
-        )}
-
-        <div className="flex flex-col gap-3 px-6 pb-4 pt-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-          <div className="flex w-fit rounded-xl bg-raised/70 p-1" role="tablist" aria-label={t("connectors.viewAria")}>
-            <button
-              role="tab"
-              aria-selected={tab === "marketplace"}
-              onClick={() => setTab("marketplace")}
-              className={cn(
-                "rounded-lg px-4 py-2 text-[13.5px] transition-colors",
-                tab === "marketplace" ? "bg-card text-ink shadow-sm" : "text-ink-secondary hover:text-ink",
-              )}
-            >
-              {t("connectors.tab.marketplace")}
-            </button>
-            <button
-              role="tab"
-              aria-selected={tab === "connected"}
-              onClick={() => setTab("connected")}
-              className={cn(
-                "rounded-lg px-4 py-2 text-[13.5px] transition-colors",
-                tab === "connected" ? "bg-card text-ink shadow-sm" : "text-ink-secondary hover:text-ink",
-              )}
-            >
-              {t("connectors.tab.connected")}{connectedCount > 0 ? ` ${connectedCount}` : ""}
-            </button>
-          </div>
-          <label className="flex h-11 w-full items-center gap-2.5 rounded-xl bg-raised/70 px-3.5 sm:w-[320px]">
-            <Search size={17} className="shrink-0 text-ink-secondary" />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={t("connectors.searchPlaceholder")}
-              aria-label={t("connectors.searchPlaceholder")}
-              className="min-w-0 flex-1 bg-transparent text-[14px] text-ink placeholder:text-ink-secondary focus:outline-none"
-            />
-          </label>
-        </div>
-
-        {/* Two notices about the same fact is one too many: the stale banner
-            above already explains this launch, and "configure your own
-            connection service" is advice for someone who never set one up. */}
-        {!configured && !stale && (
-          <div className="mx-6 mb-1 rounded-xl bg-warning/10 px-4 py-3 text-[13px] text-warning sm:mx-8">
-            {t("connectors.notConfigured")}{" "}
-            <button
-              className={cn("font-medium underline underline-offset-2", remoteClient && "hidden")}
-              onClick={() => {
-                close();
-                dispatch({ type: "toggleAppSettings", open: true });
-              }}
-            >
-              {t("connectors.openSettings")}
-            </button>
-          </div>
-        )}
-        {botsWithoutApps.length > 0 && (
-          <div className="mx-6 mb-1 rounded-xl bg-inset px-4 py-3 text-[12.5px] leading-relaxed text-ink-secondary sm:mx-8">
-            <span className="font-medium text-ink">{t("connectors.perBot.title")}</span>{" "}
-            {t("connectors.perBot.body")}
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {botsWithoutApps.map((candidate) => (
-                <button
-                  key={candidate.id}
-                  type="button"
-                  onClick={() => dispatch({ type: "updateBot", botId: candidate.id, patch: { composio: true } })}
-                  className="rounded-full bg-control px-2.5 py-1 text-[11.5px] font-medium text-ink hover:bg-raised-hover"
-                >
-                  {t("connectors.perBot.allow", { name: candidate.name })}
-                </button>
-              ))}
+              <button
+                role="tab"
+                aria-selected={tab === "connected"}
+                onClick={() => setTab("connected")}
+                className={cn(
+                  "rounded-full px-3.5 py-1.5 text-[12.5px] font-medium transition-colors motion-reduce:transition-none",
+                  tab === "connected"
+                    ? "bg-accent text-[var(--color-accent-ink)]"
+                    : "text-ink-secondary hover:bg-raised/60 hover:text-ink",
+                )}
+              >
+                {t("connectors.tab.connected")}{connectedCount > 0 ? ` ${connectedCount}` : ""}
+              </button>
             </div>
-          </div>
-        )}
-        {configured && !remoteClient && source === "curated" && mode === "self-hosted" && (
-          <div className="mx-6 mb-1 text-[12px] text-ink-secondary sm:mx-8">
-            {t("connectors.featuredBefore")}{" "}
-            <button
-              className="underline underline-offset-2 hover:text-ink"
-              onClick={() => {
-                close();
-                dispatch({ type: "toggleAppSettings", open: true });
-              }}
-            >
-              {t("connectors.updateKey")}
-            </button>{" "}
-            {t("connectors.featuredAfter")}
-          </div>
-        )}
-        {error && <div role="alert" className="mx-6 mt-2 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger sm:mx-8">{typeof error === "string" ? error : t(error.key)}</div>}
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-5 sm:px-8">
-          {cards === null ? (
-            <div className="flex items-center justify-center gap-2 py-24 text-[13px] text-ink-secondary">
-              <Loader2 size={14} className="animate-spin" /> {t("connectors.loadingCatalog")}
-            </div>
-          ) : (
-            <div>
-              <div className="mb-3 text-[12px] font-medium text-ink-secondary">
-                {tab === "connected"
-                  ? t("connectors.section.yours")
-                  : search
-                    ? t("connectors.section.results")
-                    : t("connectors.section.available")}
+            <label className="flex h-10 items-center gap-2.5 rounded-xl border border-hairline/40 px-3 transition-colors focus-within:border-focus">
+              <Search size={16} className="shrink-0 text-ink-secondary" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={t("connectors.searchPlaceholder")}
+                aria-label={t("connectors.searchPlaceholder")}
+                className="min-w-0 flex-1 bg-transparent text-[13.5px] text-ink placeholder:text-ink-secondary focus:outline-none"
+              />
+            </label>
+
+            {stale && (
+              // Say which of the two things is true. Silence here is what makes a
+              // remembered list indistinguishable from a confirmed one.
+              <div className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-[12px] text-warning">
+                <TriangleAlert size={14} className="mt-px shrink-0" />
+                <span>{t("connectors.stale")}</span>
               </div>
-              <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
-              {visible.map((card) => {
-              const serviceStatus = status[card.slug];
-              const pending = serviceStatus?.pending;
-              const failed = serviceStatus?.status && /^(expired|failed)$/i.test(serviceStatus.status);
-              const accounts = serviceStatus?.accounts ?? [];
-              // connected with no accounts and nothing in flight = a no-auth
-              // toolkit: there is no OAuth to run, so "Connect" would mint a
-              // pointless authorize. It ships included.
-              const included = card.noAuth === true
-                || (serviceStatus?.connected === true && !accounts.length && !pending && !failed);
-              const addingAccount = aliasSlug === card.slug && !pending;
-              const busy = busySlug === card.slug;
-              const unavailableReason = managedConnectorUnavailableReason(mode, card.slug)
-                ? t("connectors.selfHostOnlyReason")
-                : null;
-              return (
-                <div
-                  key={card.slug}
-                  className="min-h-[88px] border-b border-hairline/35 px-1 py-4"
+            )}
+            {!configured && !stale && (
+              <div className="rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-warning">
+                {t("connectors.notConfigured")}{" "}
+                <button
+                  className={cn("font-medium underline underline-offset-2", remoteClient && "hidden")}
+                  onClick={() => {
+                    close();
+                    dispatch({ type: "toggleAppSettings", open: true });
+                  }}
                 >
-                  <div className="flex items-center gap-3">
-                    <ServiceIcon card={card} />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[14px] font-medium text-ink">{card.label}</div>
-                      <div
-                        className="mt-0.5 truncate text-[12.5px] text-ink-secondary"
-                        title={unavailableReason ?? undefined}
-                      >
-                        {unavailableReason ?? (
-                          pending
-                            ? pendingUrls[card.slug]
-                              ? t("connectors.finishSetup")
-                              : t("connectors.finishSetupOrDisconnect")
-                            : failed && !accounts.length
-                              ? t("connectors.authExpired")
-                              : card.blurb
-                        )}
-                      </div>
+                  {t("connectors.openSettings")}
+                </button>
+              </div>
+            )}
+            {botsWithoutApps.length > 0 && (
+              /* The allowance is workspace-wide, not per app, so it stays one
+                 notice above the list. The mockup draws per-app assigned-bot
+                 chips; the store has no per-app assignment to draw. */
+              <div className="rounded-xl border border-hairline/40 bg-raised/40 px-3.5 py-3 text-[12px] leading-relaxed text-ink-secondary">
+                <span className="font-medium text-ink">{t("connectors.perBot.title")}</span>{" "}
+                {t("connectors.perBot.body")}
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {botsWithoutApps.map((candidate) => (
+                    <button
+                      key={candidate.id}
+                      type="button"
+                      onClick={() => dispatch({ type: "updateBot", botId: candidate.id, patch: { composio: true } })}
+                      className="rounded-full bg-control px-2.5 py-1 text-[11.5px] font-medium text-ink transition-colors hover:bg-raised-hover"
+                    >
+                      {t("connectors.perBot.allow", { name: candidate.name })}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {configured && !remoteClient && source === "curated" && mode === "self-hosted" && (
+              <div className="text-[11.5px] leading-relaxed text-ink-secondary">
+                {t("connectors.featuredBefore")}{" "}
+                <button
+                  className="underline underline-offset-2 hover:text-ink"
+                  onClick={() => {
+                    close();
+                    dispatch({ type: "toggleAppSettings", open: true });
+                  }}
+                >
+                  {t("connectors.updateKey")}
+                </button>{" "}
+                {t("connectors.featuredAfter")}
+              </div>
+            )}
+            {error && (
+              <div role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-[12px] text-danger">
+                {typeof error === "string" ? error : t(error.key)}
+              </div>
+            )}
+
+            {cards === null ? (
+              <div className="flex items-center justify-center gap-2 py-16 text-[12.5px] text-ink-secondary">
+                <Loader2 size={14} className="animate-spin" /> {t("connectors.loadingCatalog")}
+              </div>
+            ) : (
+              <nav className="space-y-0.5" aria-label={t("connectors.section.available")}>
+                <div className="mb-1 px-2 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary">
+                  {tab === "connected"
+                    ? t("connectors.section.yours")
+                    : search
+                      ? t("connectors.section.results")
+                      : t("connectors.section.available")}
+                </div>
+                {visible.map((app) => {
+                  const isSelected = selected?.card.slug === app.card.slug;
+                  return (
+                    <button
+                      key={app.card.slug}
+                      type="button"
+                      aria-current={isSelected ? "true" : undefined}
+                      onClick={() => setSelectedSlug(app.card.slug)}
+                      title={app.unavailableReason ?? undefined}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors motion-reduce:transition-none",
+                        isSelected ? "bg-accent/10 ring-1 ring-accent/25" : "hover:bg-raised/50",
+                      )}
+                    >
+                      <ServiceIcon card={app.card} className="size-9" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13.5px] font-medium text-ink">{app.card.label}</span>
+                        <span className="mt-0.5 block truncate text-[12px] text-ink-secondary">
+                          {appLineText(appRailSubtitle(app))}
+                        </span>
+                      </span>
+                      <ChevronRight
+                        size={15}
+                        aria-hidden="true"
+                        className={cn("shrink-0", isSelected ? "text-accent" : "text-ink-secondary/50")}
+                      />
+                    </button>
+                  );
+                })}
+                {visible.length === 0 && (
+                  <div className="px-2 py-10 text-center">
+                    <div className="text-[13px] font-medium text-ink">
+                      {tab === "connected" ? connectedEmptyCopy.title : t("connectors.noAppsFound")}
                     </div>
+                    <div className="mt-1 text-[12px] leading-relaxed text-ink-secondary">
+                      {tab === "connected" ? connectedEmptyCopy.description : t("connectors.tryDifferentSearch")}
+                    </div>
+                    {tab === "connected" && inventoryPhase === "error" && (
+                      <button
+                        type="button"
+                        disabled={refreshing}
+                        onClick={() => void loadConnectionInventory(true)}
+                        className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-raised px-3 py-1.5 text-[12px] text-ink transition-colors hover:bg-raised-hover disabled:opacity-50"
+                      >
+                        <RefreshCw size={13} className={cn(refreshing && "animate-spin")} />
+                        {t("connectors.action.retry")}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </nav>
+            )}
+          </aside>
+
+          {/* The one glass surface on this page: the selected app. */}
+          <section className="min-w-0 flex-1 pb-6">
+            {selected ? (
+              <GlassCard className="flex flex-col gap-5 p-5 sm:p-6">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="flex min-w-0 items-center gap-3.5">
+                    <ServiceIcon card={selected.card} className="size-12" />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="truncate text-[17px] font-semibold tracking-[-0.01em] text-ink">
+                          {selected.card.label}
+                        </h2>
+                        <span
+                          className={cn(
+                            "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium",
+                            TONE_CHIP[appDetailStatus(selected).tone],
+                          )}
+                        >
+                          {selected.included || selected.accounts.length > 0 ? (
+                            <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
+                          ) : null}
+                          {t(appDetailStatus(selected).labelKey)}
+                        </span>
+                      </div>
+                      <p className="mt-1 max-w-[440px] text-[12.5px] leading-relaxed text-ink-secondary">
+                        {selected.card.blurb}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    {selected.canContinue && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setError(null);
+                          void openConnectUrl(pendingUrls[selected.card.slug]).catch((e) => setError(e.message));
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-hairline/40 px-3 py-1.5 text-[12px] text-ink transition-colors hover:bg-raised/60"
+                      >
+                        <ExternalLink size={13} aria-hidden="true" />
+                        {t("connectors.detail.continueSignIn")}
+                      </button>
+                    )}
                     <button
                       type="button"
-                      disabled={!configured || inventoryPhase !== "ready" || busy || included || Boolean(unavailableReason)}
-                      title={unavailableReason ?? undefined}
-                      onClick={() => {
-                        if (pending) {
-                          if (pendingUrls[card.slug]) {
-                            setError(null);
-                            void openConnectUrl(pendingUrls[card.slug]).catch((e) => setError(e.message));
-                          } else {
-                            setAliasSlug(null);
-                            setError(null);
-                            void refreshStatus([card.slug]);
-                            startPolling(card.slug);
-                          }
-                        } else {
-                          setAliasSlug((current) => current === card.slug ? null : card.slug);
-                          setAliasDraft("");
-                        }
-                      }}
-                      className="flex min-w-[88px] items-center justify-center gap-1.5 rounded-full bg-raised px-3 py-2 text-[12.5px] text-ink transition-colors hover:bg-raised-hover disabled:opacity-40"
+                      disabled={
+                        !configured ||
+                        inventoryPhase !== "ready" ||
+                        selected.busy ||
+                        selected.included ||
+                        Boolean(selected.unavailableReason)
+                      }
+                      title={selected.unavailableReason ?? undefined}
+                      onClick={() => runPrimaryAction(selected)}
+                      className="inline-flex min-w-[104px] items-center justify-center gap-1.5 rounded-full bg-accent px-3.5 py-2 text-[12.5px] font-medium text-[var(--color-accent-ink)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      {unavailableReason ? (
-                        t("connectors.selfHostOnly")
-                      ) : busy ? (
+                      {selected.busy ? (
                         <Loader2 size={13} className="mx-auto animate-spin" />
                       ) : (
-                        connectorActionLabel(inventoryPhase, {
-                          busy,
-                          included,
-                          canContinue: Boolean(pending && pendingUrls[card.slug]),
-                          pending,
-                          hasAccounts: accounts.length > 0,
-                          failed: Boolean(failed),
-                        })
+                        primaryAction(selected)
                       )}
                     </button>
                   </div>
-                  {accounts.length > 0 && (
-                    <div className="ml-14 mt-3 space-y-2">
-                      {accounts.map((account) => {
+                </div>
+
+                {(selected.accounts.length > 0 || selected.included) && (
+                  <div className="border-t border-hairline/35 pt-4">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary">
+                      {t("connectors.detail.accounts")}
+                    </div>
+                    <div className="mt-2.5 space-y-1.5">
+                      {selected.accounts.map((account) => {
                         const active = /^active$/i.test(account.status);
                         return (
-                          <div key={account.id} className="flex items-center gap-2 rounded-lg bg-raised/45 px-3 py-2">
+                          <div
+                            key={account.id}
+                            className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 transition-colors hover:bg-raised/40"
+                          >
+                            <div
+                              aria-hidden="true"
+                              className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent/12 text-[11px] font-semibold text-accent"
+                            >
+                              {(account.alias || account.id).slice(0, 1).toUpperCase()}
+                            </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-ink">
-                                {active && <Check size={13} className="shrink-0 text-success" />}
+                                {active && <Check size={13} className="shrink-0 text-success" aria-hidden="true" />}
                                 <span className="truncate">{account.alias || account.id}</span>
                               </div>
-                              <div className="mt-0.5 truncate text-[10.5px] text-ink-secondary">
+                              <div className="mt-0.5 truncate text-[11px] text-ink-secondary">
                                 {account.alias ? `${account.id} · ` : ""}{account.status.toLowerCase()}
                               </div>
                             </div>
                             <button
                               type="button"
-                              disabled={busy}
+                              disabled={selected.busy}
                               onClick={() => {
-                                if (!window.confirm(disconnectAccountConfirmation(card.label, account))) return;
-                                disconnectAccount(card.slug, account.id);
+                                if (!window.confirm(disconnectAccountConfirmation(selected.card.label, account))) return;
+                                disconnectAccount(selected.card.slug, account.id);
                               }}
-                              className="rounded-md px-2 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+                              className="shrink-0 rounded-full px-2.5 py-1 text-[11.5px] text-ink-secondary transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-40"
                               aria-label={t("connectors.disconnectAria", {
                                 account: account.alias || account.id,
-                                service: card.label,
+                                service: selected.card.label,
                               })}
                             >
                               {t("connectors.disconnect")}
@@ -802,74 +935,104 @@ export function PluginsPanel() {
                           </div>
                         );
                       })}
+                      {selected.accounts.length === 0 && (
+                        <p className="px-2.5 text-[12px] leading-relaxed text-ink-secondary">
+                          {t("connectors.detail.noAccounts")}
+                        </p>
+                      )}
                     </div>
-                  )}
-                  {addingAccount && (
-                    <form
-                      className="ml-14 mt-3 flex items-center gap-2"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        const alias = aliasDraft.trim();
-                        if (!alias) {
-                          setError({ key: "connectors.aliasRequired" });
-                          return;
-                        }
-                        void connect(card.slug, alias);
-                      }}
-                    >
-                      <input
-                        autoFocus
-                        value={aliasDraft}
-                        maxLength={64}
-                        onChange={(event) => setAliasDraft(event.target.value)}
-                        placeholder={t("connectors.aliasPlaceholder")}
-                        aria-label={accounts.length > 0
-                          ? t("connectors.aliasAriaAnother", { service: card.label })
-                          : t("connectors.aliasAriaNew", { service: card.label })}
-                        className="min-w-0 flex-1 rounded-lg bg-raised px-3 py-2 text-[12px] text-ink placeholder:text-ink-secondary focus:outline-none focus:ring-1 focus:ring-accent"
-                      />
-                      <button
-                        type="submit"
-                        disabled={busy || !aliasDraft.trim()}
-                        className="rounded-lg bg-accent px-3 py-2 text-[12px] font-medium text-white disabled:opacity-40"
+                  </div>
+                )}
+
+                {(selected.accounts.length > 0 || selected.pending) && !selected.pending && (
+                  /* Add account is the same action as the button above, with a
+                     label to go with it; the alias form is what that action
+                     asks for when the provider needs a name. */
+                  <div className="border-t border-hairline/35 pt-4">
+                    {aliasSlug === selected.card.slug ? (
+                      <form
+                        className="flex flex-wrap items-center gap-2"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const alias = aliasDraft.trim();
+                          if (!alias) {
+                            setError({ key: "connectors.aliasRequired" });
+                            return;
+                          }
+                          void connect(selected.card.slug, alias);
+                        }}
                       >
-                        {t("connectors.action.continue")}
+                        <input
+                          autoFocus
+                          value={aliasDraft}
+                          maxLength={64}
+                          onChange={(event) => setAliasDraft(event.target.value)}
+                          placeholder={t("connectors.aliasPlaceholder")}
+                          aria-label={selected.accounts.length > 0
+                            ? t("connectors.aliasAriaAnother", { service: selected.card.label })
+                            : t("connectors.aliasAriaNew", { service: selected.card.label })}
+                          className="min-w-0 flex-1 rounded-xl border border-hairline/40 bg-transparent px-3 py-2 text-[12.5px] text-ink placeholder:text-ink-secondary focus:border-accent focus:outline-none"
+                        />
+                        <button
+                          type="submit"
+                          disabled={selected.busy || !aliasDraft.trim()}
+                          className="rounded-full bg-accent px-3.5 py-2 text-[12px] font-medium text-[var(--color-accent-ink)] disabled:opacity-40"
+                        >
+                          {t("connectors.action.continue")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAliasSlug(null);
+                            setAliasDraft("");
+                          }}
+                          className="rounded-full px-3 py-2 text-[12px] text-ink-secondary transition-colors hover:text-ink"
+                        >
+                          {t("common.cancel")}
+                        </button>
+                      </form>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => runPrimaryAction(selected)}
+                        className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-raised/40"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="flex size-7 shrink-0 items-center justify-center rounded-full border border-dashed border-hairline/60 text-ink-secondary"
+                        >
+                          <Plus size={14} />
+                        </span>
+                        <span>
+                          <span className="block text-[12.5px] font-medium text-ink">{t("connectors.detail.addAccount")}</span>
+                          <span className="mt-0.5 block text-[11.5px] text-ink-secondary">
+                            {t("connectors.detail.addAccountHint", { service: selected.card.label })}
+                          </span>
+                        </span>
                       </button>
-                    </form>
-                  )}
-                </div>
-              );
-              })}
+                    )}
+                  </div>
+                )}
+
+                {configured && !remoteClient && (
+                  <div className="border-t border-hairline/35 pt-4 text-[11.5px] leading-relaxed text-ink-secondary">
+                    {t("connectors.managedByComposio")}
+                  </div>
+                )}
+              </GlassCard>
+            ) : (
+              <div className="flex h-full min-h-[240px] flex-col items-center justify-center rounded-2xl border border-dashed border-hairline/50 px-6 text-center">
+                <div className="text-[14px] font-medium text-ink">{t("connectors.detail.pickOne")}</div>
+                <p className="mt-1 max-w-[360px] text-[12.5px] leading-relaxed text-ink-secondary">
+                  {t("connectors.detail.pickOneBody")}
+                </p>
               </div>
-            </div>
-          )}
-          {cards !== null && visible.length === 0 && (
-            <div className="flex min-h-56 flex-col items-center justify-center text-center">
-              <div className="text-[14px] font-medium text-ink">
-                {tab === "connected" ? connectedEmptyCopy.title : t("connectors.noAppsFound")}
-              </div>
-              <div className="mt-1 text-[12.5px] text-ink-secondary">
-                {tab === "connected" ? connectedEmptyCopy.description : t("connectors.tryDifferentSearch")}
-              </div>
-              {tab === "connected" && inventoryPhase === "error" && (
-                <button
-                  type="button"
-                  disabled={refreshing}
-                  onClick={() => void loadConnectionInventory(true)}
-                  className="mt-4 flex items-center gap-1.5 rounded-lg bg-raised px-3 py-2 text-[12.5px] text-ink transition-colors hover:bg-raised-hover disabled:opacity-50"
-                >
-                  <RefreshCw size={13} className={cn(refreshing && "animate-spin")} />
-                  {t("connectors.action.retry")}
-                </button>
-              )}
-            </div>
-          )}
+            )}
+          </section>
         </div>
-          </>
-        ) : (
-          <McpServersPanel />
-        )}
-      </div>
+      ) : (
+        <McpServersPanel />
+      )}
     </div>
   );
 }
