@@ -112,12 +112,12 @@ export function MiniMonth({ anchor, onSelect }: MiniMonthProps) {
               <span
                 className={`flex size-6 items-center justify-center rounded-full text-[10.5px] transition-colors ${
                   isSelected
-                    ? "bg-accent font-semibold text-white shadow-sm"
+                    ? "bg-accent font-semibold text-[var(--color-accent-ink)] shadow-sm"
                     : isToday
-                      ? "font-semibold text-accent group-hover:bg-accent/12"
+                      ? "font-semibold text-accent ring-1 ring-inset ring-accent/45 group-hover:bg-accent/12"
                       : isOutsideMonth
-                        ? "text-ink-secondary/35 group-hover:bg-raised group-hover:text-ink-secondary"
-                        : "text-ink-secondary group-hover:bg-raised group-hover:text-ink"
+                        ? "text-ink-secondary/35 group-hover:bg-raised/60 group-hover:text-ink-secondary"
+                        : "text-ink-secondary group-hover:bg-raised/60 group-hover:text-ink"
                 }`}
               >
                 {date.getDate()}

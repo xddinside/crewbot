@@ -23,13 +23,13 @@ export function RoutineList({ routines, runs, bots, loading, error, onOpen, onLo
     {sorted.map((routine) => {
       const latest = latestRoutineRun(routine.id, runs);
       const bot = bots?.find((candidate) => candidate.id === routine.botId);
-      return <article key={routine.id} className="rounded-xl border border-hairline/40 bg-card p-3.5" aria-label={routine.name}>
+      return <article key={routine.id} className="glass-card p-3.5" aria-label={routine.name}>
         <div className="flex items-start gap-2">
           <button type="button" onClick={() => onOpen(routine)} className="min-w-0 flex-1 text-left hover:text-accent">
             <span className="block truncate text-[13px] font-semibold text-ink">{routine.name}</span>
             <span className="mt-1 block text-[11.5px] leading-relaxed text-ink-secondary">{bot && `${bot.name} · `}{scheduleLabel(routine.schedule)}</span>
           </button>
-          <span className={cn("shrink-0 rounded-full bg-inset px-2 py-0.5 text-[10px]", routine.enabled && routine.nextRunAt != null ? "text-accent" : "text-ink-secondary")}>{routineScheduleState(routine)}</span>
+          <span className={cn("shrink-0 rounded-full bg-raised/50 px-2 py-0.5 text-[10px]", routine.enabled && routine.nextRunAt != null ? "text-accent" : "text-ink-secondary")}>{routineScheduleState(routine)}</span>
         </div>
         {routineNextLabel(routine) !== routineScheduleState(routine) && <div className="mt-2 text-[11.5px] text-ink-secondary">{routineNextLabel(routine)}</div>}
         <div className="mt-1 flex items-start justify-between gap-2">

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { BotAvatar } from "@/components/Avatar";
+import { GlassCard, GlassSheet } from "@/components/Glass";
 import { cn } from "@/lib/cn";
 import type { RoutineRun, RoutineRunOn } from "@/lib/routines";
 import {
@@ -126,7 +127,7 @@ function WebhookEditor({ webhook, bots, onClose, onCredential }: { webhook?: Web
     return () => {
       dialog.removeEventListener("keydown", onKey);
       if (previousFocus?.getClientRects().length) previousFocus.focus();
-      else document.querySelector<HTMLElement>('summary[aria-label="Create an automation"]')?.focus();
+      else document.querySelector<HTMLElement>('button[aria-label="Create a webhook"]')?.focus();
     };
   }, []);
 
@@ -148,25 +149,25 @@ function WebhookEditor({ webhook, bots, onClose, onCredential }: { webhook?: Web
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={webhook ? "Edit webhook" : "New webhook"} tabIndex={-1} className="flex max-h-[90vh] w-full max-w-[590px] flex-col overflow-hidden rounded-2xl border border-hairline/60 bg-panel shadow-2xl">
-        <div className="flex items-start justify-between border-b border-hairline/40 px-5 py-4"><div><div className="text-[17px] font-semibold text-ink">{webhook ? "Edit webhook" : "New webhook"}</div><div className="mt-1 text-[12px] text-ink-secondary">Each request starts a new task in the MAUS chat.</div></div><button onClick={onClose} aria-label="Close webhook editor" className="rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink"><X size={18} /></button></div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-5" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <GlassSheet ref={dialogRef} role="dialog" aria-modal="true" aria-label={webhook ? "Edit webhook" : "New webhook"} tabIndex={-1} className="flex max-h-[90vh] w-full max-w-[590px] flex-col overflow-hidden">
+        <div className="flex items-start justify-between px-5 py-4"><div><div className="text-[17px] font-semibold text-ink">{webhook ? "Edit webhook" : "New webhook"}</div><div className="mt-1 text-[12px] text-ink-secondary">Each request starts a new task in the MAUS chat.</div></div><button onClick={onClose} aria-label="Close webhook editor" className="rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink"><X size={18} /></button></div>
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
-          <div><div className="mb-2 text-[12px] font-medium text-ink-secondary">Who receives the tasks?</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{bots.map((bot) => <button key={bot.id} type="button" data-initial-focus={botId === bot.id ? "" : undefined} onClick={() => setBotId(bot.id)} className={cn("flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-left", botId === bot.id ? "border-accent/70 bg-accent/10" : "border-hairline/50 bg-inset hover:bg-raised/60")}><BotAvatar bot={bot} state={botId === bot.id ? "happy" : "idle"} size={38} animated={false} /><span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{bot.name}</span></button>)}</div></div>
+          <div><div className="mb-2 text-[12px] font-medium text-ink-secondary">Who receives the tasks?</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{bots.map((bot) => <button key={bot.id} type="button" data-initial-focus={botId === bot.id ? "" : undefined} onClick={() => setBotId(bot.id)} className={cn("flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-left", botId === bot.id ? "border-accent/70 bg-accent/10" : "border-hairline/40 hover:bg-raised/50")}><BotAvatar bot={bot} state={botId === bot.id ? "happy" : "idle"} size={38} animated={false} /><span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{bot.name}</span></button>)}</div></div>
           <div className="rounded-xl border border-accent/20 bg-accent/5 px-3.5 py-3 text-[11.5px] leading-relaxed text-ink-secondary">Send the task in the request: <code className="text-ink">{`{"task":"Check the failed build"}`}</code>. The MAUS keeps its model, tools, permissions, and computer setup.</div>
-          <details className="group rounded-xl border border-hairline/45 bg-inset/45 px-4 py-3" open={Boolean(webhook)}>
+          <details className="group rounded-xl border border-hairline/40 px-4 py-3" open={Boolean(webhook)}>
             <summary className="cursor-pointer text-[12.5px] font-medium text-ink">Advanced options</summary>
             <div className="mt-4 space-y-4">
-              <label className="block"><span className="mb-1.5 block text-[11.5px] font-medium text-ink-secondary">Name <span className="font-normal">· optional</span></span><input value={name} onChange={(event) => setName(event.target.value)} placeholder={suggestedName(prompt, bots.find((bot) => bot.id === botId))} className="w-full rounded-xl border border-hairline/60 bg-panel px-3.5 py-2.5 text-[13px] text-ink outline-none placeholder:text-ink-secondary/60 focus:border-accent/70" /></label>
-              <label className="block"><span className="mb-1.5 block text-[11.5px] font-medium text-ink-secondary">Default instructions <span className="font-normal">· optional</span></span><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={3} placeholder="For every event, summarize what happened and suggest the next step…" className="w-full resize-y rounded-xl border border-hairline/60 bg-panel px-3.5 py-3 text-[13px] leading-relaxed text-ink outline-none placeholder:text-ink-secondary/60 focus:border-accent/70" /><span className="mt-1.5 block text-[10.5px] leading-relaxed text-ink-secondary">Use this only when every event needs the same handling rule. Otherwise the request’s task is used.</span></label>
-              <div><div className="mb-2 text-[11.5px] font-medium text-ink-secondary">Run on</div><div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setRunOn("maus")} className={cn("rounded-xl border p-3 text-left", runOn === "maus" ? "border-accent/70 bg-accent/10" : "border-hairline/50 bg-panel hover:bg-raised/60")}><div className="flex items-center gap-2 text-[12.5px] font-medium text-ink"><Laptop size={14} />This computer</div></button><button type="button" disabled={!cloudReady && runOn !== "cloud"} onClick={() => setRunOn("cloud")} className={cn("rounded-xl border p-3 text-left disabled:cursor-not-allowed disabled:opacity-45", runOn === "cloud" ? "border-accent/70 bg-accent/10" : "border-hairline/50 bg-panel hover:bg-raised/60")}><div className="flex items-center gap-2 text-[12.5px] font-medium text-ink"><Cloud size={14} />Cloud VM</div></button></div></div>
+              <label className="block"><span className="mb-1.5 block text-[11.5px] font-medium text-ink-secondary">Name <span className="font-normal">· optional</span></span><input value={name} onChange={(event) => setName(event.target.value)} placeholder={suggestedName(prompt, bots.find((bot) => bot.id === botId))} className="w-full rounded-xl border border-hairline/45 bg-transparent px-3.5 py-2.5 text-[13px] text-ink outline-none placeholder:text-ink-secondary/60 focus:border-accent/70" /></label>
+              <label className="block"><span className="mb-1.5 block text-[11.5px] font-medium text-ink-secondary">Default instructions <span className="font-normal">· optional</span></span><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={3} placeholder="For every event, summarize what happened and suggest the next step…" className="w-full resize-y rounded-xl border border-hairline/45 bg-transparent px-3.5 py-3 text-[13px] leading-relaxed text-ink outline-none placeholder:text-ink-secondary/60 focus:border-accent/70" /><span className="mt-1.5 block text-[10.5px] leading-relaxed text-ink-secondary">Use this only when every event needs the same handling rule. Otherwise the request’s task is used.</span></label>
+              <div><div className="mb-2 text-[11.5px] font-medium text-ink-secondary">Run on</div><div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setRunOn("maus")} className={cn("rounded-xl border p-3 text-left", runOn === "maus" ? "border-accent/70 bg-accent/10" : "border-hairline/40 hover:bg-raised/50")}><div className="flex items-center gap-2 text-[12.5px] font-medium text-ink"><Laptop size={14} />This computer</div></button><button type="button" disabled={!cloudReady && runOn !== "cloud"} onClick={() => setRunOn("cloud")} className={cn("rounded-xl border p-3 text-left disabled:cursor-not-allowed disabled:opacity-45", runOn === "cloud" ? "border-accent/70 bg-accent/10" : "border-hairline/40 hover:bg-raised/50")}><div className="flex items-center gap-2 text-[12.5px] font-medium text-ink"><Cloud size={14} />Cloud VM</div></button></div></div>
               <label className="block"><span className="mb-1.5 block text-[11.5px] font-medium text-ink-secondary">Only accept event types <span className="font-normal">· optional</span></span><input value={eventTypes} onChange={(event) => setEventTypes(event.target.value)} placeholder="push, workflow_run" className="w-full rounded-xl border border-hairline/60 bg-panel px-3.5 py-2.5 text-[13px] text-ink outline-none placeholder:text-ink-secondary/60 focus:border-accent/70" /><span className="mt-1.5 block text-[10.5px] text-ink-secondary">Comma-separated values from the sender’s event-type header.</span></label>
             </div>
           </details>
           {error && <div className="rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-3 text-[12px] text-danger">{error}</div>}
         </div>
-        <div className="flex justify-end gap-2 border-t border-hairline/40 px-5 py-4"><button onClick={onClose} className="rounded-xl px-4 py-2 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink">Cancel</button><button disabled={saving || !botId} onClick={() => void save()} className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-40">{saving && <Loader2 size={14} className="animate-spin" />}{webhook ? "Save changes" : "Create webhook"}</button></div>
-      </div>
+        <div className="flex justify-end gap-2 border-t border-hairline/30 px-5 py-4"><button onClick={onClose} className="rounded-xl px-4 py-2 text-[13px] text-ink-secondary transition hover:bg-raised/60 hover:text-ink">Cancel</button><button disabled={saving || !botId} onClick={() => void save()} className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-[13px] font-medium text-[var(--color-accent-ink)] transition hover:brightness-110 disabled:opacity-40">{saving && <Loader2 size={14} className="animate-spin" />}{webhook ? "Save changes" : "Create webhook"}</button></div>
+      </GlassSheet>
     </div>
   );
 }
@@ -303,8 +304,8 @@ export function WebhooksPanel({
             {bots.length === 0 && <p className="mt-3 text-[12px] text-warning">Create a MAUS first, then come back here.</p>}
           </div>
         ) : selected && (
-          <div className="min-h-[580px] overflow-hidden rounded-2xl border border-hairline/45 bg-panel/25 md:grid md:grid-cols-[250px_minmax(0,1fr)]">
-            <aside className="border-b border-hairline/40 bg-inset/35 p-2.5 md:border-r md:border-b-0">
+          <div className="min-h-[580px] overflow-hidden md:grid md:grid-cols-[250px_minmax(0,1fr)]">
+            <aside className="border-b border-hairline/30 p-2.5 md:border-r md:border-b-0">
               <div className="flex items-center justify-between px-2 py-2">
                 <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-secondary">Your webhooks</span>
                 <span className="text-[10px] tabular-nums text-ink-secondary">{state.webhooks.length}</span>
@@ -314,7 +315,7 @@ export function WebhooksPanel({
                   const bot = bots.find((candidate) => candidate.id === webhook.botId);
                   const status = statusFor(webhook);
                   return (
-                    <button key={webhook.id} onClick={() => { setSelectedId(webhook.id); setTab("setup"); setError(""); }} className={cn("flex min-w-[210px] items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left transition-colors md:w-full md:min-w-0", webhook.id === selected.id ? "bg-raised text-ink shadow-sm" : "text-ink-secondary hover:bg-raised/55 hover:text-ink")}>
+                    <button key={webhook.id} onClick={() => { setSelectedId(webhook.id); setTab("setup"); setError(""); }} className={cn("flex min-w-[210px] items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left transition-colors md:w-full md:min-w-0", webhook.id === selected.id ? "bg-accent/10 text-accent ring-1 ring-accent/30" : "text-ink-secondary hover:bg-raised/50 hover:text-ink")}>
                       {bot ? <BotAvatar bot={bot} state={webhook.enabled ? "idle" : "sleeping"} size={36} animated={false} label={bot.name} /> : <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-raised text-ink-secondary"><Webhook size={16} /></div>}
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[12.5px] font-medium">{webhook.name}</span>
@@ -326,7 +327,8 @@ export function WebhooksPanel({
               </nav>
             </aside>
 
-            <section className="min-w-0">
+            <GlassCard className="min-w-0 md:m-4">
+        <section className="min-w-0">
               <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-5 md:px-7 md:pt-6">
                 <div className="flex min-w-0 items-center gap-3">
                   {selectedBot ? <BotAvatar bot={selectedBot} state={selected.enabled ? "idle" : "sleeping"} size={44} animated={false} label={selectedBot.name} /> : <div className="flex size-11 items-center justify-center rounded-xl bg-raised text-ink-secondary"><Webhook size={18} /></div>}
@@ -388,7 +390,8 @@ export function WebhooksPanel({
                   </div>
                 </div>
               )}
-            </section>
+        </section>
+        </GlassCard>
           </div>
         )}
       </div>

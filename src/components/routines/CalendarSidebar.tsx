@@ -1,6 +1,7 @@
 import { useMemo, useState, type DragEvent } from "react";
-import { GripVertical, Search, UsersRound } from "lucide-react";
+import { GripVertical, Search } from "lucide-react";
 import { BotAvatar } from "@/components/Avatar";
+import { t } from "@/lib/i18n";
 import type { Bot } from "@/state/store";
 import { MiniMonth } from "./MiniMonth";
 
@@ -12,6 +13,16 @@ export interface CalendarSidebarProps {
   onSelectDate: (at: number) => void;
 }
 
+/** The schedule's left column: a month to pick a day in, and the bots you can
+ *  drop onto the week.
+ *
+ *  Both halves sit **directly on the canvas**. The old version was a 320px
+ *  `bg-panel` column with a right border, which meant the largest block of the
+ *  screen after the conversation was an opaque plate — the opposite of the
+ *  redesign. What stays opaque here is nothing: the month is text and hairlines,
+ *  and the bot rows are text plus a mascot. The search field is the one control
+ *  that needs an edge, and it gets a hairline rather than a fill.
+ */
 export function CalendarSidebar({ bots, anchor, onSelectDate }: CalendarSidebarProps) {
   const [query, setQuery] = useState("");
   const filteredBots = useMemo(() => {
@@ -29,27 +40,24 @@ export function CalendarSidebar({ bots, anchor, onSelectDate }: CalendarSidebarP
   };
 
   return (
-    <aside
-      aria-label="Schedule sidebar"
-      className="flex h-full w-[320px] shrink-0 flex-col overflow-hidden border-r border-hairline/40 bg-panel"
-    >
+    <aside aria-label="Schedule sidebar" className="flex h-full w-[264px] shrink-0 flex-col overflow-hidden">
       <MiniMonth anchor={anchor} onSelect={onSelectDate} />
 
-      <div className="mx-4 border-t border-hairline/40" />
+      <div className="mx-3 border-t border-hairline/25" />
 
       <section aria-labelledby="calendar-bots-heading" className="flex min-h-0 flex-1 flex-col px-3 pb-3 pt-3">
         <div className="mb-2 flex items-center justify-between px-1">
-          <div id="calendar-bots-heading" className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.11em] text-ink-secondary">
-            <UsersRound size={13} aria-hidden="true" />
-            My bots
-          </div>
-          <span className="rounded-full bg-raised px-1.5 py-0.5 text-[9px] tabular-nums text-ink-secondary">
-            {bots.length}
-          </span>
+          <h2
+            id="calendar-bots-heading"
+            className="text-[11px] font-semibold uppercase tracking-[0.11em] text-ink-secondary"
+          >
+            {t("automations.botsHeading")}
+          </h2>
+          <span className="text-[11px] tabular-nums text-ink-secondary/70">{bots.length}</span>
         </div>
 
         <label className="relative mb-2 block">
-          <span className="sr-only">Search bots</span>
+          <span className="sr-only">{t("automations.searchBots")}</span>
           <Search
             size={13}
             className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-secondary/70"
@@ -59,8 +67,8 @@ export function CalendarSidebar({ bots, anchor, onSelectDate }: CalendarSidebarP
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             type="search"
-            placeholder="Search bots"
-            className="h-8 w-full rounded-lg border border-hairline/45 bg-control/55 pl-8 pr-2.5 text-[11.5px] text-ink outline-none placeholder:text-ink-secondary/55 focus:border-accent/60 focus:bg-control"
+            placeholder={t("automations.searchBots")}
+            className="h-8 w-full rounded-lg border border-hairline/40 bg-transparent pl-8 pr-2.5 text-[11.5px] text-ink outline-none placeholder:text-ink-secondary/55 focus:border-accent/60 focus:bg-raised/40"
           />
         </label>
 
@@ -71,37 +79,32 @@ export function CalendarSidebar({ bots, anchor, onSelectDate }: CalendarSidebarP
               draggable
               onDragStart={(event) => beginBotDrag(event, bot)}
               role="listitem"
-              className="group flex cursor-grab items-center gap-2 rounded-xl px-2 py-2 transition-colors hover:bg-raised/80 active:cursor-grabbing"
-              aria-label={`Drag ${bot.name} onto the schedule`}
-              title={`Drag ${bot.name} onto the schedule`}
+              className="group flex cursor-grab items-center gap-2 rounded-xl px-2 py-2 transition-colors hover:bg-raised/50 active:cursor-grabbing"
+              aria-label={t("automations.dragBot", { name: bot.name })}
+              title={t("automations.dragBot", { name: bot.name })}
             >
+              <BotAvatar bot={bot} size={27} animated={false} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[12px] font-medium text-ink">{bot.name}</div>
+                {bot.title && <div className="truncate text-[10px] text-ink-secondary/75">{bot.title}</div>}
+              </div>
               <GripVertical
                 size={13}
                 className="shrink-0 text-ink-secondary/35 transition-colors group-hover:text-ink-secondary"
                 aria-hidden="true"
               />
-              <BotAvatar bot={bot} size={27} animated={false} />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[11.5px] font-medium text-ink">{bot.name}</div>
-                <div className="truncate text-[9.5px] text-ink-secondary/75">
-                  {bot.title || "BotAgent"}
-                </div>
-              </div>
-              <span className="shrink-0 rounded-full border border-hairline/50 px-1.5 py-0.5 text-[8.5px] text-ink-secondary/70 opacity-0 transition-opacity group-hover:opacity-100">
-                Drag
-              </span>
             </div>
           ))}
 
           {filteredBots.length === 0 && (
             <div className="px-3 py-8 text-center text-[11px] leading-relaxed text-ink-secondary">
-              {bots.length === 0 ? "Create a bot to schedule work." : "No bots match your search."}
+              {bots.length === 0 ? t("automations.noBots") : t("automations.noBotsMatch")}
             </div>
           )}
         </div>
 
         <p className="mt-2 px-2 text-[9.5px] leading-relaxed text-ink-secondary/65">
-          Drag a bot onto any time to schedule it.
+          {t("automations.dragHint")}
         </p>
       </section>
     </aside>

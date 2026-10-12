@@ -1333,3 +1333,199 @@ recorded. Untouched here.
 - `GlassPanel` takes `ref`, `as` and arbitrary attributes — the sheet, the team
   shelf and the remote panel are all the same primitive.
 - Do not run prettier. See phase 3's note.
+
+## Phase 8 — Automations: the calendar on the sky
+
+From `d61553b1`.
+
+### What changed
+
+**The screen is now the mockup's screen.** The old one was a `bg-app` page
+under an opaque header with a `bg-panel` 320px left column and a `bg-panel`
+calendar. Four plates, one of them the largest thing on screen. What is on the
+canvas now: the header, the month, the bots you can drag, the week grid, the
+hour rules, the day columns and the recent-runs heading. Glass is spent on the
+three places work happens — the editor sheet, the event context menu, and the
+recent-run rows.
+
+**The header is the mockup's header.** Title, then a pill tablist
+(**Schedule · Logs · Webhooks**) carrying counts, then two count chips
+(*n failed*, *n paused*) that are buttons — the failed chip opens the logs,
+the paused chip opens the paused-routines sheet — then **Task**, **Call** and
+**Webhook**. The old header had a `New ▾` `<details>` menu holding those three
+things; they are three buttons now, which is what the mockup draws and what a
+person reaching for a webhook actually wants. The menu, its ref and its
+document-level click-outside listener are gone; nothing else moved with them.
+
+**A call on Linux says so.** F127 says the entry is retained and the
+unavailable reason is shown. `Call` stays in the header, disabled, with
+"Calls are unavailable on this Linux device." as its title and accessible name.
+A missing button reads as a missing feature; a disabled one with a reason reads
+as a boundary. The old header enabled the call entry unconditionally.
+
+**Recent runs are new.** The latest run per routine, newest first, under the
+grid, with the status chip, the routine, when it ran, which bot or group owns
+it, how long ago, and **Open execution** only when an execution thread actually
+exists. `All logs →` goes to the Logs tab with no routine filter. This is the
+receipt the mockup draws at the bottom of the schedule. It reads the store's
+runs and opens the same run dialog the logs tab opens — it invents no
+destination and no status.
+
+**The event dialog is a context menu.** The footer was a row of nine pill
+buttons wrapping onto two lines. It is now a flat, icon-led list: run now,
+open execution, open results, view logs, cancel run, then edit, pause/resume,
+delete. Same handlers, same order of operations. It is a `GlassPopover`, so it
+separates from the glass it covers.
+
+**The editor is a sheet.** `bg-panel` + `shadow-2xl` → `GlassSheet`, with the
+kind switch and the routine-type switch as glass pills and the inputs as
+hairlines on glass. Its title is *Edit routine* / *New scheduled task*, not the
+old *Edit event* / *New event*.
+
+**Event cards are a wash, not a slab.** `linear-gradient(58% → 28% bot colour
+over #242424/#181818)` with white text → `color-mix(16% bot colour,
+--glass-bg-strong)` with normal ink. A call wears the one accent instead of a
+private `#6d7cff`; a routine still wears the colour its bot already has stored.
+
+**Recurrence labels come from one table.** The `<select aria-label="Repeat">`
+had nine hardcoded English options; it now renders
+`recurrenceOptions({ kind })` from `src/lib/automations-view.ts`, so the menu
+the mockup draws and the values the editor stores cannot drift. A call gets
+five of them — interval and cron are withheld, because a call is a moment, not
+a cadence, and offering them meant offering something save would refuse.
+
+### Files
+
+| file | |
+| --- | --- |
+| `src/lib/automations-view.ts` + `.test.ts` | pure: tabs, header counts, the nine recurrences, recent-run rows, relative age, call availability, keep-awake note, bot-filter helpers (23 tests) |
+| `src/components/RoutineCalendarPage.tsx` | the shell, the grid, the event card, the context menu, the editor sheet, the quick composer, the paused sheet, `RecentRunsStrip` |
+| `src/components/routines/CalendarSidebar.tsx` | transparent rail; i18n'd, one hairline instead of a plate |
+| `src/components/routines/MiniMonth.tsx` | today gets a ring; the rest is unchanged |
+| `src/components/routines/RoutineList.tsx`, `RoutineLogs.tsx` | cards, not plates; every string and `aria-label` kept |
+| `src/components/WebhooksPanel.tsx` | editor → `GlassSheet`, endpoint list on the canvas, detail pane → `GlassCard` |
+| `src/locales/en.json` | 57 new `automations.*` strings |
+
+### FEATURES.md rows covered
+
+- **F122** — Schedule/Logs/Webhooks tabs, date navigation, Today, Day/3-day/Week,
+  the bot filter, the calendar/list switch, the mini-month, the searchable
+  draggable bots. Empty-slot selection, drag-a-bot-to-create, drag-to-move and
+  call-duration resize are untouched — all of it is the same grid.
+- **F123** — bot task vs group goal, title, date/time, recurrence, instructions,
+  attachments, bot or group plus lead from active members, results destination,
+  run limit, overlap Skip/Queue, save/cancel, owner locks and no-eligible-member
+  guidance. All still there; the *owner locks* guard is unchanged.
+- **F124** — all nine recurrences including custom cron, the interval presets /
+  custom minutes / days / time window / end date, and the four invalid-save
+  explanations. The three interval error messages and the cron inline error
+  are unchanged and still block save.
+- **F125** — run now, open execution, open results, logs, edit, pause/resume,
+  delete, cancel run, and the paused-routines dialog with resume/edit/group
+  navigation. All nine actions run from the new menu.
+- **F126** — the log sheet's routine/bot/status filters, search, clear-routine,
+  load 50 more, all seven statuses, missed runs visible, and the failed-run
+  attention chip that now sits in the header. **Keep-computer-awake** stays as
+  the page-level switch (`RoutineWakeBar`), unchanged in behaviour.
+- **F127** — scheduled calls kept: create, once/daily/weekly/selected-days,
+  duration, join/create group. The header entry now states the Linux
+  unavailability instead of silently offering it.
+- **F128, F129** — the webhooks *tab* sits on the new chrome. The webhook
+  editor, Setup/Activity detail, ingress state, rotate/copy and activation
+  review are **phase 9's** — `DESIGN.md` assigns both rows to it as well.
+  Nothing in either row was removed; the frame moved, the workflow did not.
+
+### Checks run
+
+| check | result |
+| --- | --- |
+| `pnpm run checks` (typecheck · lint · i18n · electron) | pass, 4/4 |
+| `pnpm check:contrast` | pass — 8 skins, midnight's two known upstream gaps only |
+| `vite build` | pass |
+| `vitest run src/lib/automations-view.test.ts src/components/routines/ src/components/RoutineResultsNavigation.test.ts` | 49 pass |
+| `vitest run src/lib/automations-view.test.ts src/components/routines/ src/components/RoutineResultsNavigation.test.ts src/components/bot-settings/RoutinesSection.test.ts src/lib/routine-calendar.test.ts` | 81 pass |
+| whole-repo suite, `cron-routines-ui.e2e`, `routine-run-feedback-ui.e2e` | **not run**; phase 11 owns them |
+
+`RoutineResultsNavigation.test.ts` is the one test that couples to this file's
+markup: it walks `EventDetails`' subtree and captures anything whose
+`child.type === "button"`, keyed by the button's text. That is why the context
+menu's rows are **literal `<button>` elements** and not a `<MenuRow>` wrapper —
+a component hides its own button from that walk, and the three
+results-navigation tests failed until it was inlined. **If you add a row to
+that menu, add it as a `<button>` with the label in a single `<span>`.**
+
+### Deliberate deviations from the mockup
+
+1. **The recurrence menu is a native `<select>`, not a popover list.** The
+   mockup draws the nine choices as an open list. `cron-routines-ui.e2e.test.ts`
+   drives `select[aria-label=Repeat]` by value and reads `.options`, and a
+   native select is what a keyboard and a screen reader already handle. It is
+   styled as the pill the mockup draws.
+2. **The editor is a centred sheet, not a right-hand column.** The mockup
+   pins it to the right edge. A centred `GlassSheet` is what the Inspector and
+   the add-bot sheet already use, and a form this tall in a 40%-width column
+   would need its own scrolling. Same component, same glass.
+3. **The keep-awake switch stayed at page level.** The mockup puts it inside
+   the editor. There is already one real control, wired to the desktop bridge,
+   directly under the header where it governs the whole page; a second copy
+   inside the editor would be a second thing to keep true. No checkbox was
+   faked.
+4. **The event card is not draggable when it is a finished run.** Unchanged
+   from before, and worth restating: only definitions move.
+
+### Open, deferred, or unfinished
+
+- **Nobody has looked at any of it.** Eight phases now rest on structure. The
+  264px rail beside a 7-column week, the pill tablist with badges, the two
+  count chips, the context menu over a busy grid and the recent-runs strip at
+  1440px are all unverified pixels. The header/toolbar/strip markup *was*
+  rendered and read back against the mockup (title, tabs with counts, failed
+  and paused chips, Task/disabled-Call-with-reason/Webhook, mini-month,
+  bot rail, week grid, wash-coloured cards, recent-run row) — but nothing was
+  opened in a browser. **What would settle it:** an isolated fixture per
+  `docs/verification/README.md`, two bots, one failing run and one paused
+  routine, then open an event, the editor and the Logs and Webhooks tabs.
+  Phase 11 QA.
+- **The `New ▾` menu is gone and `cron-routines-ui.e2e.test.ts` still asks for
+  it.** That test clicks `Create an automation` and then `Create a scheduled
+  task`. The first selector no longer exists; the second does, and the Task
+  button carries that exact accessible name. **The e2e needs one line changed
+  before it can pass** — drop the `Create an automation` click. I did not edit
+  the test: the brief says not to run these suites, and guessing at a fixture I
+  cannot run would make the failure look like something else. Deferred, named.
+- **`WebhooksPanel.tsx:129` refocus after closing the editor was repointed** at
+  `button[aria-label="Create a webhook"]`, because the `<summary>` it looked
+  for was part of the removed New menu. It is a one-line change and it is the
+  only cross-file reference to that element in the repo.
+- **The month column and the week grid have no vertical scroll of their own
+  beyond the grid's own.** A 24-hour grid is 1536px tall and scrolls inside
+  `CalendarGrid` as before; the recent-runs strip is a sibling below it, so on
+  a short window the strip is always visible without scrolling the grid. Good,
+  but unverified.
+- **`automations.missedEvidence` says "Missed runs are recorded when the app
+  was closed."** The old note also claimed *a run missed by under 12 hours
+  still happens when the app is back* and suggested a VPS. Whether that
+  catch-up window is still true is a scheduler question, not a design one, and
+  this phase did not read the scheduler. **If the window is gone, this string
+  is now half true.** Phase 11 or the scheduler owner should settle it.
+
+### For the next agent
+
+- `src/lib/automations-view.ts` is this screen's only decision layer: tabs,
+  counts, recurrences, recent-run rows, call availability, bot filter. Put new
+  rules there, not in the component, and they get a test for free.
+- `automationTabs` speaks **"schedule"**; the store speaks **"calendar"**. The
+  mapping is one ternary in the tab's `onClick` and the reverse one where
+  `tabs` is built. Do not rename either side.
+- `EventDetails` must emit literal `<button>` elements with their label in a
+  single `<span>` — see the note above about
+  `RoutineResultsNavigation.test.ts`.
+- `RoutineWakeBar`, `QuickComposer`, `EventEditor`, `EventDetails`, `PausedList`
+  and `RoutinesPage` are all still exported from `RoutineCalendarPage.tsx`, and
+  `RoutinesPage.tsx` is still the one-line re-export. `bot-settings/RoutinesSection`
+  and `remote-desktop-panel` both import from it.
+- `data-tour="automations-page"` is still on the title and
+  `guided-tour.ts` still points at it. If the title moves, move the anchor.
+- Phase 9 owns the webhook workflow. The tab frame is done; the Setup /
+  Activity detail is not.
+- Do not run prettier. See phase 3's note.
