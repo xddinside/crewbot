@@ -68,7 +68,7 @@ export function KeyboardShortcutsModal({ open, onClose }: KeyboardShortcutsModal
     <dialog
       ref={dialogRef}
       aria-labelledby="shortcuts-dialog-title"
-      className="glass-sheet m-auto w-[min(520px,calc(100%-32px))] max-h-[85vh] overflow-hidden p-0 text-ink backdrop:bg-black/20"
+      className="glass-sheet m-auto w-[min(520px,calc(100%-32px))] max-h-[85vh] overflow-hidden p-0 text-ink backdrop:bg-[var(--scrim)]"
       onCancel={(event) => { event.preventDefault(); onClose(); }}
       onKeyDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}

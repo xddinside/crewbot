@@ -49,11 +49,11 @@ export function TeamDialog({ section, rename = false, onClose }: {
     }
   };
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(event) => {
+    <div className="fixed inset-0 z-50 flex items-center justify-center app-scrim p-4" onMouseDown={(event) => {
       if (event.target === event.currentTarget && !saving) onClose();
     }}>
       <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="team-dialog-title"
-        className="max-h-[90vh] w-full max-w-[430px] overflow-y-auto rounded-2xl border border-hairline/50 bg-panel p-5 text-ink shadow-2xl"
+        className="glass-sheet max-h-[90vh] w-full max-w-[430px] overflow-y-auto p-5 text-ink"
         onKeyDown={(event) => {
           if (event.key === "Escape" && !saving) { event.stopPropagation(); onClose(); }
           if (event.key === "Tab") {

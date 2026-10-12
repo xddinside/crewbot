@@ -46,6 +46,7 @@ export function SidebarPopoverMenu({
   items,
   ariaLabel,
   openOnHover = false,
+  placement = "above",
   renderTrigger,
 }: {
   /** `data-tour` id for the trigger button */
@@ -53,6 +54,11 @@ export function SidebarPopoverMenu({
   items: SidebarMenuItem[];
   ariaLabel: string;
   openOnHover?: boolean;
+  /** Which side of the trigger the menu opens on. The sidebar's footer rows sit
+   *  at the bottom of the rail and open upward; a trigger in the top bar has
+   *  to open *downward*, because upward from a 56px header puts the whole
+   *  menu above the top edge of the window — off screen, and unclickable. */
+  placement?: "above" | "below";
   renderTrigger: (state: {
     open: boolean;
     attention: boolean;
@@ -151,7 +157,7 @@ export function SidebarPopoverMenu({
           id={menuId}
           role="menu"
           aria-label={ariaLabel}
-          className="animate-pop-in absolute bottom-full left-0 right-0 z-40 mb-1 overflow-hidden rounded-xl border border-hairline/50 bg-menu py-1.5 shadow-2xl shadow-black/50"
+          className={cn("glass-popover animate-pop-in absolute left-0 right-0 z-40 overflow-hidden py-1.5", placement === "below" ? "top-full mt-1" : "bottom-full mb-1")}
         >
           {items.map((item) => (
             <div key={item.key}>

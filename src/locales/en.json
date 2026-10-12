@@ -485,6 +485,7 @@
   "sidebar.section.collapseReorder": "Collapse {name}. Alt+Up/Down reorders it.",
   "sidebar.section.dragToReorder": "Drag to reorder",
   "sidebar.profile.you": "You",
+  "sidebar.profile.menuAria": "Profile and settings",
   "sidebar.menu.yourPhone": "Your phone",
   "sidebar.menu.getIos": "Get crewbot for iOS",
   "sidebar.menu.settings": "Settings",

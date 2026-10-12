@@ -188,7 +188,7 @@ export function CommandPalette({ onOpenChange, open: controlledOpen }: { onOpenC
        pale veil lets the conversation underneath stay recognisable instead of
        being replaced by a hole. */
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/20 p-6 pt-[10vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center app-scrim p-6 pt-[10vh]"
       onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}
       onKeyDown={onKeyDown}
     >

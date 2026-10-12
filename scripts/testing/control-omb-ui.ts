@@ -229,7 +229,18 @@ const TARGET_WAIT_MS = 5_000;
 async function resolveTarget(handle: UiHandle, values: Record<string, unknown>, verb: string): Promise<{ target: string; name?: string }> {
   const ref = typeof values.ref === "string" ? values.ref.trim() : "";
   const name = typeof values.name === "string" ? values.name : "";
-  if (Boolean(ref) === Boolean(name)) throw new ControlOmbError(`ui ${verb} needs exactly one of --ref @eN or --name NAME`);
+  // `--name-contains` matches a fragment instead of the whole accessible name.
+  // A control that carries extra context in its name — the model picker reads
+  // "<engine> · <model>" so two engines can show the same model — is otherwise
+  // unreachable by name, and the test would have to hard-code the decoration.
+  // parseArgs keeps the flag as written, dashes and all.
+  const contains = typeof values["name-contains"] === "string"
+    ? values["name-contains"]
+    : typeof values.nameContains === "string"
+      ? values.nameContains
+      : "";
+  if (Boolean(ref) === Boolean(name) && !contains) throw new ControlOmbError(`ui ${verb} needs exactly one of --ref @eN, --name NAME or --name-contains TEXT`);
+  if (ref && contains) throw new ControlOmbError(`ui ${verb} takes one target: --ref or --name-contains, not both`);
   if (ref) {
     if (!/^@?e\d+$/.test(ref)) throw new ControlOmbError(`--ref must look like @e12, got ${JSON.stringify(ref)}`, "refs come from `ui snapshot`");
     return { target: ref.startsWith("@") ? ref : `@${ref}` };
@@ -246,8 +257,10 @@ async function resolveTarget(handle: UiHandle, values: Record<string, unknown>, 
   let matches: Array<[string, { name?: unknown; role?: unknown }]> = [];
   for (;;) {
     const refs = (await snapshot(handle, false)).refs as Record<string, { name?: unknown; role?: unknown }> | undefined;
-    matches = Object.entries(refs ?? {}).filter(([, element]) => element?.name === name);
-    if (matches.length === 1) return { target: `@${matches[0]![0]}`, name };
+    matches = Object.entries(refs ?? {}).filter(([, element]) =>
+      contains ? String(element?.name ?? "").includes(contains) : element?.name === name,
+    );
+    if (matches.length === 1) return { target: `@${matches[0]![0]}`, name: contains || name };
     if (matches.length > 1 || Date.now() >= deadline) break;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
@@ -336,13 +349,26 @@ export async function runControlOmbUi(args: string[]): Promise<unknown> {
   }
 
   if (verb === "click" || verb === "type") {
-    const values = parse(command, rest, { ...ui, ref: { type: "string" }, name: { type: "string" }, text: { type: "string" } });
+    const values = parse(command, rest, { ...ui, ref: { type: "string" }, name: { type: "string" }, "name-contains": { type: "string" }, text: { type: "string" } });
     const handle = loadHandle(values.ui, verb);
     const text = verb === "type" ? values.text : undefined;
     if (verb === "type" && typeof text !== "string") throw new ControlOmbError("ui type requires --text TEXT");
     await requireLiveSession(handle);
     const { target, name } = await resolveTarget(handle, values, verb);
-    const data = await agentBrowser(handle.binary, sessionEnv(handle), verb === "click" ? ["click", target] : ["type", target, text as string]);
+    if (verb === "type") {
+      // One real keystroke per character, the way a person types. Both of the
+      // CLI's bulk verbs — `type` and `keyboard type` — insert text without
+      // advancing the caret, so in a plain field every character lands at
+      // position 0 and the text comes out reversed ("abc123" -> "321cba"). A
+      // field that manages its own caret (the composer does) was never
+      // affected, which is why this only ever showed up in a settings form.
+      await agentBrowser(handle.binary, sessionEnv(handle), ["focus", target]);
+      for (const character of text as string) {
+        await agentBrowser(handle.binary, sessionEnv(handle), ["press", character === " " ? "Space" : character]);
+      }
+      return { ok: true, target, ...(name ? { name } : {}), typed: (text as string).length };
+    }
+    const data = await agentBrowser(handle.binary, sessionEnv(handle), ["click", target]);
     return { ok: true, target, ...(name ? { name } : {}), ...data };
   }
 

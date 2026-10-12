@@ -118,7 +118,7 @@ export function AddSpecialistSheet({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-end bg-black/20 p-3 sm:p-6"
+      className="fixed inset-0 z-50 flex items-start justify-end app-scrim p-3 sm:p-6"
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <GlassSheet

@@ -185,11 +185,11 @@ export function LiveBrowser({ bot }: { bot: Bot }) {
         </div>
       </details>
     </div>
-    <dialog ref={profilesDialog} onClose={() => setShowProfiles(false)} onClick={(e) => { if (e.target === e.currentTarget) setShowProfiles(false); }} className="glass-sheet m-auto max-h-[80vh] w-[min(420px,calc(100%-32px))] overflow-auto p-5 text-ink backdrop:bg-black/30">
+    <dialog ref={profilesDialog} onClose={() => setShowProfiles(false)} onClick={(e) => { if (e.target === e.currentTarget) setShowProfiles(false); }} className="glass-sheet m-auto max-h-[80vh] w-[min(420px,calc(100%-32px))] overflow-auto p-5 text-ink backdrop:bg-[var(--scrim)]">
       <div className="mb-4 flex items-center justify-between"><h2 className="text-[15px] font-medium">Browser profiles</h2><button className={button} aria-label="Close browser profiles" onClick={() => setShowProfiles(false)}><X size={16} /></button></div>
       <BrowserProfilesManager bot={bot} disabled={pending || control.held} onProfileChanged={() => { setShowProfiles(false); reconnect(); }} />
     </dialog>
-    <dialog ref={typingDialog} onClose={() => setShowTyping(false)} className="glass-sheet m-auto w-[min(420px,calc(100%-32px))] p-5 text-ink backdrop:bg-black/30">
+    <dialog ref={typingDialog} onClose={() => setShowTyping(false)} className="glass-sheet m-auto w-[min(420px,calc(100%-32px))] p-5 text-ink backdrop:bg-[var(--scrim)]">
       <div className="mb-3 flex items-center justify-between"><h2 className="text-[14px] font-medium">Type into the selected page field</h2><button className={button} aria-label="Close typing" onClick={() => setShowTyping(false)}><X size={16} /></button></div>
       <form className="flex flex-col gap-3" onSubmit={(e) => {
       e.preventDefault(); const field = e.currentTarget.elements.namedItem("pageText") as HTMLInputElement;

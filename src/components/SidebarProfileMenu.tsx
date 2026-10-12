@@ -255,7 +255,11 @@ export function SidebarProfileMenu() {
     <>
       <SidebarPopoverMenu
         items={items}
-        ariaLabel={name}
+        // The top bar carries the same profile trigger, and both used to be
+        // named for the person alone: a screen reader announced "You" twice
+        // with nothing to tell the two apart. This row is the one inside the
+        // sidebar's own footer, so it names where it leads.
+        ariaLabel={`${name} — ${t("sidebar.profile.menuAria")}`}
         renderTrigger={({ open }) => (
           <span
             ref={triggerRef}

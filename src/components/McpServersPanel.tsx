@@ -164,7 +164,7 @@ function McpSheet({ label, onClose, children, footer }: McpSheetProps) {
   useSheetFocus(ref, onClose);
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-5"
+      className="fixed inset-0 z-50 flex items-center justify-center app-scrim p-5"
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <GlassSheet

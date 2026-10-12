@@ -153,7 +153,7 @@ export function CallTargetButton({
         className={cn(
           "relative flex size-9 items-center justify-center rounded-full transition-colors",
           active
-            ? "bg-danger text-white hover:brightness-110"
+            ? "bg-danger text-[var(--color-danger-ink)] hover:brightness-110"
             : unavailable
               ? "text-ink-secondary/50 hover:bg-raised hover:text-ink-secondary"
               : "text-ink-secondary hover:bg-raised hover:text-ink",

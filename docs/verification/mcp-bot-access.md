@@ -15,7 +15,7 @@ pnpm i18n:check
 pnpm test:electron
 ```
 
-`bot-mcp.e2e.test.ts` launches a new `launchVerificationServer` fixture for
+`server/bot-mcp.e2e.test.ts` launches a new `launchVerificationServer` fixture for
 each test. Its HOME, data, API/webhook ports and fake Claude CLI are disposable.
 It uses the repository's real `RemoteMcpClient` for Streamable HTTP initialize,
 notifications, tool discovery and calls. It checks:

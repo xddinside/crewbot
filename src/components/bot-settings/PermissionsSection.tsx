@@ -60,7 +60,7 @@ export function PermissionsSection({
           <span
             className={cn(
               "flex size-8 shrink-0 items-center justify-center rounded-lg",
-              bot.chiefOfStaff ? "bg-accent text-white" : "bg-control text-ink-secondary",
+              bot.chiefOfStaff ? "bg-accent text-[var(--color-accent-ink)]" : "bg-control text-ink-secondary",
             )}
           >
             <Crown size={17} />

@@ -66,7 +66,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center app-scrim p-6"
       onMouseDown={(event) => event.target === event.currentTarget && onCancel()}
     >
       <ConfirmDialogCard ref={dialogRef} cancelRef={cancelRef} {...props} />
@@ -99,10 +99,8 @@ export function ConfirmDialogCard({
       aria-modal="true"
       aria-labelledby="confirm-dialog-title"
       aria-describedby="confirm-dialog-body"
-      className={cn(
-        "w-full max-w-[420px] rounded-2xl border bg-panel p-5 shadow-2xl",
-        danger ? "border-danger/30" : "border-hairline/50",
-      )}
+      data-tone={danger ? "danger" : undefined}
+      className="glass-sheet w-full max-w-[420px] p-5"
     >
       <div className="flex items-start gap-3">
         <span className={cn("mt-0.5 shrink-0", danger ? "text-danger" : "text-warning")}>
@@ -131,7 +129,7 @@ export function ConfirmDialogCard({
           onClick={onConfirm}
           className={cn(
             "rounded-xl px-4 py-2 text-[13px] font-medium",
-            danger ? "bg-danger text-white hover:brightness-110" : "bg-accent text-white hover:brightness-110",
+            danger ? "bg-danger text-[var(--color-danger-ink)] hover:brightness-110" : "bg-accent text-[var(--color-accent-ink)] hover:brightness-110",
           )}
         >
           {confirmLabel}

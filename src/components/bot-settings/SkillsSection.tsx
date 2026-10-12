@@ -289,9 +289,9 @@ export function SkillsSection({ bot }: { bot: Bot }) {
           role="dialog"
           aria-modal="true"
           aria-labelledby="skill-review-title"
-          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/45 p-6"
+          className="fixed inset-0 z-[90] flex items-center justify-center app-scrim p-6"
         >
-          <div className="flex max-h-[min(760px,90vh)] w-full max-w-2xl flex-col rounded-2xl bg-card p-5 shadow-2xl">
+          <div className="glass-sheet flex max-h-[min(760px,90vh)] w-full max-w-2xl flex-col p-5">
             <div id="skill-review-title" className="text-[16px] font-semibold text-ink">
               Review {reviewing.skill.name} before enabling
             </div>
@@ -340,9 +340,9 @@ export function SkillsSection({ bot }: { bot: Bot }) {
           role="dialog"
           aria-modal="true"
           aria-labelledby="skill-view-title"
-          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/45 p-6"
+          className="fixed inset-0 z-[90] flex items-center justify-center app-scrim p-6"
         >
-          <div className="flex max-h-[min(760px,90vh)] w-full max-w-2xl flex-col rounded-2xl bg-card p-5 shadow-2xl">
+          <div className="glass-sheet flex max-h-[min(760px,90vh)] w-full max-w-2xl flex-col p-5">
             <div className="flex items-center justify-between gap-3">
               <div id="skill-view-title" className="text-[16px] font-semibold text-ink">{viewing.name}</div>
               <button

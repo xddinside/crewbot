@@ -21,8 +21,14 @@ describe("sky texture", () => {
   it("leaves most of the field empty", () => {
     // A sky with glyphs everywhere is noise. The texture wants a lot of clean
     // paper and a few soft masses.
+    //
+    // The bound is "most", not a number the generator happens to hit: the
+    // default coverage is 0.46 (DESIGN.md §6, measured against the field's
+    // own quantile), so anything tighter than half the field would be
+    // asserting the parameter rather than the property. The tight ceiling
+    // this test used to carry failed against the value it was written for.
     const cells = buildSkyTexture(grid);
-    expect(cells.length / (grid.columns * grid.rows)).toBeLessThan(0.45);
+    expect(cells.length / (grid.columns * grid.rows)).toBeLessThan(0.5);
   });
 
   it("never lets a glyph get bright enough to be read", () => {

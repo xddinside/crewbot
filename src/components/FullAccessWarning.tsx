@@ -51,7 +51,7 @@ export function FullAccessWarning({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center app-scrim p-6"
       onMouseDown={(event) => event.target === event.currentTarget && onCancel()}
     >
       <div
@@ -60,7 +60,7 @@ export function FullAccessWarning({
         aria-modal="true"
         aria-labelledby="full-access-warning-title"
         aria-describedby="full-access-warning-body"
-        className="w-full max-w-[440px] rounded-2xl border border-danger/30 bg-panel p-5 shadow-2xl"
+        className="glass-sheet w-full max-w-[440px] p-5" data-tone="danger"
       >
         <div className="flex items-start gap-3">
           <ShieldAlert size={19} className="mt-0.5 shrink-0 text-danger" />

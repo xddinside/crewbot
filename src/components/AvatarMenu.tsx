@@ -85,10 +85,12 @@ export function AvatarMenu() {
     <SidebarPopoverMenu
       items={items}
       ariaLabel={name}
+      placement="below"
+      // A span, not a button: SidebarPopoverMenu renders its own trigger
+      // button and labels it, so a button in here nests one button inside
+      // another — invalid HTML, and a React console error on every launch.
       renderTrigger={({ open, attention }) => (
-        <button
-          type="button"
-          aria-label={name}
+        <span
           style={noDragStyle}
           className={
             "relative flex size-9 items-center justify-center rounded-full transition-colors " +
@@ -99,7 +101,7 @@ export function AvatarMenu() {
           {attention && !open && (
             <span aria-hidden="true" className="absolute right-0.5 top-0.5 size-2 rounded-full bg-danger" />
           )}
-        </button>
+        </span>
       )}
     />
   );

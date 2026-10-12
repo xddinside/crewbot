@@ -85,7 +85,7 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin }: {
         {showLive && <span className="absolute right-1.5 top-1.5 size-1.5 animate-pulse rounded-full bg-success" aria-label={t("place.live")} />}
       </button>
       {open && (
-        <div role="menu" aria-label={t("place.chipTitle")} className="absolute bottom-full left-0 z-40 mb-2 w-[300px] overflow-hidden rounded-2xl border border-hairline/40 bg-raised shadow-2xl">
+        <div role="menu" aria-label={t("place.chipTitle")} className="glass-popover absolute bottom-full left-0 z-40 mb-2 w-[300px] overflow-hidden">
           <div className="border-b border-hairline/20 px-4 py-3 text-[14px] font-medium text-ink">{t("place.chipTitle")}</div>
           <div className="flex flex-col py-1.5">
             <button

@@ -95,7 +95,7 @@ export function OptionCard({
             aria-hidden
             className={cn(
               "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold",
-              checked ? "border-accent bg-accent text-white" : "border-hairline/55 bg-control text-ink-secondary",
+              checked ? "border-accent bg-accent text-[var(--color-accent-ink)]" : "border-hairline/55 bg-control text-ink-secondary",
             )}
           >
             {LETTERS[options.indexOf(option.label)] ?? ""}

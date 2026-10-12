@@ -142,7 +142,7 @@ export function NewBotDialog() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={close}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center app-scrim p-4" onMouseDown={close}>
       <div
         ref={dialogRef}
         role="dialog"
@@ -151,7 +151,7 @@ export function NewBotDialog() {
         aria-label={t("sidebar.newBot")}
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
-        className="flex max-h-full w-full max-w-[720px] flex-col overflow-hidden rounded-2xl border border-hairline/60 bg-card shadow-2xl shadow-black/60"
+        className="glass-sheet flex max-h-full w-full max-w-[720px] flex-col overflow-hidden"
       >
         <div className="flex items-start justify-between gap-4 px-5 pt-5">
           <div>

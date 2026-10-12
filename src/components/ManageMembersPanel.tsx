@@ -101,7 +101,7 @@ export function ManageMembersPanel({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-40 flex items-center justify-center app-scrim"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
@@ -109,7 +109,7 @@ export function ManageMembersPanel({
         role="dialog"
         aria-modal="true"
         aria-label={`Manage members of ${group.name}`}
-        className="w-[340px] rounded-2xl border border-hairline/50 bg-card p-4 shadow-2xl"
+        className="glass-sheet w-[340px] p-4"
       >
         <div className="mb-1 text-[15px] font-semibold text-ink">Manage Members</div>
         <div className="mb-3 truncate text-[13px] text-ink-secondary">{group.name}</div>

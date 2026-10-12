@@ -114,7 +114,7 @@ function WebhookEditor({ webhook, bots, onClose, onCredential }: { webhook?: Web
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-5" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center app-scrim p-5" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <GlassSheet ref={dialogRef} role="dialog" aria-modal="true" aria-label={webhook ? "Edit webhook" : "New webhook"} tabIndex={-1} className="flex max-h-[90vh] w-full max-w-[590px] flex-col overflow-hidden">
         <div className="flex items-start justify-between px-5 py-4"><div><div className="text-[17px] font-semibold text-ink">{webhook ? "Edit webhook" : "New webhook"}</div><div className="mt-1 text-[12px] text-ink-secondary">Each request starts a new task in the MAUS chat.</div></div><button onClick={onClose} aria-label="Close webhook editor" className="rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink"><X size={18} /></button></div>
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">

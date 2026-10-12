@@ -376,7 +376,7 @@ function Shell() {
         <div
           aria-hidden
           onMouseDown={(e) => e.target === e.currentTarget && setDrawerOpen(false)}
-          className="absolute inset-0 z-30 bg-black/25 md:hidden"
+          className="app-scrim absolute inset-0 z-30 md:hidden"
         />
       )}
       {showHome ? (
@@ -403,7 +403,7 @@ function Shell() {
           </div>
           {workspaceOpen && (
             <div className="fixed inset-0 z-30">
-              <div aria-hidden className="absolute inset-0 bg-black/20" onMouseDown={() => setWorkspaceOpen(false)} />
+              <div aria-hidden className="app-scrim absolute inset-0" onMouseDown={() => setWorkspaceOpen(false)} />
               <div className="glass-sheet relative h-full w-[320px] max-sm:w-full">
                 <Sidebar open onClose={() => setWorkspaceOpen(false)} />
               </div>
@@ -425,7 +425,7 @@ function Shell() {
           </div>
           {workspaceOpen && (
             <div className="fixed inset-0 z-30">
-              <div aria-hidden className="absolute inset-0 bg-black/20" onMouseDown={() => setWorkspaceOpen(false)} />
+              <div aria-hidden className="app-scrim absolute inset-0" onMouseDown={() => setWorkspaceOpen(false)} />
               <div className="glass-sheet relative h-full w-[320px] max-sm:w-full">
                 <Sidebar open onClose={() => setWorkspaceOpen(false)} />
               </div>
@@ -462,7 +462,7 @@ function Shell() {
           </div>
           {workspaceOpen && (
             <div className="fixed inset-0 z-30">
-              <div aria-hidden className="absolute inset-0 bg-black/20" onMouseDown={() => setWorkspaceOpen(false)} />
+              <div aria-hidden className="app-scrim absolute inset-0" onMouseDown={() => setWorkspaceOpen(false)} />
               <div className="glass-sheet relative h-full w-[320px] max-sm:w-full">
                 <Sidebar open onClose={() => setWorkspaceOpen(false)} />
               </div>
@@ -513,6 +513,26 @@ function Shell() {
       )}
         </>
       )}
+      {/* Settings and Apps & tools are *pages*, not overlays: each is a
+          `flex-1` child of this column, which is what gives it its height and
+          the scroll it owns. They stay in here while the dialogs below move
+          out, because a page and a sheet need opposite things from a parent:
+          the page needs the flex box, the sheet needs to escape the tier. */}
+      {state.appSettingsOpen && <SettingsModal />}
+      {state.pluginsOpen && <PluginsPanel />}
+      </div>
+      {/* The panels are siblings of the content column, not children of it.
+          The column carries `z-10`, which is a stacking context: a sheet
+          inside it can only ever paint inside that tier, so the top bar
+          (`z-30`) drew *over* every dialog — its header covered the first
+          56px of an open sheet and a click there landed on the header
+          instead of the control underneath. Out here a sheet's own z-index is
+          global again, and DOM order still keeps the palette above the
+          modals. The keys still differ even though each is remounted per
+          bot: two siblings keyed `bot.id` collide in React's keyed
+          reconciliation whenever both are open (Computer panel, then the
+          usage chip), so a fresh settings panel mounts and the old one never
+          unmounts. */}
       {/* The panels below are siblings, so their keys must differ even
           though each is remounted per bot. Two siblings keyed `bot.id`
           collide in React's keyed reconciliation whenever both are open
@@ -537,8 +557,6 @@ function Shell() {
         )
       )}
       {!remoteClient && state.inspectorOpen && bot && <InspectorPanel key={bot.threadId} bot={bot} />}
-      {state.appSettingsOpen && <SettingsModal />}
-      {state.pluginsOpen && <PluginsPanel />}
       {state.newBotOpen && <NewBotDialog />}
       {state.shortcutsOpen && (
         <KeyboardShortcutsModal
@@ -549,7 +567,7 @@ function Shell() {
       {/* mounted after the modals: same z-50 tier, so DOM order keeps the
           palette on top when one of them is open underneath */}
       <CommandPalette onOpenChange={setPaletteOpen} open={paletteRequested} />
-      </div>
+
       {/* Renderer-drawn caption buttons for the overlay-less frameless
           Windows window. Deliberately the LAST child of the shell: Blink
           resolves -webkit-app-region in DOM-walk order, so these no-drag

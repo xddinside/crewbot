@@ -407,7 +407,7 @@ export function AttachmentPreviewDialog({
        sheet of glass — the same surface the Inspector and the workspace sheet
        use, so opening an image is not a jump into a different application. */
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/25 p-3 backdrop-blur-[2px] sm:p-6"
+      className="fixed inset-0 z-[70] flex items-center justify-center app-scrim p-3 sm:p-6"
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div

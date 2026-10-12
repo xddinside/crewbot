@@ -268,7 +268,7 @@ export function ConnectedCompanyBackupSettings({ connection, bridge }: { connect
     {dialog && <dialog ref={nativeDialog} aria-labelledby="company-backup-dialog-title" onKeyDown={(event) => {
       // The enclosing Settings dialog has its own window-level keyboard trap.
       if (event.key === "Escape" || event.key === "Tab") event.stopPropagation();
-    }} onCancel={(event) => { event.preventDefault(); if (!action) closeDialog(); }} className="glass-sheet fixed inset-0 m-auto max-h-[85dvh] w-[min(34rem,calc(100vw-2rem))] overflow-y-auto p-5 text-ink backdrop:bg-black/35">
+    }} onCancel={(event) => { event.preventDefault(); if (!action) closeDialog(); }} className="glass-sheet fixed inset-0 m-auto max-h-[85dvh] w-[min(34rem,calc(100vw-2rem))] overflow-y-auto p-5 text-ink backdrop:bg-[var(--scrim)]">
       <div className="flex flex-col gap-3">
         <h3 id="company-backup-dialog-title" className="text-[16px] font-semibold">{title}</h3>
         {needsRestart && <p role="status" className="text-[13px] text-warning">{t("backup.restart")}</p>}

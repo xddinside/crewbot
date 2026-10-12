@@ -32,7 +32,7 @@ export function LocalComputerAutoWarning({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center app-scrim p-6"
       onMouseDown={(event) => event.target === event.currentTarget && onCancel()}
     >
       <div
@@ -40,7 +40,7 @@ export function LocalComputerAutoWarning({
         aria-modal="true"
         aria-labelledby="local-auto-warning-title"
         aria-describedby="local-auto-warning-body"
-        className="w-full max-w-[420px] rounded-2xl border border-hairline/50 bg-panel p-5 shadow-2xl"
+        className="glass-sheet w-full max-w-[420px] p-5"
       >
         <div className="flex items-start gap-3">
           <AlertTriangle size={18} className="mt-0.5 shrink-0 text-warning" />
