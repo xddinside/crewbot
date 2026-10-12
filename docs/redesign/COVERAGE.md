@@ -30,6 +30,13 @@ Four passes, each mechanical, each re-runnable:
 4. **Behaviour.** `vitest run` over the whole repository, `pnpm run checks`,
    `pnpm check:contrast` and `vite build`.
 
+**The renderer e2e tests are the one place this answer is not finished.**
+Twelve of them drive the real app by accessible name, and the redesign moved the
+roster to Crew, replaced the Tools menu with the Crew footer, and made the top
+bar the home of secondary destinations. Four now pass; eight still walk the old
+information architecture. None of them has lost a feature — they have lost a
+*route*, and `PROGRESS.md` lists each one with the route it should use instead.
+
 **What this does not prove.** No pixel was inspected and no row was clicked
 through by hand end to end. The rows below are *implemented and reachable*, and
 the component suite is the behavioural net; visual acceptance is still the

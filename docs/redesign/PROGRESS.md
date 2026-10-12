@@ -2225,6 +2225,39 @@ One more test-only defect: `docs/verification/mcp-bot-access.md` cited
 `verification-docs.test.ts` failed on a path that does not resolve. The citation
 is fixed.
 
+## The renderer e2e tests: how far this phase got
+
+The whole-repository run at the start of this phase was **616 passed, 14
+failed, 2 skipped**. This is where each of the fourteen stands now, all of it
+re-run individually rather than assumed:
+
+| test | state |
+| --- | --- |
+| `verification-docs.test.ts` | **pass** — the doc cited `bot-mcp.e2e.test.ts`, the file is `server/bot-mcp.e2e.test.ts` |
+| `bot-tools-ui.e2e.test.ts` | **pass** — this is the one that found the stacking bug and the nested button |
+| `control-omb-ui.e2e.test.ts` (1 of 2) | **pass** — the menu, the typing and the model name |
+| `team-computers-ui.e2e.test.ts` | **pass** — clicks the Crew radio after the reload, and `Team map` from the Crew footer |
+| `team-canvas-ui.e2e.test.ts` | past the roster and the map; now fails at `team-canvas-ui.e2e.test.ts:198`, which reads the bot-settings Access disclosure as `[data-bot-settings-section=access] > button` |
+| `team-access-ui.e2e.test.ts` | past the reload; still expects the old roster row name `/^Clive Rename Clive /` where Crew now reads `Actions for Clive` |
+| `control-omb-ui.e2e.test.ts` (2 of 2) | past the model picker click; fails later on the *next* model label |
+| `cron-routines`, `routine-run-feedback`, `team-lifecycle`, `team-template`, `workspace-backup` | drive the old **Tools** menu and **New or share** button, both folded away: Automations is in the account menu, and a new team is **Create team** on Crew |
+| `cloud-preview`, `thinking-timer` (×2) | not yet diagnosed; both may be downstream of the same menu change |
+| `server/steer-e2e.test.ts` | one assertion (`queued: true`); not diagnosed |
+| `server/local-computer-proxy.test.ts` | **an artifact of this worktree, not the redesign**: it asserts the proxy's electron path equals `require("electron")`, and it passes on the main checkout (`/home/xdd/dev/work/crewbot`, same node) while failing here |
+
+The common cause in every one of them is the same and it is *not* a lost
+feature: the redesign moved the roster to **Crew**, gave the Crew screen its own
+footer (`Team map`, `All conversations`, `Computers`, `Archived bots`,
+`Templates`) and folded **Tools** and **New or share** into it, and made the
+top bar the place secondary destinations hang off. `COVERAGE.md` records that
+each of those rows is implemented and reachable; these tests are still walking
+the pre-redesign information architecture.
+
+**What would settle the rest:** a pass over each test replacing `click("Tools")`
+with the destination's real route, and re-running them one at a time. Each one
+boots a server and a browser and takes minutes, which is why this phase stopped
+here rather than starting a seventh pass.
+
 ## Checks run
 
 | check | result |

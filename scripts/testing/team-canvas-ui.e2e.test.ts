@@ -73,7 +73,8 @@ type BotRecord = {
     })()`);
     const messages = async (id: string) => (await control("messages", "--bot", id, "--limit", "10")).messages;
     const openMap = async () => {
-      await click("Tools");
+      // The Crew footer carries Team map as its own row; the old Tools menu
+      // is gone, folded into that footer.
       await click("Team map");
       await expect.poll(() => evaluate("Boolean(document.querySelector('[data-team-canvas]'))"), { timeout: 10_000 }).toBe(true);
     };
@@ -147,6 +148,9 @@ type BotRecord = {
     receipts.beforeBots = beforeBots.map(identity);
     receipts.transcript = transcript;
     await evaluate("location.reload(); true");
+    // A hard reload lands on Home, which is the conversation: the roster
+    // lives on Crew now, so go there before asserting the roster is back.
+    await click("Crew", "radio");
     await expect.poll(snapshot, { timeout: 15_000 }).toContain("Actions for Ada");
     await openMap();
     await expect.poll(() => evaluate("[...document.querySelectorAll('[data-team-key]')].map(team => team.dataset.teamKey)"))
@@ -334,6 +338,9 @@ type BotRecord = {
     expect(Object.keys(layout).filter(key => key.endsWith(":bot-order"))).toHaveLength(1);
     receipts.layout = layout;
     await evaluate("location.reload(); true");
+    // A hard reload lands on Home, which is the conversation: the roster
+    // lives on Crew now, so go there before asserting the roster is back.
+    await click("Crew", "radio");
     await expect.poll(snapshot, { timeout: 15_000 }).toContain("Actions for Ada");
     await openMap();
     await expect.poll(() => teamPosition("Delivery"), { timeout: 10_000 }).toEqual(arranged);

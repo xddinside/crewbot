@@ -51,6 +51,9 @@ const enabled = process.env.OMB_UI_E2E === "1" || Boolean(resolveAgentBrowserBin
     await api("/api/bots", { name: "Private accountant", section: "Finance" }, "POST");
     await api("/api/sidebar-sections", { name: "Empty delivery" }, "POST");
     await ui("eval", "--js", "location.reload(); true");
+    // A hard reload lands on Home, which is the conversation: the roster
+    // lives on Crew now, so go there before asserting the roster is back.
+    await clickRole("radio", "Crew");
     await expect.poll(snapshot, { timeout: 15_000 }).toContain("Actions for Clive");
     await clickRole("button", /^Clive Rename Clive /);
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Open Clive's profile");

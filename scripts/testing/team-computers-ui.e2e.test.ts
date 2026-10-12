@@ -53,12 +53,16 @@ type Computer = { id: string; name: string; section: string | null; state: strin
     const record = async (id: string) => (await computers()).find(computer => computer.id === id);
     const receipts = () => provider("GET", "/__fixture");
     const focused = () => evaluate("document.activeElement?.getAttribute('aria-label') || document.activeElement?.textContent?.trim()");
-    const openMap = async () => { await click("Tools"); await click("Team map"); await expect.poll(snapshot).toContain('region "Team canvas"'); };
+    // The Crew footer carries Team map as its own row; the old Tools menu is gone.
+    const openMap = async () => { await click("Team map"); await expect.poll(snapshot).toContain('region "Team canvas"'); };
     await api("PATCH", `/api/bots/${fixture.botId}`, { name: "Ada", section: "Engineering", computer: "off" });
     await api("POST", "/api/sidebar-sections", { name: "Research" });
     await api("POST", "/api/bots", { name: "Ben", section: "Research", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } });
     const before = (await api("GET", "/api/bots?messages=10")).bots;
     await evaluate("location.reload(); true");
+    // A hard reload lands on Home, which is the conversation: the roster
+    // lives on Crew now, so go there before asserting the roster is back.
+    await click("Crew", "radio");
     await expect.poll(snapshot, { timeout: 15_000 }).toContain("Actions for Ada");
     await openMap();
     await click("Computers");
@@ -155,6 +159,9 @@ type Computer = { id: string; name: string; section: string | null; state: strin
     await click("Open Team map");
     expect((await receipts()).calls.filter((call: { method: string; path: string }) => call.method === "POST" && call.path === "/boxes")).toHaveLength(1);
     await evaluate("location.reload(); true");
+    // A hard reload lands on Home, which is the conversation: the roster
+    // lives on Crew now, so go there before asserting the roster is back.
+    await click("Crew", "radio");
     await expect.poll(snapshot, { timeout: 15_000 }).toContain("Actions for Ada");
     await openMap();
     await expect.poll(snapshot).toContain("Computer for Research team: Engineering desktop");
