@@ -19,7 +19,9 @@ import {
   type RemoteVoiceProvider,
 } from "@/lib/local-voice";
 import { cn } from "@/lib/cn";
+import { t } from "@/lib/i18n";
 import { voiceKeyDraftValue, type VoiceKeyDraft } from "@/lib/voice-key-draft";
+import { voiceOptionReason, voiceOptions } from "@/lib/engines-view";
 import { Switch } from "./SettingsPrimitives";
 
 const SAMPLE = "Morning. Overnight the tests went green, and I left two notes for you in the thread.";
@@ -199,7 +201,10 @@ export function VoiceSettings({
   const ready = usesLocalSystem || (hostConfigured && Boolean(selectedVoice || tts.voice));
 
   return (
-    <div className="rounded-xl bg-card p-4">
+    /* The voice card is the one piece of work on this screen, so it is the one
+       piece of glass; its heading, blurb and rows stand on whatever surface the
+       profile page already put them on. */
+    <div className="glass-card rounded-xl p-4">
       <div className="text-[15px] font-medium text-ink">Voice</div>
       <div className="mt-0.5 text-[13px] text-ink-secondary">
         {localMacClient
@@ -219,7 +224,7 @@ export function VoiceSettings({
       {localMacClient && (
         <div className="mt-4">
           <div className="mb-2 text-[13px] text-ink-secondary">Voice output on this Mac</div>
-          <div className="inline-flex rounded-xl bg-inset p-1" role="radiogroup" aria-label="Voice output on this Mac">
+          <div className="inline-flex items-center gap-0.5 rounded-full bg-raised/60 p-1" role="radiogroup" aria-label="Voice output on this Mac">
             {([
               { value: "system", label: "Built-in Mac voices", available: true },
               { value: "host", label: hostProviderLabel, available: hostConfigured },
@@ -233,8 +238,8 @@ export function VoiceSettings({
                 title={!option.available ? "Voice output is not configured on the host" : undefined}
                 onClick={() => chooseDeviceProvider(option.value)}
                 className={cn(
-                  "rounded-lg px-3.5 py-1.5 text-[12.5px] transition-colors disabled:opacity-50",
-                  deviceProvider === option.value ? "bg-raised text-ink shadow" : "text-ink-secondary hover:text-ink",
+                  "rounded-full px-3.5 py-1.5 text-[12.5px] transition-colors motion-reduce:transition-none disabled:opacity-50",
+                  deviceProvider === option.value ? "bg-accent text-[var(--color-accent-ink)]" : "text-ink-secondary hover:text-ink",
                 )}
               >
                 {option.label}
@@ -247,29 +252,35 @@ export function VoiceSettings({
       {!workspaceConfigurationLocked && (
         <div className="mt-4">
           <div className="mb-2 text-[13px] text-ink-secondary">Voice engine</div>
-          <div className="grid grid-cols-2 gap-1 rounded-xl bg-inset p-1" role="radiogroup" aria-label="Voice engine">
-            {([
-              { value: "elevenlabs", label: "ElevenLabs", available: true },
-              { value: "fish", label: "Fish Audio", available: true },
-              { value: "system", label: "Built-in Mac voices", available: systemVoicesAvailable },
-              { value: "chatterbox", label: "Chatterbox (local)", available: true },
-            ] as const).map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={provider === option.value}
-                disabled={switching || !option.available}
-                title={!option.available ? "Built-in voices are available only on macOS" : undefined}
-                onClick={() => setProvider(option.value)}
-                className={cn(
-                  "rounded-lg px-3.5 py-1.5 text-[12.5px] transition-colors disabled:opacity-50",
-                  provider === option.value ? "bg-raised text-ink shadow" : "text-ink-secondary hover:text-ink",
-                )}
-              >
-                {option.label}
-              </button>
-            ))}
+          {/* Four engines, and the two that cannot run here are disabled with
+              the reason rather than removed: a missing button reads as a
+              missing feature. */}
+          <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Voice engine">
+            {voiceOptions({ hostPlatform: capabilities?.host.platform }).map((option) => {
+              const reason = voiceOptionReason(option, {
+                hasKey: configured,
+                hasUrl: Boolean(tts.baseUrl),
+                owner: true,
+              });
+              const on = provider === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  disabled={switching || Boolean(reason) || (option.id === "system" && !systemVoicesAvailable)}
+                  title={reason ?? (option.id === "system" && !systemVoicesAvailable ? "Built-in voices are available only on macOS" : undefined)}
+                  onClick={() => setProvider(option.id)}
+                  className={cn(
+                    "rounded-full px-3.5 py-1.5 text-[12.5px] transition-colors motion-reduce:transition-none disabled:opacity-45",
+                    on ? "bg-accent text-[var(--color-accent-ink)]" : "border border-hairline/40 text-ink-secondary hover:bg-raised/60 hover:text-ink",
+                  )}
+                >
+                  {t(option.labelKey)}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -290,12 +301,12 @@ export function VoiceSettings({
             placeholder={configured ? "••••••••  (paste to replace)" : cloudProvider.placeholder}
             aria-label={`${cloudProvider.name} key`}
             autoComplete="off"
-            className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none"
+            className="w-full rounded-xl border border-hairline/45 bg-transparent px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary transition-colors focus:border-accent focus:outline-none"
           />
           <button
             onClick={() => void saveKey()}
             disabled={saving || !key.trim()}
-            className="flex w-[72px] shrink-0 items-center justify-center gap-1.5 rounded-lg bg-control py-2 text-[13px] text-ink hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-[72px] shrink-0 items-center justify-center gap-1.5 rounded-full bg-raised px-3 py-2 text-[13px] text-ink transition-colors hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? <Loader2 size={13} className="animate-spin" /> : <><Check size={13} />Save</>}
           </button>
@@ -330,12 +341,12 @@ export function VoiceSettings({
             aria-label="Chatterbox server address"
             autoComplete="off"
             spellCheck={false}
-            className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none"
+            className="w-full rounded-xl border border-hairline/45 bg-transparent px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary transition-colors focus:border-accent focus:outline-none"
           />
           <button
             onClick={() => void saveServer()}
             disabled={savingServer || !serverUrl.trim()}
-            className="flex w-[72px] shrink-0 items-center justify-center gap-1.5 rounded-lg bg-control py-2 text-[13px] text-ink hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-[72px] shrink-0 items-center justify-center gap-1.5 rounded-full bg-raised px-3 py-2 text-[13px] text-ink transition-colors hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {savingServer ? <Loader2 size={13} className="animate-spin" /> : <><Check size={13} />Save</>}
           </button>
@@ -373,7 +384,7 @@ export function VoiceSettings({
               value={selectedVoice}
               onChange={(e) => chooseVoice(e.target.value)}
               aria-label={`${bot.name}'s voice`}
-              className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink focus:border-hairline focus:outline-none"
+              className="w-full rounded-xl border border-hairline/45 bg-transparent px-3 py-2 text-[13px] text-ink transition-colors focus:border-accent focus:outline-none"
             >
               <option value="">
                 {loadingVoices
@@ -399,7 +410,7 @@ export function VoiceSettings({
               disabled={!ready}
               title={ready ? "Hear this voice" : "Pick a voice first"}
               aria-label="Hear this voice"
-              className="flex w-[72px] shrink-0 items-center justify-center gap-1.5 rounded-lg bg-control py-2 text-[13px] text-ink hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex w-[72px] shrink-0 items-center justify-center gap-1.5 rounded-full bg-raised px-3 py-2 text-[13px] text-ink transition-colors hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Volume2 size={14} /> Try
             </button>

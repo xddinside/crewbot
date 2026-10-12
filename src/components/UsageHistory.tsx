@@ -147,7 +147,7 @@ export function UsageHistory({ load = fetchUsage }: { load?: typeof fetchUsage }
           value={period}
           onChange={(event) => setPeriod(event.target.value as UsagePeriod)}
           aria-label={t("usage.history.period")}
-          className="rounded-lg border border-hairline/40 bg-inset px-2 py-1.5 text-[12.5px] text-ink focus:border-hairline focus:outline-none"
+          className="rounded-full border border-hairline/40 bg-transparent px-3 py-1.5 text-[12.5px] text-ink transition-colors focus:border-accent focus:outline-none"
         >
           <option value="month">{t("usage.history.thisMonth")}</option>
           <option value="lastMonth">{t("usage.history.lastMonth")}</option>
@@ -162,8 +162,10 @@ export function UsageHistory({ load = fetchUsage }: { load?: typeof fetchUsage }
               aria-selected={groupBy === option}
               onClick={() => setGroupBy(option)}
               className={cn(
-                "rounded-lg px-2.5 py-1 text-[12px]",
-                groupBy === option ? "bg-accent/15 text-accent" : "text-ink-secondary hover:bg-raised/50 hover:text-ink",
+                "rounded-full px-3 py-1.5 text-[12px] transition-colors motion-reduce:transition-none",
+                groupBy === option
+                  ? "bg-accent text-[var(--color-accent-ink)]"
+                  : "text-ink-secondary hover:bg-raised/60 hover:text-ink",
               )}
             >
               {t(GROUP_LABEL_KEYS[option])}
@@ -173,7 +175,7 @@ export function UsageHistory({ load = fetchUsage }: { load?: typeof fetchUsage }
         <a
           href={usageExportHref(range)}
           download
-          className="ml-auto flex items-center gap-1.5 rounded-lg border border-hairline/40 px-2.5 py-1 text-[12px] text-ink-secondary hover:bg-raised/50 hover:text-ink"
+          className="ml-auto flex items-center gap-1.5 rounded-full border border-hairline/40 px-3 py-1.5 text-[12px] text-ink-secondary transition-colors hover:bg-raised/60 hover:text-ink"
         >
           <Download size={13} />{t("usage.history.export")}
         </a>

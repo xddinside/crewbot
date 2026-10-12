@@ -62,20 +62,20 @@ export function DeviceSignInProgress({ auth }: { auth: DeviceSignInStatus }) {
   }
 
   return (
-    <div className="space-y-2 rounded-lg border border-hairline/50 bg-app p-3">
+    <div className="glass-card space-y-2 rounded-xl p-3.5">
       <p className="text-[12px] text-ink-secondary">{t("engineSetup.device.enterCode")}</p>
-      <div className="flex items-center justify-between gap-2 rounded-lg bg-inset px-3 py-2">
+      <div className="flex items-center justify-between gap-2 rounded-xl border border-hairline/35 px-3 py-2.5">
         <code className="select-all font-mono text-lg font-semibold tracking-widest text-ink">{auth.userCode}</code>
         <button
           type="button"
           aria-label={t("engineSetup.device.copyCode")}
           onClick={() => void copy()}
-          className="rounded-md p-2 text-ink-secondary hover:bg-control hover:text-ink"
+          className="rounded-full p-2 text-ink-secondary transition-colors hover:bg-raised/60 hover:text-ink"
         >
           {copied ? <Check size={15} className="text-success" /> : <Copy size={15} />}
         </button>
       </div>
-      <a href={link} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-white hover:brightness-110">
+      <a href={link} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 rounded-full bg-accent px-3.5 py-2 text-[12.5px] font-semibold text-[var(--color-accent-ink)] transition hover:brightness-110">
         {t("engineSetup.device.openChatGPT")} <ExternalLink size={13} />
       </a>
       <p role="status" className="flex items-center gap-1.5 text-[11.5px] text-ink-secondary">

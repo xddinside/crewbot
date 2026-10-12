@@ -10,8 +10,8 @@ const PROVIDERS = {
   custom: { label: "Custom", keyLabel: "Custom image API key", credential: "customImageApiKey" },
 } as const;
 
-const INPUT_CLASS = "w-full min-w-0 rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[12.5px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none disabled:opacity-50";
-const BUTTON_CLASS = "flex items-center justify-center gap-1.5 rounded-lg bg-control px-3 py-2 text-[12.5px] text-ink hover:bg-raised-hover disabled:opacity-50";
+const INPUT_CLASS = "w-full min-w-0 rounded-xl border border-hairline/45 bg-transparent px-3 py-2 text-[12.5px] text-ink placeholder:text-ink-secondary transition-colors focus:border-accent focus:outline-none disabled:opacity-50";
+const BUTTON_CLASS = "flex items-center justify-center gap-1.5 rounded-full border border-hairline/40 px-3 py-2 text-[12.5px] text-ink transition-colors hover:bg-raised/60 disabled:opacity-50";
 
 export function AvatarImageGenerator({
   botLabel,
@@ -241,7 +241,7 @@ export function AvatarImageGenerator({
       </p>
 
       {configured ? (
-        <details key={provider} className="mt-3 rounded-lg border border-hairline/40 px-3 py-2">
+        <details key={provider} className="mt-3 rounded-xl border border-hairline/40 px-3 py-2">
           <summary className="cursor-pointer text-[11.5px] text-ink-secondary">Connection settings</summary>
           <div className="mt-3">{connectionForm}</div>
         </details>
@@ -267,7 +267,7 @@ export function AvatarImageGenerator({
             }
           }}
           disabled={busy || !configured || unsaved}
-          className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white hover:brightness-110 disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-full bg-accent px-3.5 py-2 text-[12.5px] font-medium text-[var(--color-accent-ink)] transition hover:brightness-110 disabled:opacity-50"
         >
           {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
           {generating ? "Generating…" : "Generate avatar"}

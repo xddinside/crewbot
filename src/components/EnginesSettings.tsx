@@ -119,7 +119,7 @@ function CustomPicker({ instance, cliDefault, onClose, onSaved }: {
             }}
             aria-label={t("engines.detectedAria", { name: instance.displayName })}
             disabled={busy}
-            className="w-full appearance-none rounded-lg border border-hairline/40 bg-inset px-3 py-2 pr-8 font-mono text-[12px] text-ink focus:border-hairline focus:outline-none disabled:opacity-50"
+            className="w-full appearance-none rounded-xl border border-hairline/45 bg-transparent px-3 py-2 pr-8 font-mono text-[12px] text-ink transition-colors focus:border-accent focus:outline-none disabled:opacity-50"
           >
             <option value="">{t("engines.selectBinary")}</option>
             {candidates.map((p) => (
@@ -143,7 +143,7 @@ function CustomPicker({ instance, cliDefault, onClose, onSaved }: {
         aria-label={t("engines.customAria", { name: instance.displayName })}
         spellCheck={false}
         disabled={busy}
-        className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 font-mono text-[12px] text-ink placeholder:font-sans placeholder:text-ink-secondary focus:border-hairline focus:outline-none disabled:opacity-50"
+        className="w-full rounded-xl border border-hairline/45 bg-transparent px-3 py-2 font-mono text-[12px] text-ink placeholder:font-sans placeholder:text-ink-secondary transition-colors focus:border-accent focus:outline-none disabled:opacity-50"
       />
       {probe && !probe.ok && probe.message && (
         <div role="alert" className="flex gap-1.5 rounded-lg border border-warning/25 bg-warning/10 px-2.5 py-2 text-[12px] leading-relaxed text-warning">
@@ -159,7 +159,7 @@ function CustomPicker({ instance, cliDefault, onClose, onSaved }: {
         <button
           onClick={onClose}
           disabled={busy}
-          className="rounded-lg px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-raised/50 hover:text-ink disabled:opacity-50"
+          className="rounded-full px-3 py-1.5 text-[13px] text-ink-secondary transition-colors hover:bg-raised/60 hover:text-ink disabled:opacity-50"
         >
           {t("common.cancel")}
         </button>
@@ -168,14 +168,14 @@ function CustomPicker({ instance, cliDefault, onClose, onSaved }: {
             <button
               onClick={() => setProbe(null)}
               disabled={busy}
-              className="rounded-lg px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-raised/50 hover:text-ink disabled:opacity-50"
+              className="rounded-full px-3 py-1.5 text-[13px] text-ink-secondary transition-colors hover:bg-raised/60 hover:text-ink disabled:opacity-50"
             >
               {t("engines.editPath")}
             </button>
             <button
               onClick={() => persist()}
               disabled={busy}
-              className="flex items-center gap-1.5 rounded-lg bg-raised px-3 py-1.5 text-[13px] text-danger hover:bg-raised-hover disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-full bg-raised px-3 py-1.5 text-[13px] text-danger transition-colors hover:bg-raised-hover disabled:opacity-50"
             >
               {saving ? <Loader2 size={13} className="animate-spin" /> : t("engines.saveAnyway")}
             </button>
@@ -185,7 +185,7 @@ function CustomPicker({ instance, cliDefault, onClose, onSaved }: {
             onClick={save}
             disabled={busy || !value || !dirty}
             className={cn(
-              "flex w-[72px] items-center justify-center gap-1.5 rounded-lg py-1.5 text-[13px]",
+              "flex w-[76px] items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[13px]",
               "bg-raised text-ink hover:bg-raised-hover",
               "disabled:cursor-not-allowed disabled:opacity-50",
             )}
@@ -269,8 +269,8 @@ function EngineRow({ instance }: { instance: InstanceInfo }) {
             <p className="flex items-center gap-1.5 text-[12px] text-success"><Check size={13} />{t("engineSetup.claude.connectedAccount")}</p>
           )
       )}
-      <details className="mt-3 rounded-xl border border-hairline/40 px-3 py-2.5">
-        <summary className="cursor-pointer text-[12px] font-medium text-ink-secondary hover:text-ink">{t("engines.library.advanced")}</summary>
+      <details className="glass-card group/advanced mt-3 rounded-xl px-3.5 py-3">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-[12px] font-medium text-ink-secondary transition-colors hover:text-ink [&::-webkit-details-marker]:hidden">{t("engines.library.advanced")}<ChevronDown size={13} aria-hidden="true" className="text-ink-secondary transition-transform group-open/advanced:rotate-180 motion-reduce:transition-none" /></summary>
         <p className="mt-2 text-[12px] leading-relaxed text-ink-secondary">{t("engines.footer")}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px]">
           {instance.cli ? (
@@ -312,8 +312,8 @@ function EngineRow({ instance }: { instance: InstanceInfo }) {
             disabled={updating}
             aria-expanded={open}
             className={cn(
-              "shrink-0 rounded-lg border border-hairline/40 px-3 py-1 text-[12px]",
-              open ? "bg-accent/15 text-accent" : "text-ink-secondary hover:bg-raised/50 hover:text-ink",
+              "shrink-0 rounded-full border border-hairline/40 px-3 py-1.5 text-[12px] transition-colors",
+              open ? "bg-accent text-[var(--color-accent-ink)]" : "text-ink-secondary hover:bg-raised/60 hover:text-ink",
               "disabled:opacity-50",
             )}
           >
@@ -348,7 +348,7 @@ export function EnginesSettings() {
     <div className="flex min-w-0 flex-col gap-6 pb-2">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1 basis-60">
-          <h1 className="text-[22px] font-semibold tracking-tight text-ink">{t("settings.engines.title")}</h1>
+          <h1 className="text-[22px] font-semibold tracking-[-0.015em] text-ink">{t("settings.engines.title")}</h1>
           <p className="mt-2 max-w-lg text-[13px] leading-relaxed text-ink-secondary">{t("engines.library.intro")}</p>
         </div>
         <RefreshEngines />

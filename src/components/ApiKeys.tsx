@@ -6,7 +6,9 @@ import { Check, CircleHelp, ExternalLink, Loader2, TriangleAlert } from "lucide-
 import { api, useStore, type ConfigStatus } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { connectionActions, connectionState } from "@/lib/engines-view";
 import type { LocaleKey } from "@/locales";
+import { GlassPopover } from "@/components/Glass";
 
 export type ConfigSection = "composio" | "box" | "opencodeGo" | "anthropic" | "openaiCompat" | "xai";
 /** Sections whose key can be tried against the provider from the server. */
@@ -154,11 +156,11 @@ function CredentialHelp({ section }: { section: ConfigSection }) {
         <CircleHelp size={14} aria-hidden="true" />
       </button>
       {open && (
-        <div
+        <GlassPopover
           id={popoverId}
           role="group"
           aria-label={t("keys.helpAria", { label: credential.label })}
-          className="animate-pop-in absolute right-0 z-30 mt-1.5 w-[270px] rounded-xl border border-hairline bg-panel p-3 text-left shadow-2xl"
+          className="animate-pop-in absolute right-0 z-30 mt-1.5 w-[270px] rounded-xl p-3 text-left"
         >
           <div className="text-[12px] leading-[1.45] text-ink-secondary">{credential.description}</div>
           {credential.warning && (
@@ -177,7 +179,7 @@ function CredentialHelp({ section }: { section: ConfigSection }) {
             {credential.linkLabel}
             <ExternalLink size={12} aria-hidden="true" />
           </a>
-        </div>
+        </GlassPopover>
       )}
     </div>
   );
@@ -212,6 +214,9 @@ export function ApiKeyRow({
   const clearing = !value.trim() && configured;
   const emptyDraft = edited && !value.trim();
   const credential = credentialCopy(section);
+  // Which of the three things a saved secret can be asked for is a rule, not
+  // a rendering decision: Test needs a stored key to test.
+  const actions = connectionActions({ configured, testable: Boolean(testProvider), optional: credential.optional });
 
   const save = () => {
     if (saving || (!value.trim() && !configured)) return;
@@ -266,14 +271,18 @@ export function ApiKeyRow({
   return (
     <div>
       <div className="mb-1.5 flex items-center gap-2 text-[13px] text-ink-secondary">
-        <span className={cn("size-1.5 rounded-full", configured ? "bg-success" : "bg-raised-hover")} />
+        <span aria-hidden="true" className={cn("size-1.5 shrink-0 rounded-full", configured ? "bg-success" : "bg-ink-secondary/40")} />
         <span>{credential.label}</span>
         {credential.optional && (
-          <span className="rounded bg-control px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-secondary">
+          <span className="rounded bg-raised px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-secondary">
             {t("keys.optional")}
           </span>
         )}
-        {configured && <span className="text-[11px] text-ink-secondary">{t("keys.configured")}</span>}
+        {/* "Configured" is the whole claim: the value is write-only, so the
+            server confirms a secret exists and never sends it back. */}
+        <span className={cn("text-[11px]", configured ? "text-success" : "text-ink-secondary")}>
+          {t(connectionState(configured).labelKey)}
+        </span>
         <CredentialHelp section={section} />
       </div>
       <div className="flex gap-2">
@@ -286,13 +295,13 @@ export function ApiKeyRow({
           placeholder={configured ? t("keys.replace") : credential.placeholder}
           aria-label={credential.label}
           autoComplete="off"
-          className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none"
+          className="w-full rounded-xl border border-hairline/45 bg-transparent px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary transition-colors focus:border-accent focus:outline-none"
         />
         <button
           onClick={save}
           disabled={saving || (!value.trim() && !configured)}
           className={cn(
-            "flex w-[72px] shrink-0 items-center justify-center gap-1.5 rounded-lg py-2 text-[13px]",
+            "flex w-[76px] shrink-0 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[13px]",
             clearing
               ? "bg-control text-danger hover:bg-raised-hover"
               : "bg-control text-ink hover:bg-raised-hover",
@@ -302,12 +311,12 @@ export function ApiKeyRow({
         >
           {saving ? <Loader2 size={13} className="animate-spin" /> : clearing ? t("keys.clear") : <><Check size={13} />{t("common.save")}</>}
         </button>
-        {testProvider && (configured || value.trim()) && (
+        {testProvider && actions.test && (
           <button
             type="button"
             onClick={() => void test()}
             disabled={testing || saving || emptyDraft}
-            className="flex shrink-0 items-center justify-center rounded-lg border border-hairline/40 px-3 py-2 text-[13px] text-ink-secondary hover:bg-raised/50 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex shrink-0 items-center justify-center rounded-full border border-hairline/40 px-3.5 py-2 text-[13px] text-ink-secondary transition-colors hover:bg-raised/60 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
             {testing ? t("keys.testing") : t("keys.test")}
           </button>
@@ -378,13 +387,13 @@ export function VpsConnection() {
           placeholder="my-vps"
           aria-label={t("keys.vps.aria")}
           autoComplete="off"
-          className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none"
+          className="w-full rounded-xl border border-hairline/45 bg-transparent px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary transition-colors focus:border-accent focus:outline-none"
         />
         <button
           onClick={save}
           disabled={saving || (!alias.trim() && !configured)}
           className={cn(
-            "flex w-[72px] shrink-0 items-center justify-center gap-1.5 rounded-lg py-2 text-[13px]",
+            "flex w-[76px] shrink-0 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[13px]",
             !alias.trim() && configured ? "bg-control text-danger hover:bg-raised-hover" : "bg-control text-ink hover:bg-raised-hover",
             "disabled:cursor-not-allowed disabled:opacity-50",
           )}
@@ -431,7 +440,7 @@ export function OpenAiCompatUrl() {
           placeholder="https://openrouter.ai/api/v1"
           aria-label={t("keys.openaiCompat.url")}
           spellCheck={false}
-          className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 font-mono text-[12px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none"
+          className="w-full rounded-xl border border-hairline/45 bg-transparent px-3 py-2 font-mono text-[12px] text-ink placeholder:text-ink-secondary transition-colors focus:border-accent focus:outline-none"
         />
         <button
           onClick={save}

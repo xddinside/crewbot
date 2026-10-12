@@ -133,8 +133,8 @@ export function ClaudeSignIn({ instanceId }: { instanceId: string }) {
       ) : null}
       {auth?.phase === "waiting" ? (
         link ? (
-          <div className="space-y-2 rounded-lg border border-hairline/50 bg-app p-3">
-            <a href={link} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-white hover:brightness-110">
+          <div className="glass-card space-y-2 rounded-xl p-3.5">
+            <a href={link} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 rounded-full bg-accent px-3.5 py-2 text-[12.5px] font-semibold text-[var(--color-accent-ink)] transition hover:brightness-110">
               {t("engineSetup.claude.open")} <ExternalLink size={13} />
             </a>
             <label className="block text-[12px] text-ink-secondary" htmlFor={`claude-code-${instanceId}`}>
@@ -146,7 +146,7 @@ export function ClaudeSignIn({ instanceId }: { instanceId: string }) {
               onChange={(e) => setCode(e.target.value)}
               autoComplete="off"
               spellCheck={false}
-              className="w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-[13px] text-ink outline-none focus:border-accent-border"
+              className="w-full rounded-xl border border-hairline/45 bg-transparent px-3 py-2.5 font-mono text-[13px] text-ink outline-none transition-colors focus:border-accent"
             />
             <button
               type="button"

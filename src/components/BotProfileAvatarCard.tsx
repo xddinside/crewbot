@@ -113,8 +113,8 @@ export function BotProfileAvatarCard({
   };
 
   return (
-    <div className="overflow-hidden rounded-xl border border-hairline/40 bg-card">
-      <div className="flex items-center justify-between border-b border-hairline/40 px-3 py-2.5">
+    <div className="glass-card overflow-hidden rounded-xl">
+      <div className="flex items-center justify-between border-b border-hairline/30 px-3 py-2.5">
         <span className="rounded-lg bg-control px-3 py-1.5 text-[14px] font-medium text-ink">Avatar</span>
         <button
           disabled={busy}
@@ -214,7 +214,7 @@ export function BotProfileAvatarCard({
                   onClick={() => onPatch({ mascotExpression: expression })}
                   className={cn(
                     "flex h-[58px] items-center justify-center rounded-xl bg-inset transition-colors hover:bg-control disabled:opacity-50",
-                    activeState === expression && "ring-2 ring-accent-border",
+                    activeState === expression && "ring-2 ring-accent",
                   )}
                   title={expression}
                   aria-label={`Use ${expression} expression`}
@@ -237,7 +237,7 @@ export function BotProfileAvatarCard({
                   onClick={() => onPatch({ color })}
                   className={cn(
                     "size-10 rounded-full border-2 border-transparent transition-transform hover:scale-110 disabled:opacity-50",
-                    bot.color === color && "ring-2 ring-accent-border ring-offset-2 ring-offset-card",
+                    bot.color === color && "ring-2 ring-accent ring-offset-2 ring-offset-[var(--glass-bg)]",
                   )}
                   style={{ backgroundColor: MAUS_COLORS[color] }}
                   title={color}

@@ -7,6 +7,7 @@ import { BotAvatar } from "./Avatar";
 import { Card } from "./SettingsPrimitives";
 import { t } from "@/lib/i18n";
 import { botUsage, cachedInput, costCaption, formatTokens, formatUsd, hasFiniteCost, sumUsage, usageDetail } from "@/lib/usage";
+import { usageHeadline, usageHeadlineCost, usageHeadlineTokens } from "@/lib/engines-view";
 import { UsageHistory } from "./UsageHistory";
 
 export function UsageSection() {
@@ -27,9 +28,27 @@ export function UsageSection() {
     });
   const total = sumUsage(rows.map((r) => r.usage));
   const billings = new Set(rows.map((r) => r.billing));
+  const headline = usageHeadline(rows.map((r) => r.usage));
 
   return (
     <>
+    {/* The three numbers the mockup puts above the table, standing on the sky:
+        cost, volume, and the cache reads inside that volume. */}
+    <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
+      <div>
+        <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary">{t("usage.period.all")}</div>
+        <div className="mt-1 text-[24px] font-semibold tracking-[-0.02em] tabular-nums text-ink">{usageHeadlineCost(headline)}</div>
+      </div>
+      <div>
+        <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary">{t("usage.colTokens")}</div>
+        <div className="mt-1 text-[15px] font-medium tabular-nums text-ink">{usageHeadlineTokens(headline.tokens)}</div>
+      </div>
+      <div>
+        <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary">{t("usage.cachedHeadline")}</div>
+        <div className="mt-1 text-[15px] font-medium tabular-nums text-ink-secondary">{usageHeadlineTokens(headline.cachedInput)}</div>
+      </div>
+      {billings.size > 1 && <p className="pb-1 text-[11.5px] text-ink-secondary">{t("usage.costMixed")}</p>}
+    </div>
     <Card title={t("usage.title")} subtitle={t("usage.subtitle")}>
       {rows.length === 0 ? (
         <div className="text-[13px] text-ink-secondary">{t("usage.empty")}</div>

@@ -70,7 +70,7 @@ export function CommandRow({
 
   if (compact) {
     return (
-      <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-lg border border-hairline/50 bg-app px-2 py-1.5">
+      <div className="mt-2 flex min-w-0 items-center gap-1.5 glass-card rounded-xl px-2.5 py-1.5">
         <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-secondary" title={command}>
           {command}
         </code>
@@ -105,7 +105,7 @@ export function CommandRow({
 
   return (
     <div className="mt-3">
-      <div className="flex min-w-0 items-center gap-2 rounded-lg border border-hairline/50 bg-app px-2.5 py-2">
+      <div className="flex min-w-0 items-center gap-2 glass-card rounded-xl px-3 py-2.5">
         <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink-secondary" title={command}>
           {command}
         </code>
@@ -194,7 +194,7 @@ function ServerEngineInstall({ instance, mode, command }: { instance: InstanceIn
       {done && !busy && <p role="status" className="text-center text-[11px] text-success">{t("engineSetup.serverInstalled")}</p>}
       {error && <p role="alert" className="whitespace-pre-wrap text-[11.5px] leading-relaxed text-danger">{error}</p>}
       {command && (
-        <details className="rounded-lg border border-hairline/50 bg-app px-2.5 py-2 text-[11.5px] text-ink-secondary">
+        <details className="glass-card rounded-xl px-3 py-2.5 text-[11.5px] text-ink-secondary">
           <summary className="cursor-pointer select-none">{t("engineSetup.preferTerminal")}</summary>
           <CommandRow command={command} actionLabel={t(mode === "update" ? "engineSetup.openUpdate" : "engineSetup.openInstall")} compact />
         </details>
@@ -360,7 +360,7 @@ function ManagedEngineSetup({ instance, signInOnly }: { instance: InstanceInfo; 
           <button type="button" onClick={() => void check()} className="w-full rounded-lg bg-control px-3 py-2 text-[12px] font-semibold text-ink hover:bg-raised-hover">
             {busy === "check" ? t("common.checking") : t("engineSetup.finishedSignIn")}
           </button>
-          <details className="rounded-lg border border-hairline/50 bg-app px-2.5 py-2 text-[11.5px] text-ink-secondary">
+          <details className="glass-card rounded-xl px-3 py-2.5 text-[11.5px] text-ink-secondary">
             <summary className="cursor-pointer select-none">{t("engineSetup.otherComputer")}</summary>
             <p className="mt-2 leading-relaxed">{t("engineSetup.otherComputerHint")}</p>
             <input
@@ -430,7 +430,7 @@ export function EngineSetup({
   // token) and intentionally have no install descriptor.
   if (!install) {
     return (
-      <div className={cn(!unframed && "rounded-xl border border-hairline/40 bg-control/30 p-3", className)}>
+      <div className={cn(!unframed && "glass-card rounded-xl p-3.5", className)}>
         <div className="text-[13px] font-semibold text-ink">{t("engineSetup.notReady", { name: instance.displayName })}</div>
         <p className="mt-1 text-[12px] leading-relaxed text-ink-secondary">
           {instance.snapshot.reason ?? t("engineSetup.noReason")}
@@ -440,9 +440,9 @@ export function EngineSetup({
   }
 
   return (
-    <div className={cn(!unframed && "rounded-xl border border-hairline/40 bg-control/30 p-3", className)}>
+    <div className={cn(!unframed && "glass-card rounded-xl p-3.5", className)}>
       <div className="flex items-start gap-2.5">
-        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-inset text-ink-secondary">
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-raised text-ink-secondary">
           {signInOnly ? <LogIn size={14} /> : <Download size={14} />}
         </span>
         <div className="min-w-0">

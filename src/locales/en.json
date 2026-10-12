@@ -2570,5 +2570,20 @@
   "webhooks.delivery.ignored": "Ignored",
   "webhooks.delivery.rejected": "Rejected",
   "mcp.sheetHint": "Register a Model Context Protocol server, then test it before you trust it with anything.",
-  "mcp.sheetCloseAria": "Close"
+  "mcp.sheetCloseAria": "Close",
+  "engines.state.warning": "Needs attention",
+  "engines.state.update": "Update available",
+  "engines.state.notFound": "Not found",
+  "engines.state.signIn": "Sign in",
+  "connections.configured": "Configured",
+  "connections.notConfigured": "Not configured",
+  "voice.provider.elevenlabs": "ElevenLabs",
+  "voice.provider.fish": "Fish",
+  "voice.provider.system": "Mac voices",
+  "voice.provider.chatterbox": "Chatterbox",
+  "voice.reason.ownerOnly": "Only the workspace owner can change the voice engine.",
+  "voice.reason.needsKey": "Needs a workspace API key.",
+  "voice.reason.needsUrl": "Needs a server URL and model.",
+  "usage.period.all": "All time",
+  "usage.cachedHeadline": "Cached input"
 }

@@ -85,9 +85,9 @@ export function ProviderIconPicker({ instance }: { instance: InstanceInfo }) {
 
   const value = instance.icon?.kind === "preset" ? instance.icon.preset
     : instance.icon?.kind === "custom" ? "custom" : "default";
-  return <section aria-label={t("engines.icon.label")} className="mb-3 rounded-xl border border-hairline/40 p-3">
+  return <section aria-label={t("engines.icon.label")} className="glass-card mb-3 rounded-xl p-3">
     <div className="flex flex-wrap items-center gap-3">
-      <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-hairline/30 bg-panel">
+      <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-hairline/30">
         <InstanceProviderMark instance={instance} size={24} />
       </span>
       <label className="min-w-40 flex-1 text-[12px] font-medium text-ink">
@@ -97,7 +97,7 @@ export function ProviderIconPicker({ instance }: { instance: InstanceInfo }) {
             if (event.target.value === "default") void save(null);
             else if (event.target.value !== "custom") void save({ kind: "preset", preset: event.target.value as typeof PROVIDER_ICON_PRESETS[number] });
           }}
-          className="mt-1 block w-full rounded-lg border border-hairline/40 bg-inset px-2.5 py-2 text-[12px] text-ink focus:border-accent/60 focus:outline-none disabled:opacity-50">
+          className="mt-1 block w-full rounded-xl border border-hairline/45 bg-transparent px-2.5 py-2 text-[12px] text-ink focus:border-accent/60 focus:outline-none disabled:opacity-50">
           <option value="default">{t("engines.icon.default")}</option>
           {instance.icon?.kind === "custom" && <option value="custom">{t("engines.icon.custom")}</option>}
           {PROVIDER_ICON_PRESETS.map((preset) => <option key={preset} value={preset}>{PROVIDER_ICON_LABELS[preset]}</option>)}
@@ -112,7 +112,7 @@ export function ProviderIconPicker({ instance }: { instance: InstanceInfo }) {
     <p className="mt-2 text-[11px] leading-relaxed text-ink-secondary">{t("engines.icon.help")}</p>
     <input type="file" accept={PROVIDER_ICON_MEDIA_TYPES.join(",")} disabled={saving} onChange={upload}
       aria-label={t("engines.icon.uploadAria", { name: instance.displayName })}
-      className="mt-2 block w-full text-[11px] text-ink-secondary file:mr-2 file:rounded-lg file:border-0 file:bg-control file:px-2.5 file:py-1.5 file:text-[11px] file:font-medium file:text-ink hover:file:bg-raised-hover disabled:opacity-50" />
+      className="mt-2 block w-full text-[11px] text-ink-secondary file:mr-2 file:rounded-full file:border-0 file:bg-raised file:px-2.5 file:py-1.5 file:text-[11px] file:font-medium file:text-ink hover:file:bg-raised-hover disabled:opacity-50" />
     {error && <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p>}
   </section>;
 }
