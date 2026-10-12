@@ -1154,3 +1154,182 @@ and 5 recorded. Untouched here.
 - `GlassSheet`/`GlassCard`/… now take `ref`; use it rather than wrapping a
   glass surface in an extra `<div>` just to get the element.
 - Do not run prettier. See phase 3's note.
+
+## Phase 7 — Computers, browser and control
+
+From `ef71b838`.
+
+### What changed
+
+**The bot's computer became a sheet beside the conversation**, which is what
+mockup 07 draws and what the old panel was not: it was a fixed opaque column
+(`bg-panel`, `border-l`) bolted to the right of whatever the shell was showing.
+It is now `GlassPanel`, inset from the edge, with the header mockup 07 has —
+the mascot, *"Atlas's computer"*, and one line that says whether the wheel is
+with the person — and a pill rail of **Computer · Browser · Routines · Android**.
+
+**Who is driving is stated once, in one place.** The panel had two large
+control blocks (amber "asked for your hands", blue "you have the wheel") that
+lived *below* the preview, so the answer to "is this mine right now?" was
+below the fold on a short panel, and the answer could differ between the two.
+They are now one `ControlHandoffBanner` above the surface, green while the
+person holds it and amber while the bot is asking, reading the same
+`controlHandoffState()` the header line reads. The preview's own
+`Take control` / `Hand back` / `Dismiss` buttons are unchanged and still there.
+
+**Three strips under the body, all read-only.**
+
+| strip | what it says | what it does |
+| --- | --- | --- |
+| Runs on | the effective place, the cloud backend, and Open desktop · Two desktops · Manage computers | pins the *conversation's* place through the store's own `updateTask`; the three doors are the real open-desktop, the real VM workspace, and Settings / Computers |
+| Desktops | one tile per local VM; the driven one says **Controlling**, the rest **Watch only**, and the note says *One active controller* | nothing — a tile names a desktop, it never starts or stops one |
+| Inventory | `Local VM 2/4 · Box 1 · VPS 1 · Orphaned n`, a refresh, and Isolation policy · Prepare image · Shared folders | a refresh and three links into Settings / Computers |
+
+The inventory read is four GETs and nothing else, reusing
+`computerInventoryRequest` from the Settings section so a strip count can never
+disagree with the inventory it summarises. A failed read says *counts
+unavailable* rather than showing zeroes that would read as "you own nothing".
+
+**Android is tagged, not hidden.** The rail's fourth tab carries a **Deferred**
+chip whenever the host can drive a device. Parked is not removed, and this
+records it as parked rather than as passing.
+
+**The browser's control row is visible.** `Reconnect view`, `Type or paste
+text…` and `Restart browser…` were three items inside a `…` menu in the address
+bar. They are things a person reaches for mid-task, so they moved to the row
+under the page, where mockup 07 has them. The commands, the confirmations and
+the restart ordering are the same ones the menu ran — `BrowserPanel.test.ts`
+still drives all three by their old labels and passes unchanged. The `…` menu
+keeps the profile name and opens the profile editor.
+
+**Browser profiles are a popover under the page**, as the mockup draws them,
+and the editor inside it is `BrowserProfilesManager` — the same component the
+browser's own sheet and Settings / Computers use. Not a second profile store.
+
+### Files
+
+| file | |
+| --- | --- |
+| `src/lib/computer-sheet.ts` + `.test.ts` | pure: the rail, handoff state, desktop tiles, controller note, inventory counts, worst state (11 tests) |
+| `src/components/ComputerSheetChrome.tsx` + `.test.ts` | header · rail · banner · runs-on strip · desktops strip · profiles popover · inventory footer (14 tests) |
+| `src/components/useComputerSheetInventory.ts` | the four observation-only reads |
+| `src/components/ComputerPanel.tsx` | the sheet shell; the old header, tab bar and two control blocks removed, the body untouched |
+| `src/components/BrowserPanel.tsx` | glass surface; control row out of the `…` menu; both dialogs on `GlassSheet` |
+| `src/components/CanvasComputers.tsx` | the team shelf is glass, so three surfaces beside a conversation match |
+| `src/components/remote-desktop-panel.tsx` | glass surface and the sheet's header shape (F102's host-only boundary is unchanged) |
+| `src/App.tsx`, `src/locales/en.json` | `openTeamComputers`; 35 new strings |
+
+### FEATURES.md rows covered
+
+- **F013** — team computers are still the team map's `CanvasComputers`, with
+  its drag-to-assign, unassign-before-move rule, shared-access consent, Start /
+  Sleep / Open desktop / Return to bots and the orphan-aware delete. The sheet's
+  *Manage computers* opens that shelf when the bot is on a shared team computer
+  and Settings / Computers otherwise.
+- **F048** — the execution-place selector is `PlaceChip`'s own availability
+  rules (`usePlaceAvailability`), the same `effectivePlace` reading, and the
+  same `updateTask` pin the composer's chip uses, so the sheet's *Runs on* and
+  the composer's chip cannot disagree. The bot's Works-on default stays a
+  separate control in the body.
+- **F099** — resize handle, close, the ⋯ settings entry, Auto/local/VM/cloud/
+  browser/off, the pinned-place note and the default-vs-task split are all still
+  present and reachable.
+- **F100** — screen previews, the native viewer, take control, hand back,
+  help-request and dismiss, retry, sleep, VPS prepare/start/replace and the VM
+  lifecycle buttons are unchanged in the body.
+- **F101** — *Two desktops* is the real `onOpenVmWorkspace`; the desktops strip
+  is the read-only view of the same inventory, with the one-controller rule
+  stated. The workspace itself keeps its two panes, unique selection, watch-only
+  defaults and safe close.
+- **F102** — the remote client's sheet is `GlassPanel` with the same header. It
+  still shows only observation and control: no local setup tools.
+- **F103** — browser tabs, navigation, address, fullscreen, take/return,
+  type-paste, reconnect, restart and install are all still there; the three
+  control commands are now visible rather than behind a menu.
+- **F104** — the popover hosts the shared `BrowserProfilesManager`: create,
+  rename, delete with the in-use block, and own/shared/temporary selection.
+- **F105** — the Android panel is untouched behind its tab, now tagged
+  **Deferred**.
+- **F096, F097, F098** — not moved. The VM runtime/image/container lifecycle,
+  the shared/per-bot isolation card with max 1–4, and the three inventories with
+  their orphan recovery stay in Settings / Computers, which is where the mockup's
+  footer points. The strip is a summary of them, plus links.
+
+### Checks run
+
+| check | result |
+| --- | --- |
+| `pnpm run checks` (typecheck · lint · i18n · electron) | pass, 4/4 |
+| `pnpm check:contrast` | pass — 8 skins, midnight's two known upstream gaps only |
+| `vite build` | pass |
+| `vitest run src/components src/lib` | **1849 pass, 1 fail** |
+| whole-repo suite (server, e2e, harness) | not run; phase 11 owns it |
+
+The one failure is `src/lib/sky-texture.test.ts > leaves most of the field empty`
+(0.46 against a `< 0.45` bound) — the inherited failure phases 2, 4, 5 and 6
+recorded. Untouched here.
+
+### Deliberate deviations from the mockup
+
+1. **The desktop tiles are placeholders, not live thumbnails.** The mockup
+   shows three screenshot thumbnails. The app has no cheap per-desktop capture
+   for a desktop this conversation is *not* driving — the preview polls are per
+   bot and cost a round trip each — so a strip of live thumbnails would either
+   lie about liveness or triple the polling. The tiles carry the name, the
+   state and the controller badge instead. Real thumbnails belong to the
+   two-desktop workspace, which does have them.
+2. **The cloud backend is a word, not a second control.** The mockup's strip
+   shows "Box 1 · Self-hosted VPS 1" as if it were a switch. The backend is
+   this bot's own setting and it changes it, so the strip names the backend
+   and the real segmented `CloudBackendPicker` stays in the body where it
+   already was.
+3. **The inventory footer's three links all go to Settings / Computers.**
+   Isolation policy, image preparation and shared folders are three different
+   cards of one section; three links that land on the same page is honest, and
+   three links that each jump to a card would need anchor state the app does
+   not have.
+
+### Open, deferred, or unfinished
+
+- **Nobody has looked at any of it.** Seven phases now rest on structure alone.
+  The sheet at 400px and at its 960px maximum, the runs-on strip wrapping on a
+  narrow window, the rail with four tabs plus a Deferred chip, and the desktops
+  strip are all unverified pixels. **What would settle it:** an isolated fixture
+  per `docs/verification/README.md`, a bot with a local VM and one with a Box,
+  and open the sheet on each of the four tabs. Phase 11 QA.
+- **The inventory read costs three requests every time the sheet opens**, with
+  no polling and no caching. That is the right default — the sheet may be open
+  next to a live conversation and must not be the thing that wakes a machine —
+  but a person leaving the sheet open for an hour sees stale counts. Refresh is
+  manual for that reason.
+- **The strip shows the backend name, not its number.** "Box" and "Self-hosted
+  VPS" are there; the mockup's "Box 1 · Self-hosted VPS 1" counts are in the
+  footer's Box and VPS rows instead, which is where a person goes to act on
+  them.
+- **The Android tab appears whenever `window.ogb.androidDevice` exists**, not
+  only when a device is authorised. Selecting it with no device falls back to
+  the computer tab. The old behaviour showed the tab only when a device was
+  connected.
+- **`BrowserPanel` still opens its own profile dialog from its `…` menu**, and
+  the sheet opens the same editor as a popover under the page. Two hosts of one
+  editor, like phase 6's `BotSettingsDialog` / `BotProfilePage`. Collapsing them
+  means moving `BrowserPanel`'s profile state up into the sheet, which is a
+  larger change than this phase earns.
+- **The control banner is above the surface, so it is the first thing that
+  scrolls away** in the body's own scroll container on a short window. It is
+  outside the scroll area today; if a future change puts it inside, it must stay
+  above.
+
+### For the next agent
+
+- `computerSheetTabs`, `controlHandoffState`, `computerSheetDesktops` and
+  `computerInventoryCounts` in `src/lib/computer-sheet.ts` are the sheet's only
+  decision points. Put new rules there, not in the chrome.
+- The inventory read is observation-only by contract. If you need a lifecycle
+  action, it belongs in Settings / Computers or on the team map, never in
+  `useComputerSheetInventory`.
+- `onOpenTeamComputers` is the sheet asking the shell for a Crew view. Do not
+  dispatch `showTeamMap` from the sheet for anything else.
+- `GlassPanel` takes `ref`, `as` and arbitrary attributes — the sheet, the team
+  shelf and the remote panel are all the same primitive.
+- Do not run prettier. See phase 3's note.
