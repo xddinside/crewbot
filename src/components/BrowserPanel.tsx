@@ -133,7 +133,7 @@ export function LiveBrowser({ bot }: { bot: Bot }) {
     }
   };
   const driving = control.controlling && connected && !pending;
-  return <div ref={panel} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-hairline/40 bg-card text-ink">
+  return <div ref={panel} className="glass-card flex min-h-0 flex-1 flex-col overflow-hidden text-ink">
     <div className="flex min-h-12 items-center gap-1 px-2 pt-1.5">
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
         {tabs.length ? tabs.map((tab) => <div key={tab.tabId} className={`flex max-w-52 shrink-0 items-center gap-1 rounded-xl px-1 text-[12px] ${tab.active ? "bg-inset text-ink" : "text-ink-secondary"}`}>
@@ -146,7 +146,7 @@ export function LiveBrowser({ bot }: { bot: Bot }) {
       <button className={button} title="Full screen" aria-label="Full screen" onClick={() => { void panel.current?.requestFullscreen().catch(() => setError("Full screen is unavailable in this browser.")); }}><Maximize2 size={16} /></button>
       <button className={`${button} rounded-xl bg-inset p-2`} title={`Browser profile: ${profileName}`} aria-label="Browser profiles" aria-expanded={showProfiles} onClick={() => setShowProfiles(true)}><UserRound size={16} /></button>
     </div>
-    <form className="flex h-12 items-center gap-1 border-b border-hairline/40 px-2" onSubmit={(e) => { e.preventDefault(); if (driving && address.trim()) void execute({ type: "navigate", url: /^https?:\/\//i.test(address.trim()) ? address.trim() : `https://${address.trim()}` }); }}>
+    <form className="flex h-11 shrink-0 items-center gap-1 border-b border-hairline/30 px-2" onSubmit={(e) => { e.preventDefault(); if (driving && address.trim()) void execute({ type: "navigate", url: /^https?:\/\//i.test(address.trim()) ? address.trim() : `https://${address.trim()}` }); }}>
       <div className="flex shrink-0 items-center">
         <button type="button" className={button} disabled={!driving} aria-label="Back" onClick={() => void execute({ type: "back" })}><ArrowLeft size={17} /></button>
         <button type="button" className={button} disabled={!driving} aria-label="Forward" onClick={() => void execute({ type: "forward" })}><ArrowRight size={17} /></button>
@@ -157,32 +157,39 @@ export function LiveBrowser({ bot }: { bot: Bot }) {
         {pending ? <Loader2 size={16} className="animate-spin" /> : <Hand size={16} className="hidden sm:block" />}
         <span>{control.owned ? "Return to bot" : "Take control"}</span>
       </button>
-      <details className="relative shrink-0">
-        <summary className={`${button} list-none cursor-pointer [&::-webkit-details-marker]:hidden`} aria-label="Browser menu" title="Browser menu"><EllipsisVertical size={17} /></summary>
-        <div className="absolute right-0 top-full z-20 mt-2 flex w-44 flex-col rounded-xl border border-hairline/50 bg-card p-1.5 text-[12px] shadow-xl">
-          <button type="button" className="rounded-md px-3 py-2 text-left hover:bg-inset disabled:opacity-40" disabled={!driving} onClick={(e) => { e.currentTarget.closest("details")?.removeAttribute("open"); setShowTyping(true); }}>Type or paste text…</button>
-          <button type="button" className="rounded-md px-3 py-2 text-left hover:bg-inset" onClick={(e) => { e.currentTarget.closest("details")?.removeAttribute("open"); reconnect(); }}>Reconnect view</button>
-          <button type="button" className="rounded-md px-3 py-2 text-left hover:bg-inset disabled:opacity-40" disabled={!connected || pending} onClick={(e) => {
-            e.currentTarget.closest("details")?.removeAttribute("open");
-            if (!window.confirm("Restart this profile’s browser? Open tabs will close. Saved logins are kept. Stop any bots using it first.")) return;
-            void execute({ type: "restart" });
-          }}>Restart browser…</button>
-        </div>
-      </details>
     </form>
     {error && <div role="alert" className="flex items-center justify-between gap-2 border-b border-hairline/30 px-3 py-2 text-[12px] text-danger"><span>{error}</span>{!connected && <button className="shrink-0 underline" onClick={reconnect}>Reconnect</button>}</div>}
-    <div className="min-h-0 flex-1 overflow-hidden bg-inset/40">
+    <div className="min-h-0 flex-1 overflow-hidden bg-inset/30">
       {frame ? <BrowserViewport frame={frame} {...viewport} driving={driving} input={input}
         onReturnToToolbar={() => addressInput.current?.focus()}
         acknowledge={(seq) => { if (generation.current === frame.generation && viewer.current === frame.viewerId) void action({ type: "ack", seq }, frame.viewerId).catch(() => {}); }}
         onDecodeError={() => { if (generation.current === frame.generation && viewer.current === frame.viewerId) setError("A browser frame could not be decoded. Close and reopen the panel to reconnect."); }} />
         : <div className="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center text-[13px] text-ink-secondary">{connected && control.held ? <Hand size={24} /> : error ? <Globe size={24} /> : <Loader2 size={24} className="animate-spin" />}<span>{control.held ? "Live view paused for human control" : error ? "Browser disconnected" : "Opening the live browser…"}</span></div>}
     </div>
-    <dialog ref={profilesDialog} onClose={() => setShowProfiles(false)} onClick={(e) => { if (e.target === e.currentTarget) setShowProfiles(false); }} className="m-auto w-[min(420px,calc(100%-32px))] max-h-[80vh] overflow-auto rounded-2xl border border-hairline/50 bg-card p-5 text-ink shadow-2xl backdrop:bg-black/40">
+    {/* The control row the mockup puts under the page: reconnect, type or
+        paste, restart. It was a menu; these are things a person reaches for
+        mid-task, so they are visible. The commands and their confirmations are
+        the same ones the menu ran. */}
+    <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-hairline/30 px-2 py-2" data-browser-controls="">
+      <button type="button" className="rounded-lg bg-control px-2.5 py-1.5 text-[12px] text-ink hover:bg-raised-hover" onClick={reconnect}>Reconnect view</button>
+      <button type="button" className="rounded-lg bg-control px-2.5 py-1.5 text-[12px] text-ink hover:bg-raised-hover disabled:opacity-40" disabled={!driving} onClick={() => setShowTyping(true)}>Type or paste text…</button>
+      <button type="button" className="rounded-lg bg-control px-2.5 py-1.5 text-[12px] text-ink hover:bg-raised-hover disabled:opacity-40" disabled={!connected || pending} onClick={() => {
+        if (!window.confirm("Restart this profile’s browser? Open tabs will close. Saved logins are kept. Stop any bots using it first.")) return;
+        void execute({ type: "restart" });
+      }}>Restart browser…</button>
+      <details className="relative ml-auto">
+        <summary className={`${button} list-none cursor-pointer [&::-webkit-details-marker]:hidden`} aria-label="Browser menu" title="Browser menu"><EllipsisVertical size={17} /></summary>
+        <div className="glass-popover absolute bottom-full right-0 z-20 mb-2 flex w-52 flex-col p-1.5 text-[12px]">
+          <p className="px-3 py-2 leading-relaxed text-ink-secondary">{profileName}</p>
+          <button type="button" className="rounded-md px-3 py-2 text-left hover:bg-inset" onClick={() => setShowProfiles(true)}>Browser profiles…</button>
+        </div>
+      </details>
+    </div>
+    <dialog ref={profilesDialog} onClose={() => setShowProfiles(false)} onClick={(e) => { if (e.target === e.currentTarget) setShowProfiles(false); }} className="glass-sheet m-auto max-h-[80vh] w-[min(420px,calc(100%-32px))] overflow-auto p-5 text-ink backdrop:bg-black/30">
       <div className="mb-4 flex items-center justify-between"><h2 className="text-[15px] font-medium">Browser profiles</h2><button className={button} aria-label="Close browser profiles" onClick={() => setShowProfiles(false)}><X size={16} /></button></div>
       <BrowserProfilesManager bot={bot} disabled={pending || control.held} onProfileChanged={() => { setShowProfiles(false); reconnect(); }} />
     </dialog>
-    <dialog ref={typingDialog} onClose={() => setShowTyping(false)} className="m-auto w-[min(420px,calc(100%-32px))] rounded-2xl border border-hairline/50 bg-card p-5 text-ink shadow-2xl backdrop:bg-black/40">
+    <dialog ref={typingDialog} onClose={() => setShowTyping(false)} className="glass-sheet m-auto w-[min(420px,calc(100%-32px))] p-5 text-ink backdrop:bg-black/30">
       <div className="mb-3 flex items-center justify-between"><h2 className="text-[14px] font-medium">Type into the selected page field</h2><button className={button} aria-label="Close typing" onClick={() => setShowTyping(false)}><X size={16} /></button></div>
       <form className="flex flex-col gap-3" onSubmit={(e) => {
       e.preventDefault(); const field = e.currentTarget.elements.namedItem("pageText") as HTMLInputElement;

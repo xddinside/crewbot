@@ -274,6 +274,15 @@ function Shell() {
     setLocalVmWorkspaceBotId(botId);
   };
 
+  /* The sheet's "Manage computers" opens Crew's team-computers shelf when the
+     bot is on a shared team computer, and Settings / Computers otherwise. The
+     shell owns Crew's views, so the sheet asks rather than dispatching. */
+  const openTeamComputers = useCallback(() => {
+    setCrewView({ view: "map", botId: null, computers: true });
+    dispatch({ type: "toggleComputer", open: false });
+    dispatch({ type: "showTeamMap" });
+  }, [dispatch]);
+
   const openComputerFromWorkspace = (botId: string) => {
     setLocalVmWorkspaceBotId(null);
     dispatch({ type: "select", id: botId });
@@ -523,6 +532,7 @@ function Shell() {
             key={`computer:${bot.id}`}
             bot={bot}
             onOpenVmWorkspace={openLocalVmWorkspace}
+            onOpenTeamComputers={openTeamComputers}
           />
         )
       )}

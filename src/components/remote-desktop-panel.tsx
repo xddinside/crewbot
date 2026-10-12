@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { CalendarClock, CalendarDays, ImageOff, Loader2, Monitor, Plus, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
-import { useCaptionChrome } from "@/components/DesktopCapabilities";
+import { GlassPanel } from "./Glass";
 import { usePageVisible } from "@/lib/page-visible";
 import { isRemoteScreenshotContention, remoteScreenshotSource } from "@/lib/remote-desktop";
 import type { Routine } from "@/lib/routines";
@@ -59,7 +59,6 @@ function nextRunLabel(at: number | null) {
 export function RemoteDesktopPanel({ bot }: { bot: Bot }) {
   const { state, dispatch } = useStore();
   // Docked flush under the Windows caption corner: drop the header 16px.
-  const { padClass } = useCaptionChrome();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [frame, setFrame] = useState<string | null>(null);
@@ -196,25 +195,30 @@ export function RemoteDesktopPanel({ bot }: { bot: Bot }) {
   };
 
   return (
-    <aside className="relative z-20 flex h-full w-[400px] shrink-0 flex-col border-l border-hairline bg-panel">
-      <div className={cn("flex items-center justify-between border-b border-hairline px-5 py-4", padClass)}>
-        <div>
-          <div className="text-[14px] font-medium text-ink">{bot.name}&apos;s computer</div>
-          <div className="mt-0.5 text-[11px] text-ink-secondary">
+    /* The remote client's view of the same sheet. It shows the desktop and its
+       capture, not the local setup tools — that boundary is the feature, so it
+       keeps its own body and only borrows the glass surface and the header. */
+    <GlassPanel as="aside" data-computer-sheet="remote"
+      aria-label={`${bot.name}'s computer`}
+      className="relative z-20 my-3 mr-3 flex h-[calc(100%-24px)] w-[400px] shrink-0 flex-col overflow-hidden">
+      <header className="flex items-center justify-between gap-3 px-4 pb-2 pt-4">
+        <div className="min-w-0">
+          <h2 className="truncate text-[15px] font-semibold leading-5 text-ink">{bot.name}&apos;s computer</h2>
+          <p className="mt-0.5 truncate text-[12px] leading-4 text-ink-secondary">
             {bot.cloudBackend === "vps" ? "Self-hosted VPS" : "Cloud desktop"}
-          </div>
+          </p>
         </div>
         <button
           type="button"
           onClick={() => dispatch({ type: "toggleComputer", open: false })}
-          className="rounded-md p-1 text-ink-secondary hover:bg-control hover:text-ink"
+          className="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] text-ink-secondary hover:bg-control hover:text-ink"
           aria-label="Close computer panel"
         >
-          <X size={18} />
+          <X size={14} /> Close
         </button>
-      </div>
+      </header>
 
-      <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 py-5 text-center">
+      <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-5 py-3 text-center">
         <button
           type="button"
           onClick={() => void open()}
@@ -336,6 +340,6 @@ export function RemoteDesktopPanel({ bot }: { bot: Bot }) {
           onClose={() => setCreatingRoutine(false)}
         />
       )}
-    </aside>
+    </GlassPanel>
   );
 }

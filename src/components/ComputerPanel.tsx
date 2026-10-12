@@ -24,16 +24,24 @@ import {
   Monitor,
   Moon,
   Power,
-  Settings,
-  Smartphone,
-  X,
 } from "lucide-react";
 import { api, ApiError, currentTaskBot, useStore, type Bot } from "@/state/store";
-import { effectivePlace, isComputerPlace, placeLabelKey } from "@/lib/place";
+import { effectivePlace, placeLabelKey, type Place } from "@/lib/place";
+import { controlHandoffState } from "@/lib/computer-sheet";
 import type { CloudBackend } from "../../shared/wire";
 import { ApiKeyRow } from "./ApiKeys";
 import { cn } from "@/lib/cn";
-import { useCaptionChrome } from "@/components/DesktopCapabilities";
+import { GlassPanel } from "./Glass";
+import {
+  BrowserProfilesPopover,
+  ComputerSheetHeader,
+  ComputerSheetTabs,
+  ControlHandoffBanner,
+  DesktopsStrip,
+  InventoryFooter,
+  RunsOnStrip,
+} from "./ComputerSheetChrome";
+import { useComputerSheetInventory } from "./useComputerSheetInventory";
 import { usePageVisible } from "@/lib/page-visible";
 import { CloudScreenPreview } from "./CloudScreenPreview";
 import { isActiveTurnRefusal, isRemoteScreenshotContention } from "@/lib/remote-desktop";
@@ -156,12 +164,14 @@ function readPanelWidth(): number {
 export function ComputerPanel({
   bot: profileBot,
   onOpenVmWorkspace,
+  onOpenTeamComputers,
 }: {
   bot: Bot;
   onOpenVmWorkspace?: (botId: string) => void;
+  /* The shell owns Crew's views, so the sheet asks for the team-computers
+     shelf rather than picking a store view on its own. */
+  onOpenTeamComputers?: () => void;
 }) {
-  // Docked flush under the Windows caption corner: drop the header 16px.
-  const { padClass } = useCaptionChrome();
   // The panel is a fixed column by default; a drag handle on its left edge
   // makes it wide enough to actually read a page in the Browser tab.
   const [panelWidth, setPanelWidth] = useState(readPanelWidth);
@@ -316,6 +326,7 @@ export function ComputerPanel({
   const [error, setError] = useState<Error | string | null>(null);
   const errorText = panelErrorText(error);
   const [panelView, setPanelView] = useState<ComputerPanelView>(() => readComputerPanelView(bot.id));
+  const [profilesOpen, setProfilesOpen] = useState(false);
   const androidStatus = useAndroidUsbDevices();
   const androidConnected = androidStatus.devices.length > 0;
   // Keep installation reachable before the engine is ready. Actual browser
@@ -1133,6 +1144,49 @@ export function ComputerPanel({
     dispatch({ type: "toggleAppSettings", open: true, section: "connections" });
   };
 
+  /* The sheet's own three readings. None of them writes: the inventory is
+     observation-only GETs, the place selector pins the *conversation's* task
+     through the store's existing updateTask, and the lifecycle actions stay
+     in the body above. */
+  const inventory = useComputerSheetInventory(true);
+  const handoff = controlHandoffState(control);
+  // A hold only means something when there is a surface to hold. Same three
+  // conditions the old in-body banners used.
+  const surfaceExists = cloudPreviewReady || phase === "vm" || Boolean(currentTeamComputer);
+  const pinPlace = (place: Place | null) => {
+    dispatch({
+      type: "updateTask",
+      botId: profileBot.id,
+      threadId: profileBot.threadId,
+      patch: { surface: place },
+    });
+  };
+  const openVmWorkspace = () => {
+    if (!onOpenVmWorkspace || !window.ogb?.desktopWorkspace) return;
+    onOpenVmWorkspace(bot.id);
+  };
+  // Computers are managed in Settings / Computers — the one place the VM,
+  // Box and VPS lifecycles, the isolation policy, image preparation and the
+  // shared folders all live. This is a link to it, never a second editor.
+  const openComputerSettings = () => {
+    window.sessionStorage.setItem("openmausbot.settings.section", "computer");
+    dispatch({ type: "toggleAppSettings", open: true });
+  };
+  /* "Manage computers" means the machines, and the machines live in two
+     places: this bot's own VMs, Box and VPS in Settings / Computers, and the
+     team's shared Boxes on the Crew map. A bot on a shared team computer goes
+     straight to the team shelf; everything else goes to Settings. */
+  const manageComputers = () => {
+    if (onOpenTeamComputers && currentTeamComputer) {
+      onOpenTeamComputers();
+      return;
+    }
+    openComputerSettings();
+  };
+  const cloudSummary = cloudBackend === "vps"
+    ? t("computerSheet.vpsBackend")
+    : t("computerSheet.boxBackend");
+
   const emptyState = {
     checking: t("computer.phase.checking"),
     starting: t("computer.phase.starting"),
@@ -1153,10 +1207,13 @@ export function ComputerPanel({
     error: t("computer.phase.error"),
   } satisfies Record<Exclude<Phase, "ready" | "local" | "vm">, string>;
 
-  return (
+return (
     <>
-    <aside
-      className="animate-panel-in relative flex h-full shrink-0 flex-col border-l border-hairline/40 bg-panel"
+    <GlassPanel
+      as="aside"
+      aria-label={t("computerSheet.title", { name: profileBot.name })}
+      data-computer-sheet=""
+      className="animate-panel-in relative my-3 mr-3 flex h-[calc(100%-24px)] shrink-0 flex-col overflow-hidden"
       style={{ width: panelWidth }}
     >
       <div
@@ -1169,99 +1226,82 @@ export function ComputerPanel({
         onPointerCancel={onResizeEnd}
         className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize hover:bg-accent/40"
       />
-      {/* Header */}
-      <div className={cn("flex items-center justify-between px-4 py-3", padClass)}>
-        <button
-          onClick={() => {
-            // Keep the panel/modal states exclusive at this entry point. That
-            // removes the still-mounted Computer panel from the settings
-            // dialog's focus path, and dismissing Settings returns directly
-            // to the conversation that opened it.
-            dispatch({ type: "toggleComputer", open: false });
-            dispatch({ type: "toggleSettings", open: true, section: "access" });
+      {/* Whose computer this is, and whether the wheel is with the person. */}
+      <ComputerSheetHeader
+        bot={profileBot}
+        state={handoff}
+        busy={placeLive}
+        onOpenSettings={() => {
+          // Keep the panel/modal states exclusive at this entry point. That
+          // removes the still-mounted Computer panel from the settings
+          // dialog's focus path, and dismissing Settings returns directly
+          // to the conversation that opened it.
+          dispatch({ type: "toggleComputer", open: false });
+          dispatch({ type: "toggleSettings", open: true, section: "access" });
+        }}
+        onClose={() => dispatch({ type: "toggleComputer", open: false })}
+      />
+      <ComputerSheetTabs
+        view={panelView}
+        onSelect={(tab) => {
+          setError(null);
+          if (tab === "android" && !androidConnected) return;
+          selectPanelView(tab);
+        }}
+        browserEnabled={browserEnabled}
+        androidCapable={Boolean(window.ogb?.androidDevice) || androidConnected}
+        livePlace={livePlace}
+        live={placeLive}
+      />
+
+      <div className="mt-2 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 pb-3">
+      {(handoff === "under-control" || handoff === "asked-help") && surfaceExists && (
+        <ControlHandoffBanner
+          bot={profileBot}
+          state={handoff}
+          helpReason={control.helpReason}
+          pending={controlPending || pending === "join"}
+          showOpenHint={cloudPreviewReady || phase === "vm"}
+          onTake={() => void (phase === "vm" || cloudPreviewReady ? openDesktop() : controlAction("take"))}
+          onHandBack={() => {
+            void controlAction("release");
+            void window.ogb?.desktopViewer?.close(bot.id);
           }}
-          className="rounded-md p-1 text-ink-secondary hover:bg-control hover:text-ink"
-          title={t("computer.botSettings")}
-        >
-          <Settings size={18} />
-        </button>
-        {(
-          <div className="mx-2 flex min-w-0 flex-wrap overflow-hidden rounded-lg border border-hairline/40" data-tour="computer-tabs" aria-label="Bot panel view">
-            <button
-              onClick={() => selectPanelView("computer")}
-              aria-pressed={panelView === "computer"}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 text-[12.5px]",
-                panelView === "computer" ? "bg-control text-ink" : "text-ink-secondary hover:text-ink",
-              )}
-            >
-              <Monitor size={13} /> {t("computer.tab.computer")}
-              {placeLive && isComputerPlace(livePlace) && <span className="size-1.5 animate-pulse rounded-full bg-success" role="img" aria-label={t("place.live")} data-testid="computer-tab-live" />}
-            </button>
-            <button
-              type="button"
-              onClick={() => selectPanelView("routines")}
-              aria-pressed={panelView === "routines"}
-              className={cn("flex items-center gap-1.5 border-l border-hairline/40 px-2.5 py-1 text-[12.5px]", panelView === "routines" ? "bg-control text-ink" : "text-ink-secondary hover:text-ink")}
-            ><CalendarClock size={13} />{t("computer.tab.routines")}</button>
-            {androidConnected && (
-            <button
-              onClick={() => selectPanelView("android")}
-              aria-pressed={panelView === "android"}
-              className={cn(
-                "flex items-center gap-1.5 border-l border-hairline/40 px-2.5 py-1 text-[12.5px]",
-                panelView === "android" ? "bg-control text-ink" : "text-ink-secondary hover:text-ink",
-              )}
-            >
-              <Smartphone size={13} /> {t("computer.tab.android")}
-            </button>
-            )}
-            {browserEnabled && (
-            <button
-              data-tour="computer-browser"
-              onClick={() => {
-                setError(null);
-                selectPanelView("browser");
-              }}
-              aria-pressed={panelView === "browser"}
-              className={cn(
-                "flex items-center gap-1.5 border-l border-hairline/40 px-2.5 py-1 text-[12.5px]",
-                panelView === "browser" ? "bg-control text-ink" : "text-ink-secondary hover:text-ink",
-              )}
-            >
-              <Globe size={13} /> {t("computer.tab.browser")}
-              {placeLive && livePlace === "browser" && <span className="size-1.5 animate-pulse rounded-full bg-success" role="img" aria-label={t("place.live")} data-testid="browser-tab-live" />}
-            </button>
-            )}
-          </div>
-        )}
-        <button
-          onClick={() => dispatch({ type: "toggleComputer", open: false })}
-          className="rounded-md p-1 text-ink-secondary hover:bg-control hover:text-ink"
-        >
-          <X size={18} />
-        </button>
-      </div>
+          onDismiss={() => void controlAction("dismiss-help")}
+        />
+      )}
 
       {panelView === "routines" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           <RoutinesSection key={bot.id} bot={bot} routines={botRoutines} runs={state.routineRuns} defaultRunOn={cloudRoutineReady ? "cloud" : "maus"} />
         </div>
       ) : panelView === "browser" && browserEnabled ? (
-        <div className="flex min-h-0 flex-1 flex-col px-4 pb-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
           <BrowserPanel bot={bot} />
+          {/* The profile popover the mockup puts under the page. The editor in
+              it is the shared one — the same component the browser's own
+              sheet and Settings / Computers use. */}
+          <div className="flex items-center justify-end">
+            <BrowserProfilesPopover
+              bot={bot}
+              disabled={profileBot.busy}
+              open={profilesOpen}
+              onOpenChange={setProfilesOpen}
+              onProfileChanged={() => setProfilesOpen(false)}
+            />
+          </div>
           {errorText && (
-            <div role="alert" className="mt-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
+            <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
               {errorText}
             </div>
           )}
         </div>
       ) : panelView === "android" && androidConnected ? (
-        <div className="flex-1 overflow-y-auto px-4 pt-2">
+        <div className="flex-1 overflow-y-auto">
           <AndroidDevicePanel status={androidStatus} />
         </div>
       ) : (
-      <div className="flex-1 overflow-y-auto px-5 pb-5">
+      <div className="flex-1">
           {/* Screen preview */}
           <div className="mb-1.5 mt-2 flex items-center justify-between text-[13px] text-ink-secondary">
             <span>{t("computer.screenOf", { name: bot.name })}</span>
@@ -1348,7 +1388,7 @@ export function ComputerPanel({
               </span>
               {currentTeamComputer && <>
                 <p className="text-[12px]">Shared files and signed-in accounts. Auto uses this Box, not a private computer.</p>
-                <button type="button" onClick={() => dispatch({ type: "showTeamMap" })}
+                <button type="button" onClick={() => (onOpenTeamComputers ? onOpenTeamComputers() : dispatch({ type: "showTeamMap" }))}
                   className="mt-1 rounded-lg bg-control px-3 py-1.5 text-[12px] text-ink hover:bg-raised-hover">Open Team map</button>
                 <button type="button" onClick={() => setRetry(n => n + 1)}
                   className="text-[11px] text-ink-secondary hover:text-ink">Refresh shared computer status</button>
@@ -1485,53 +1525,7 @@ export function ComputerPanel({
             </button>
           )}
 
-        {/* Who is driving — take the wheel / hand it back */}
-        {(cloudPreviewReady || phase === "vm" || currentTeamComputer) && control.helpReason && !control.held && (
-          <div className="mt-3 rounded-xl border border-warning/25 bg-warning/10 p-4">
-            <div className="text-[13px] leading-relaxed text-warning">
-              <b>{bot.name}</b> {t("computer.askedHands")} {control.helpReason}
-            </div>
-            <div className="mt-2 flex gap-2">
-              <button
-                onClick={() =>
-                  phase === "vm" || cloudPreviewReady ? void openDesktop() : controlAction("take")
-                }
-                disabled={controlPending || pending === "join"}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-50"
-              >
-                {pending === "join" ? <Loader2 size={14} className="animate-spin" /> : <Hand size={14} />}
-                {t("computer.takeControl")}
-              </button>
-              <button
-                onClick={() => controlAction("dismiss-help")}
-                disabled={controlPending}
-                className="rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50"
-              >
-                {t("computer.dismiss")}
-              </button>
-            </div>
-          </div>
-        )}
-        {(cloudPreviewReady || phase === "vm" || currentTeamComputer) && control.held && (
-          <div className="mt-3 rounded-xl border border-accent/25 bg-accent/10 p-4">
-            <div className="text-[13px] leading-relaxed text-ink">
-              {t("computer.youHaveWheel")}
-              {cloudPreviewReady && ` ${t("computer.useOpenDesktop")}`}
-              {phase === "vm" && ` ${t("computer.useOpenDesktopVm")}`}
-            </div>
-            <button
-              onClick={() => {
-                controlAction("release");
-                void window.ogb?.desktopViewer?.close(bot.id);
-              }}
-              disabled={controlPending}
-              className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-accent py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-50"
-            >
-              <Hand size={14} />
-              {t("computer.handBack")}
-            </button>
-          </div>
-        )}
+        {/* Who is driving lives in the sheet banner above, not twice. */}
         {phase === "vm" && vmViewerUrl && control.held && (
           <button
             onClick={() => void openDesktop()}
@@ -1735,8 +1729,35 @@ export function ComputerPanel({
         </button>
       </div>
       )}
+      </div>
 
-    </aside>
+      {/* The strips below the body: where this runs, what else is running, and
+          what the workspace owns. They read; they never act. */}
+      {panelView !== "browser" && panelView !== "routines" && (
+        <>
+          <RunsOnStrip
+            bot={bot}
+            cloudSummary={cloudSummary}
+            onPin={pinPlace}
+            onOpenDesktop={() => void openDesktop()}
+            onOpenTwoDesktops={openVmWorkspace}
+            onOpenComputers={manageComputers}
+            openDesktopPending={pending === "join" || pending === "provision" || pending === "vps-replace"}
+            twoDesktopsAvailable={Boolean(window.ogb?.desktopWorkspace && onOpenVmWorkspace)}
+          />
+          <DesktopsStrip instances={inventory.localVms} controllingBotId={control.held ? bot.id : null} />
+        </>
+      )}
+      <InventoryFooter
+        counts={inventory.counts}
+        loading={inventory.loading}
+        problem={inventory.problem}
+        onRefresh={inventory.refresh}
+        onIsolationPolicy={openComputerSettings}
+        onPrepareImage={openComputerSettings}
+        onSharedFolders={openComputerSettings}
+      />
+    </GlassPanel>
     <LocalComputerAutoWarning
       open={localAutoWarningTarget !== null}
       onCancel={() => setLocalAutoWarningTarget(null)}

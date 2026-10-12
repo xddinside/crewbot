@@ -4,6 +4,7 @@ import { Box, ExternalLink, Loader2, Monitor, Plus, RefreshCw, X } from "lucide-
 import { api, useStore } from "@/state/store";
 import type { TeamComputer } from "../../shared/team-computer";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { GlassPanel, GlassCard } from "./Glass";
 
 const control = "rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-40";
 const field = "w-full rounded-lg border border-hairline/60 bg-inset px-3 py-2 text-[12px] text-ink outline-none focus:border-accent";
@@ -161,8 +162,8 @@ export function CanvasComputers({ open, createRequest, drop, sections, onClose, 
   const settings = () => { onClose(); dispatch({ type: "toggleAppSettings", open: true, section: "computer" }); };
 
   return <>
-    {open && <aside ref={shelf} aria-label="Team computers" onKeyDown={(event) => { if (event.key === "Escape" && !assignment) { event.stopPropagation(); if (pointer.current) clearDrag(); else onClose(); } }} className="flex w-[300px] max-w-[90vw] shrink-0 flex-col border-l border-hairline/50 bg-panel max-sm:absolute max-sm:inset-y-0 max-sm:right-0 max-sm:z-30 max-sm:shadow-xl">
-      <header className="flex items-center gap-2 border-b border-hairline/40 px-4 py-3">
+    {open && <GlassPanel as="aside" ref={shelf} aria-label="Team computers" onKeyDown={(event) => { if (event.key === "Escape" && !assignment) { event.stopPropagation(); if (pointer.current) clearDrag(); else onClose(); } }} className="my-3 mr-3 flex h-[calc(100%-24px)] w-[300px] max-w-[90vw] shrink-0 flex-col overflow-hidden max-sm:absolute max-sm:inset-y-0 max-sm:right-0 max-sm:z-30">
+      <header className="flex items-center gap-2 border-b border-hairline/30 px-4 py-3">
         <Monitor size={16} className="text-ink-secondary" /><h2 className="flex-1 text-[13px] font-semibold">Computers</h2>
         <button aria-label="Refresh computers" className={control} disabled={loading || busy !== null} onClick={() => { setError(""); void refresh(); }}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /></button>
         <button ref={closeButton} aria-label="Close computers" className={control} onClick={onClose}><X size={15} /></button>
@@ -172,7 +173,7 @@ export function CanvasComputers({ open, createRequest, drop, sections, onClose, 
         {(error || readError || inventory?.problem) && <p role="alert" className="rounded-lg bg-danger/10 p-3 text-[12px] text-danger">{error || readError || inventory?.problem}</p>}
         {inventory && !inventory.configured && <div className="rounded-xl border border-hairline/50 p-3 text-[12px]">
           <p className="text-ink-secondary">Connect your Box account before creating a cloud computer.</p>
-          <button className={`${control} mt-2 border border-hairline/50`} onClick={settings}>Connect Box</button>
+          <button className={`${control} mt-2 rounded-lg border border-hairline/50`} onClick={settings}>Connect Box</button>
         </div>}
         {creating ? <form className="space-y-3 rounded-xl border border-hairline/60 bg-card p-3" onSubmit={(event) => {
           event.preventDefault();
@@ -197,7 +198,7 @@ export function CanvasComputers({ open, createRequest, drop, sections, onClose, 
           const ready = ["idle", "ready", "running"].includes(computer.state);
           const starting = ["init", "provisioning", "provisioned", "cloning", "starting"].includes(computer.state);
           const held = computer.held || heldHere === computer.id;
-          return <article key={computer.id} data-computer-id={computer.id} className="rounded-xl border border-hairline/60 bg-card p-3">
+          return <GlassCard key={computer.id} data-computer-id={computer.id} className="p-3">
           <div data-computer-drag-id={computer.id} role="group" tabIndex={-1} aria-label={`Drag ${computer.name} to a team`}
             onPointerDown={(event) => {
               if (pending.current || pointer.current || event.button !== 0 || !event.isPrimary) return;
@@ -235,10 +236,10 @@ export function CanvasComputers({ open, createRequest, drop, sections, onClose, 
             {held && <button className={`${control} text-accent`} disabled={busy !== null} onClick={() => void mutate(computer.id, () => post(computer.id, "control", { action: "release" }), () => { setHeldHere(null); setViewer(null); })}>Return to bots</button>}
           </div>
           {viewer?.id === computer.id && <a href={viewer.url} target="_blank" rel="noopener noreferrer" className="mt-2 block rounded-lg px-3 py-2 text-[12px] text-accent hover:bg-control">Open secure desktop ↗</a>}
-        </article>; })}
+        </GlassCard>; })}
       </div>
-      <footer className="border-t border-hairline/40 p-3"><button className={`${control} w-full text-left`} onClick={settings}>Local VM and other computers…</button></footer>
-    </aside>}
+      <footer className="border-t border-hairline/30 p-3"><button className={`${control} w-full text-left`} onClick={settings}>Local VM and other computers…</button></footer>
+    </GlassPanel>}
     {dragging && createPortal(<div role="status" className="pointer-events-none fixed z-[70] rounded-xl border border-accent/40 bg-card px-4 py-3 text-[12px] text-ink shadow-xl" style={{ left: dragging.x + 14, top: dragging.y + 14 }}>
       <span className="flex items-center gap-2"><Box size={15} />{dragging.name}</span>
       <p className="mt-1 text-[10px] text-ink-secondary">{dragging.hint}</p>
