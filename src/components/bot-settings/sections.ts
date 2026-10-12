@@ -38,3 +38,11 @@ export const BOT_SECTIONS: Array<{
   { id: "history", label: "History", icon: History, keywords: ["history", "changes", "undo", "rollback", "log"] },
   { id: "usage", label: "Usage", icon: Coins, keywords: ["tokens", "cost", "billing"] },
 ];
+
+/** The search rule the profile's section list and the settings panel's
+ *  accordion share: a row matches on its label or on any of its keywords. */
+export function sectionMatches(entry: (typeof BOT_SECTIONS)[number], query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return [entry.label, ...entry.keywords].some((part) => part.toLowerCase().includes(q));
+}

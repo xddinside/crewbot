@@ -125,7 +125,7 @@ function preview(bot: Bot): string {
   return last.text ?? "";
 }
 
-interface MenuState {
+export interface MenuState {
   botId: string;
   x: number;
   y: number;
@@ -504,7 +504,7 @@ export function NewRoomPanel({ onClose }: { onClose: () => void }) {
  * target's current one), a create field, and a remove action. Serves bots
  * and channels alike — the caller supplies the assignment. Mirrors the
  * context menu's fixed positioning + dismiss-on-outside-click contract. */
-function SectionPicker({
+export function SectionPicker({
   current,
   anchor,
   onClose,
@@ -1313,7 +1313,7 @@ export function ArchivedBotRow({
   );
 }
 
-function ArchivedBotsPanel({
+export function ArchivedBotsPanel({
   bots,
   onClose,
   onRestored,
@@ -1482,7 +1482,18 @@ function ArchivedBotsPanel({
   );
 }
 
-export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function Sidebar({
+  open,
+  onClose,
+  onShowCrewMap,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Crew now owns the team map, so the Tools row asks the shell to show
+   *  that view rather than picking a store view on its own. Optional: with no
+   *  shell above it (the phone drawer), the store dispatch is the route. */
+  onShowCrewMap?: () => void;
+}) {
   const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
   const remoteClient = window.ogb?.remoteClient?.active === true;
@@ -2150,7 +2161,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         {density === "icons" && (
           <>
           <button
-            onClick={() => dispatch({ type: "showTeamMap" })}
+            onClick={() => (onShowCrewMap ? onShowCrewMap() : dispatch({ type: "showTeamMap" }))}
             aria-label={density === "icons" ? t("sidebar.nav.teamMap") : undefined}
             title={density === "icons" ? t("sidebar.nav.teamMap") : undefined}
             className={cn(
@@ -2204,7 +2215,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                 label: t("sidebar.nav.teamMap"),
                 icon: <Network size={18} />,
                 active: state.activeView === "team-map",
-                onSelect: () => dispatch({ type: "showTeamMap" }),
+                onSelect: () => (onShowCrewMap ? onShowCrewMap() : dispatch({ type: "showTeamMap" })),
               },
               {
                 key: "routines",

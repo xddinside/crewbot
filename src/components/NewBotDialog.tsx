@@ -21,6 +21,67 @@ const APP_LABELS: Record<string, string> = {
   linear: "Linear",
 };
 
+/**
+ * The choices themselves: a blank bot plus the six role templates.
+ *
+ * Extracted so the Crew page's "Add a specialist" sheet and the `⌘N` modal are
+ * one picker. A role only pre-fills the profile — nothing is connected,
+ * granted or scheduled on the user's behalf — so the copy above this grid has
+ * to travel with it wherever it is shown.
+ */
+export function NewBotChoices({
+  creating,
+  error,
+  onCreate,
+}: {
+  creating: boolean;
+  error: string | null;
+  onCreate: (role?: BotRole) => void;
+}) {
+  return (
+    <>
+      {error && <p role="alert" className="px-5 pt-3 text-[13px] text-danger">{error}</p>}
+      <div className="grid grid-cols-1 gap-2.5 overflow-y-auto p-5 sm:grid-cols-2">
+        <button
+          type="button"
+          disabled={creating}
+          onClick={() => onCreate()}
+          className="flex min-h-[112px] flex-col items-start gap-1.5 rounded-xl border border-dashed border-hairline/60 bg-raised/40 p-4 text-left hover:border-accent/50 hover:bg-raised disabled:opacity-50"
+        >
+          <span className="flex items-center gap-2 text-[14px] font-medium text-ink">
+            <BotIcon size={16} className="text-ink-secondary" /> {t("newBot.blank")}
+          </span>
+          <span className="text-[12.5px] leading-relaxed text-ink-secondary">{t("newBot.blankDescription")}</span>
+        </button>
+        {BOT_ROLES.map((role) => (
+          <button
+            key={role.id}
+            type="button"
+            disabled={creating}
+            onClick={() => onCreate(role)}
+            className={cn(
+              "flex min-h-[112px] flex-col items-start gap-1.5 rounded-xl border border-hairline/50 bg-raised/40 p-4 text-left",
+              "hover:border-accent/50 hover:bg-raised disabled:opacity-50",
+            )}
+          >
+            <span className="text-[14px] font-medium text-ink">{role.title}</span>
+            <span className="text-[12.5px] leading-relaxed text-ink-secondary">{role.description}</span>
+            {role.apps.length > 0 && (
+              <span className="mt-auto flex flex-wrap gap-1 pt-1">
+                {role.apps.map((slug) => (
+                  <span key={slug} className="rounded-full bg-inset px-2 py-0.5 text-[11px] text-ink-secondary">
+                    {APP_LABELS[slug] ?? slug}
+                  </span>
+                ))}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
 export function NewBotDialog() {
   const { state, dispatch } = useStore();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -102,44 +163,7 @@ export function NewBotDialog() {
             <X size={16} />
           </button>
         </div>
-        {error && <p role="alert" className="px-5 pt-3 text-[13px] text-danger">{error}</p>}
-        <div className="grid grid-cols-1 gap-2.5 overflow-y-auto p-5 sm:grid-cols-2">
-          <button
-            type="button"
-            disabled={creating}
-            onClick={() => create()}
-            className="flex min-h-[112px] flex-col items-start gap-1.5 rounded-xl border border-dashed border-hairline/60 bg-raised/40 p-4 text-left hover:border-accent/50 hover:bg-raised disabled:opacity-50"
-          >
-            <span className="flex items-center gap-2 text-[14px] font-medium text-ink">
-              <BotIcon size={16} className="text-ink-secondary" /> {t("newBot.blank")}
-            </span>
-            <span className="text-[12.5px] leading-relaxed text-ink-secondary">{t("newBot.blankDescription")}</span>
-          </button>
-          {BOT_ROLES.map((role) => (
-            <button
-              key={role.id}
-              type="button"
-              disabled={creating}
-              onClick={() => create(role)}
-              className={cn(
-                "flex min-h-[112px] flex-col items-start gap-1.5 rounded-xl border border-hairline/50 bg-raised/40 p-4 text-left",
-                "hover:border-accent/50 hover:bg-raised disabled:opacity-50",
-              )}
-            >
-              <span className="text-[14px] font-medium text-ink">{role.title}</span>
-              <span className="text-[12.5px] leading-relaxed text-ink-secondary">{role.description}</span>
-              {role.apps.length > 0 && (
-                <span className="mt-auto flex flex-wrap gap-1 pt-1">
-                  {role.apps.map((slug) => (
-                    <span key={slug} className="rounded-full bg-inset px-2 py-0.5 text-[11px] text-ink-secondary">
-                      {APP_LABELS[slug] ?? slug}
-                    </span>
-                  ))}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+        <NewBotChoices creating={creating} error={error} onCreate={create} />
       </div>
     </div>
   );

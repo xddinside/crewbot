@@ -56,7 +56,16 @@ export interface TeamImportResult {
 }
 
 type ImportSource = "library" | "file" | "github";
-type TeamTab = "explore" | "import" | "scout";
+export type TeamTab = "explore" | "import" | "scout";
+
+/** the catalog's own tab names, for a caller that opens this panel on one of
+ *  them (Crew's "Add a specialist" sheet has separate Library and Import
+ *  entries; the panel still owns the whole flow, preview and consent) */
+export const TEAM_TAB_LABELS: Record<TeamTab, string> = {
+  explore: "Library",
+  import: "Import",
+  scout: "Scout",
+};
 
 /** the scout endpoint's answer, as far as this panel renders it — the
  * manifest itself stays opaque and goes back to the server verbatim */
@@ -113,16 +122,19 @@ export function TeamLibraryPanel({
   onImported,
   returnFocusRef,
   initialUrl,
+  initialTab = "explore",
 }: {
   onClose: () => void;
   onImported: (result: TeamImportResult) => void;
   returnFocusRef: React.RefObject<HTMLButtonElement | null>;
   initialUrl?: string;
+  /** which tab to land on; the panel's own tabs still move freely */
+  initialTab?: TeamTab;
 }) {
   const { state, dispatch } = useStore();
   const dialogRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [tab, setTab] = useState<TeamTab>("explore");
+  const [tab, setTab] = useState<TeamTab>(initialTab);
   const [catalog, setCatalog] = useState<TeamCatalog | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState("");

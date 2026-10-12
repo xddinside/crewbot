@@ -15,10 +15,22 @@ vi.mock("@/lib/analytics", () => ({ track: vi.fn() }));
 import { NewBotDialog } from "./NewBotDialog";
 
 type Node = ReactElement<{ children?: ReactNode; role?: string; "aria-label"?: string; onClick?: () => void; ref?: RefObject<HTMLDivElement | null>; disabled?: boolean }>;
-function nodes(value: ReactNode): Node[] {
-  if (!isValidElement(value)) return [];
+/** Walks the element tree. A function component's own output is not in the
+ *  tree a caller sees, so it is rendered here — the role picker is now a
+ *  component of its own and these tests reach its buttons, not the dialog's. */
+function nodes(value: ReactNode, depth = 0): Node[] {
+  if (!isValidElement(value) || depth > 6) return [];
   const node = value as Node;
-  return [node, ...Children.toArray(node.props.children).flatMap(nodes)];
+  const children = Children.toArray(node.props.children);
+  let reachable: ReactNode[] = children;
+  if (typeof node.type === "function") {
+    try {
+      reachable = [(node.type as (props: unknown) => ReactNode)(node.props), ...children];
+    } catch {
+      reachable = children;
+    }
+  }
+  return [node, ...reachable.flatMap((child) => nodes(child, depth + 1))];
 }
 function render() {
   let tree!: ReturnType<typeof NewBotDialog>;

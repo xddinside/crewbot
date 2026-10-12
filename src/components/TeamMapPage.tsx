@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowRight, BookOpen, Box, Loader2, Monitor, Network, Plus, Save, Users, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Box, Loader2, Monitor, Network, Plus, Save, Users, X } from "lucide-react";
 
 import { api, formatTime, useStore, type Bot } from "@/state/store";
 import {
@@ -248,7 +248,15 @@ function SectionContextDialog({ section, label, onClose }: { section: string; la
   );
 }
 
-export function TeamMapPage() {
+export function TeamMapPage({
+  onBack,
+  openComputers,
+}: {
+  /** Crew owns the map as one of its views, so it hands the route back */
+  onBack?: () => void;
+  /** arrive with the team-computer panel already open (Crew's Computers) */
+  openComputers?: boolean;
+}) {
   const { state, dispatch } = useStore();
   const remoteClient = window.ogb?.remoteClient?.active === true;
   const [snapshot, setSnapshot] = useState<TeamMapSnapshot>(EMPTY_TEAM_MAP_SNAPSHOT);
@@ -258,6 +266,9 @@ export function TeamMapPage() {
   const [teamEditor, setTeamEditor] = useState<{ section?: string; rename?: boolean } | null>(null);
   const [deletingTeam, setDeletingTeam] = useState<string | null>(null);
   const [computersOpen, setComputersOpen] = useState(false);
+  useEffect(() => {
+    if (openComputers) setComputersOpen(true);
+  }, [openComputers]);
   const [createComputerRequest, setCreateComputerRequest] = useState(0);
   const [computers, setComputers] = useState<TeamComputer[]>([]);
   const [computerDrop, setComputerDrop] = useState<{ id: string; section: string } | null>(null);
@@ -315,10 +326,20 @@ export function TeamMapPage() {
   }, []);
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-app text-ink">
+    <main className="flex min-w-0 flex-1 flex-col overflow-hidden text-ink">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-hairline/40 px-6 py-4 max-md:pl-12">
         <div>
           <div className="flex items-center gap-2.5">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="-ms-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-secondary transition-colors duration-[var(--motion-fast)] hover:bg-control hover:text-ink"
+                aria-label={t("profile.back")}
+              >
+                <ArrowLeft size={16} />
+              </button>
+            )}
             <Network size={18} className="text-ink-secondary" />
             <h1 className="text-[17px] font-semibold">Team map</h1>
             <span className="ml-1 text-[11px] text-ink-secondary">{t("canvas.botCount", { count: bots.length })}</span>

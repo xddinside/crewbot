@@ -12,7 +12,7 @@
 // measure them. These components are thin on purpose: a class name, an
 // element, the props.
 
-import type { HTMLAttributes, ReactNode } from "react";
+import type { HTMLAttributes, ReactNode, Ref } from "react";
 import { cn } from "@/lib/cn";
 
 /** The shape of each glass surface. `blur` is the backdrop radius, `radius`
@@ -46,6 +46,9 @@ interface GlassBaseProps extends HTMLAttributes<HTMLElement> {
   /** Renders a plain `<div>`. The polymorphic element keeps a `<button>` or a
    *  `<form>` accessible without adding a second API. */
   as?: "div" | "section" | "article" | "aside" | "form";
+  /** A sheet or a card that owns focus — a dialog, a combobox — needs its
+   *  element, and the primitive is what renders it. */
+  ref?: Ref<HTMLElement>;
   children?: ReactNode;
 }
 

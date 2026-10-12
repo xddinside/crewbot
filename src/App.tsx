@@ -32,6 +32,8 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { LocalVmWorkspace } from "@/components/LocalVmWorkspace";
 import { TeamMapPage } from "@/components/TeamMapPage";
+import { CrewScreen } from "@/components/CrewScreen";
+import { BotProfilePage } from "@/components/BotProfilePage";
 import { destinationFor, type Destination } from "@/lib/shell-nav";
 import { setLocale } from "@/lib/i18n";
 import { shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
@@ -87,6 +89,14 @@ function Shell() {
   // chord can never disagree about what is open.
   const [paletteRequested, setPaletteRequested] = useState(false);
   const [localVmWorkspaceBotId, setLocalVmWorkspaceBotId] = useState<string | null>(null);
+  /* Crew is three views of one destination: the roster, the team map, and a
+     bot's profile. Which one is a *view*, not a second source of navigation
+     truth — `activeView === "team-map"` still says "Crew", exactly as before,
+     and the pill still highlights while any of the three is up. */
+  const [crewView, setCrewView] = useState<{ view: "roster" | "map" | "profile"; botId: string | null; computers?: boolean }>({
+    view: "roster",
+    botId: null,
+  });
   // the Browser tab, expanded into the main column (the small preview in
   // the panel hands off to this and back)
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -120,6 +130,9 @@ function Shell() {
   const goToDestination = useCallback(
     (next: Destination) => {
       if (next === "crew") {
+        // The pill means the roster. The map is one of the roster's own
+        // footer entries, not a separate destination the pill can land on.
+        setCrewView({ view: "roster", botId: null });
         dispatch({ type: "showTeamMap" });
         return;
       }
@@ -154,6 +167,17 @@ function Shell() {
      staffing run down the canvas either side of it. Same gates, so a room
      waiting on engine setup still gets the setup card rather than columns. */
   const showProjects = destination === "projects" && Boolean(group) && !noEngines && !localVmWorkspaceBotId;
+  /* Crew, like Home and Projects, is a gate rather than a mode: only the
+     roster's own view (activeView "team-map") reaches it, so the Automations
+     calendar — a secondary destination that borrows the pill — keeps its own
+     screen. */
+  const showCrew = destination === "crew" && state.activeView === "team-map";
+  const crewBot = crewView.botId ? state.bots.find((candidate) => candidate.id === crewView.botId) : undefined;
+  /* Leaving Crew for anywhere else takes its view with it: a pill click always
+     lands on the roster, never on the map or a profile you left behind. */
+  useEffect(() => {
+    if (!showCrew) setCrewView({ view: "roster", botId: null });
+  }, [showCrew]);
 
   // App-wide shortcuts: ⌘N new bot · ⌘1–9 jump to bot · ⌘⇧[ / ⌘⇧] prev/next · ⌘/ or ? shortcuts cheat sheet.
   // Kept deliberately small; every panel already closes on Esc.
@@ -219,15 +243,15 @@ function Shell() {
   // drawer whenever an action opens something over the chat.
   useEffect(() => {
     setDrawerOpen(false);
-  }, [state.selectedId, bot?.threadId, group?.threadId, state.activeView, state.pluginsOpen, state.settingsOpen]);
+  }, [state.selectedId, bot?.threadId, group?.threadId, state.activeView, crewView, state.pluginsOpen, state.settingsOpen]);
 
   /* The workspace sheet belongs to Home and Projects. Leaving either — a bot
      selected from inside it, the Crew pill, the calendar — takes it down with
      us, rather than leaving a column of the sidebar floating over an unrelated
      screen. */
   useEffect(() => {
-    if (!showHome && !showProjects) setWorkspaceOpen(false);
-  }, [showHome, showProjects]);
+    if (!showHome && !showProjects && !showCrew) setWorkspaceOpen(false);
+  }, [showHome, showProjects, showCrew]);
 
   useEffect(() => {
     if (state.activeView === "routines" && previousViewRef.current !== "routines") {
@@ -258,6 +282,7 @@ function Shell() {
 
   const closeCalendar = useCallback(() => {
     if (calendarOriginRef.current === "team-map") {
+      setCrewView({ view: "roster", botId: null });
       dispatch({ type: "showTeamMap" });
       return;
     }
@@ -398,14 +423,58 @@ function Shell() {
             </div>
           )}
         </>
+      ) : showCrew ? (
+        /* Crew. The roster, the team map and a bot's profile are three views
+           of the same destination; none of them is a container. The sidebar is
+           not in this branch above `md` — it opens as the same glass sheet Home
+           and Projects use, from the roster's own footer. */
+        <>
+          {crewView.view === "profile" && crewBot ? (
+            <BotProfilePage
+              key={`profile:${crewBot.id}`}
+              bot={crewBot}
+              onBack={() => setCrewView({ view: "roster", botId: null })}
+            />
+          ) : crewView.view === "map" ? (
+            <TeamMapPage
+              openComputers={crewView.computers}
+              onBack={() => setCrewView({ view: "roster", botId: null })}
+            />
+          ) : (
+            <CrewScreen
+              onOpenBot={(botId) => setCrewView({ view: "profile", botId })}
+              onOpenTeamMap={() => setCrewView({ view: "map", botId: null })}
+              onOpenTeamComputers={() => setCrewView({ view: "map", botId: null, computers: true })}
+              onOpenAll={() => setWorkspaceOpen(true)}
+            />
+          )}
+          <div className="md:hidden">
+            <Sidebar open={drawerOpen} onClose={closeDrawer} />
+          </div>
+          {workspaceOpen && (
+            <div className="fixed inset-0 z-30">
+              <div aria-hidden className="absolute inset-0 bg-black/20" onMouseDown={() => setWorkspaceOpen(false)} />
+              <div className="glass-sheet relative h-full w-[320px] max-sm:w-full">
+                <Sidebar open onClose={() => setWorkspaceOpen(false)} />
+              </div>
+            </div>
+          )}
+        </>
       ) : (
         <>
       {/* The context column. It floats: no panel fill, no right border, a
           gutter so the lists have air against the sky. */}
-      {!calendarFocus && <Sidebar open={drawerOpen} onClose={closeDrawer} />}
-      {state.activeView === "team-map" ? (
-        <TeamMapPage />
-      ) : state.activeView === "routines" ? (
+      {!calendarFocus && (
+        <Sidebar
+          open={drawerOpen}
+          onClose={closeDrawer}
+          onShowCrewMap={() => {
+            setCrewView({ view: "map", botId: null });
+            dispatch({ type: "showTeamMap" });
+          }}
+        />
+      )}
+      {state.activeView === "routines" ? (
         <RoutinesPage onBack={closeCalendar} onOpenRoom={openCalendarRoom} />
       ) : !remoteClient && localVmWorkspaceBotId ? (
         <LocalVmWorkspace

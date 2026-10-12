@@ -929,3 +929,228 @@ recorded. Untouched here.
 - The store, IPC and the server were not touched. Nothing here needed a fourth
   `activeView`.
 - Do not run prettier. See phase 3's note.
+
+## Phase 6 — Crew and the bot profile
+
+From `67fce534`.
+
+### What changed
+
+**Crew is three views of one destination, and none of them is a container.**
+The destination is still derived exactly as phase 1 derived it — `activeView
+=== "team-map"` means Crew — so the pill still highlights honestly. What is new
+is that Crew is now a *screen* with three views rather than one canvas:
+
+| view | component | reached by |
+| --- | --- | --- |
+| roster | `CrewScreen` | the Crew pill, or leaving the other two |
+| team map | `TeamMapPage` | the roster's **Team map** footer, or the sidebar's Tools row |
+| bot profile | `BotProfilePage` | any bot row on the roster |
+
+The selector is one `useState` in `App.tsx` (`crewView`), not a second source
+of navigation truth. Leaving Crew resets it, so a pill click always lands on
+the roster and never on a map or a profile left behind three screens ago.
+
+**The roster is a presentation of what the workspace already has.** A team is
+a sidebar section, its lead is that section's Chief of Staff, and the bots
+under it are its specialists — `crewRoster()` in `src/lib/crew-roster.ts`,
+pure and tested. **Nothing is renamed.** A workspace whose leads are Tracker
+and Wrench sees Tracker and Wrench; `CrewScreen.test.ts` asserts exactly that.
+A team with **no Chief still gets a column** and says *"No lead yet — use a
+bot's menu to make one"* rather than quietly promoting the first bot, because
+appointing a coordinator the user never appointed is the authority decision
+the audit warns against. The Chief badge keeps its crown.
+
+The columns float on the sky — heading, roster search, team columns and the
+footer are all transparent. The only glass is what needs to read as *above* the
+page: the specialist cards, the add sheet, the bot menus, the feedback toast.
+
+- **Every row keeps the app's own controls.** `…` is the sidebar's exported
+  `BotContextMenu` (pin, Chief, move to team, mark unread, edit, duplicate,
+  copy ID, archive, delete, new thread, new folder), "Move to team" is the
+  sidebar's `SectionPicker`, archive and delete go through the sidebar's
+  `botConfirmCopy` / `currentArchivableBot` eligibility checks, and "New
+  folder" opens the same `BotProjectDialog`. Nothing on the roster is a
+  second implementation of anything.
+- **Signals** are `botSignals()` — the same waiting-beats-working-beats-queued
+  precedence and the same routine-thread exclusion as the sidebar tree, so a
+  roster dot and a tree dot cannot disagree. A dead or signal-less bot reads
+  as offline rather than idle.
+- **Search** filters name, title and description and leaves a team out
+  entirely when nothing in it matches.
+- **Footer:** Team map · All conversations · Computers · Archived bots ·
+  Templates. The map and the computers panel are inside `TeamMapPage` (the
+  Computers entry opens it with the panel already up); the archive is the
+  sidebar's own `ArchivedBotsPanel`, exported for this. *All conversations*
+  opens the same glass workspace sheet Home and Projects use, because Crew
+  replaces the sidebar above `md` and would otherwise have no route to rooms,
+  thread folders or tools.
+- **Remote clients** keep *Add specialist* (the sidebar's plus menu keeps New
+  bot too) and lose team creation, the library, the computers and the archive —
+  absent rather than failing when pressed, which is what the sidebar already
+  does.
+
+**"Add a specialist" is a glass sheet with three tabs.** *Create bot* is the
+real role picker — extracted from `NewBotDialog` as `NewBotChoices`, so `⌘N`,
+the sidebar's plus menu and this sheet create through one code path and cannot
+drift. *Team library* and *Import* open the real `TeamLibraryPanel`, now with
+an `initialTab` prop so each entry lands on its own tab; the panel keeps its
+own tabs, preview and consent. The sheet's Create tab says in words that a new
+bot's team is set by **Move to team**, because that is how the store actually
+works — see the deviation below.
+
+**The profile is the same twelve sections as the chat's settings panel, as a
+page.** `BotSettingsDialog` and `BotProfilePage` are two hosts over one
+implementation: `useBotProfileData` (overview, prompt preview, history,
+rollback) and `BotSectionBody` (the twelve bodies) came out of the dialog and
+are now shared. The chat's header avatar still opens the panel; the roster
+opens the page. Section nav stands on the sky in the left column, the chosen
+section sits in a `GlassCard`, and the right column is a set of **jumps** —
+Skills, Memory, Model, Permissions, Usage, Voice, History — never a second
+editor. Counts come from the endpoints the sections read anyway
+(`/api/bots/:id/skills`, `fetchMemoryOverview`); a count that cannot be fetched
+says *Loading…* rather than showing a zero that would read as "no skills".
+Selecting a section writes the store's own `botSettingsSection`, so a deep link
+from the team map's computer chip and a click in the rail mean the same thing.
+Memory keeps a hidden mount so an unsaved draft survives a glance at Usage.
+
+**Two small wiring changes, recorded here as promised.** `Sidebar` took an
+optional `onShowCrewMap` prop so the Tools row can ask the shell for Crew's map
+view instead of picking a store view on its own (it falls back to the old
+dispatch when there is no shell above it — the phone drawer). `TeamMapPage`
+took `onBack` and `openComputers`. `GlassPanel/Card/Popover/Sheet` accepted a
+`ref` prop, which they needed for the sheet's focus trap. **The store, IPC and
+the server were not touched.**
+
+### Files
+
+| file | |
+| --- | --- |
+| `src/lib/crew-roster.ts` + `.test.ts` | pure: teams, leads, specialists, signals, preview, search (15 tests) |
+| `src/components/CrewScreen.tsx` + `.test.ts` | the roster; renders against a store fixture and reads the markup back (10 tests) |
+| `src/components/AddSpecialistSheet.tsx` | Create bot · Team library · Import |
+| `src/components/BotProfilePage.tsx` + `.test.ts` | the page; section nav, glass body, summary jumps (6 tests) |
+| `src/components/bot-settings/useBotProfileData.ts` | the three fetches + rollback, lifted out of the dialog |
+| `src/components/bot-settings/BotSectionBody.tsx` | the twelve bodies, shared by both hosts |
+| `src/components/BotSettingsDialog.tsx` | the accordion, now over the shared data and body |
+| `src/components/NewBotDialog.tsx` + `.test.ts` | `NewBotChoices` extracted; the test's node walker learned to render a child component |
+| `src/components/TeamLibraryPanel.tsx` | `initialTab` |
+| `src/components/TeamMapPage.tsx` | `onBack`, `openComputers`, and no `bg-app` ground |
+| `src/components/Sidebar.tsx` | `MenuState`, `SectionPicker` and `ArchivedBotsPanel` exported; `onShowCrewMap` |
+| `src/components/Glass.tsx` | `ref` on the four shapes |
+| `src/App.tsx`, `src/locales/en.json` | the Crew branch; 51 new strings |
+
+### FEATURES.md rows covered
+
+- **F004** — roster search, team columns, previews, and the unread / working /
+  waiting / queued / no-signal states, from the sidebar's own rule. Section
+  reorder and collapse stay in the sidebar (and the map); the roster is a
+  view, not a replacement for them.
+- **F005** — pinned bots, the Chief badge, mark unread and copy conversation ID
+  are all still in the bot menu, which is now reachable from the roster. A
+  lead's Chief placement is a crown, not a renamed column.
+- **F006** — New bot: blank plus the six role templates, pending spinner,
+  disabled repeat creation, error text, focus trap and restore. The sheet's
+  Create tab is that picker; the app chips are still suggestions.
+- **F007** — rename/edit, duplicate, archive with its eligibility checks, and
+  delete with its own confirmation, all on the roster row. Active-work
+  restrictions are unchanged (`currentArchivableBot`).
+- **F008** — archived bots stay reachable from Crew's footer with restore
+  single / all, delete single / all, progress and errors.
+- **F009** — *Create team* is the sidebar's `TeamDialog`; move bot and move
+  group are `SectionPicker`; the General team is the unsectioned column.
+  Membership moves, never copies.
+- **F010** — Chief role, handover and managed extra teams are unchanged in
+  `PermissionsSection`, now a page section. The roster's "no lead yet" line is
+  the opposite of a silent overwrite.
+- **F011** — the team map is intact (lanes, handoffs, drag arrangement,
+  pan/zoom/fit, keyboard alternatives) and reachable from the roster footer,
+  the sidebar Tools row, and `ComputerPanel`'s entry. It lost only its `bg-app`
+  ground so it floats on the sky like everything else.
+- **F012** — team instructions editor untouched, still on the map.
+- **F013, F014, F015, F016** — team computers open with the map's computers
+  panel; the library and import open the real `TeamLibraryPanel` with its
+  preview and consent intact. Scout is phase 8/9's screen and was not moved.
+- **F046, F047, F075** — approval modes, the full-access and local-auto
+  warnings, and the model picker are untouched inside their sections.
+- **F067** — section search, deep links, the twelve sections, focus and the
+  empty state, now on a page and still in the panel.
+- **F068–F073, F076, F077, F093, F095** — Overview, Identity, Soul, Skills,
+  Memory, Routines, Model, Permissions, Voice & alerts, History and Usage are
+  all reachable as profile sections; their controls, gates and errors are
+  unchanged. F077's remote subset still renders through
+  `RemoteAgentSettingsPanel` when a remote client opens the chat panel.
+
+### Checks run
+
+| check | result |
+| --- | --- |
+| `pnpm run checks` (typecheck · lint · i18n · electron) | pass, 4/4 |
+| `pnpm check:contrast` | pass — all 8 skins + bubble context |
+| `vite build` | pass |
+| `vitest run src/components src/lib` | **1824 pass, 1 fail** |
+| whole-repo suite (server, e2e, harness) | not run; phase 11 owns it |
+
+The one failure is `src/lib/sky-texture.test.ts > leaves most of the field
+empty` (0.46 against a `< 0.45` bound) — the inherited failure phases 2, 4
+and 5 recorded. Untouched here.
+
+### Three deliberate deviations from the mockup
+
+1. **The add sheet has no Role / Reports to / Model / Workspace / Avatar
+   fields.** The app has no way to set them at creation: a new bot's team is
+   set by **Move to team**, its model by its Model section, its working folder
+   by Access and its avatar by Identity. Putting them in the sheet would mean
+   a second place that writes the same fields and disagrees with them. The
+   sheet says so in one line instead, and the roster's per-team *Add
+   specialist* opens it with that team named.
+2. **A team with no Chief shows no lead.** The mockup's columns all have one.
+3. **The profile's summary column has no editors in it.** The mockup's right
+   card carries a name field, a soul field, a memory topic editor and a model
+   picker. Those are the sections' controls; a second copy on a summary card
+   is how two surfaces drift.
+
+### Open, deferred, or unfinished
+
+- **Nobody has looked at any of it.** Six phases of the redesign now rest on
+  structure alone. The roster's column widths on a real 1440px window, the
+  sheet's three tabs, the profile's three columns, and the map floating on the
+  sky are all unverified pixels. **What would settle it:** an isolated fixture
+  per `docs/verification/README.md`, a workspace with two or three teams and a
+  few specialists, and open the roster, the add sheet, a lead's profile on
+  Access, and the team map. Phase 11 QA.
+- **The map lost its `bg-app` ground but kept its own `bg-card` lanes**, which
+  was not re-examined. On a pale sky the lane cards may need a hairline they do
+  not have. Someone should look.
+- **`TeamLibraryPanel`'s `initialTab` only sets the opening tab.** The sheet's
+  Library and Import entries both land on the panel and let its own tabs move
+  freely; there is no way to return to the sheet from inside the panel, so
+  closing it goes back to Crew.
+- **The profile's section nav is `md:` and up.** Below that it is a horizontal
+  scroller of pills; the summary column is `xl:` only, so a laptop at 1280px
+  gets the rail and the body and no summary. Both are deliberate, neither is
+  verified.
+- **The roster has no density, collapse or reorder control** (F003, F004).
+  Those live in the sidebar and the map, which is where they always were; the
+  roster is a view. A workspace with twenty teams scrolls sideways.
+- **Archived-bots restore does not return to the profile.** It restores, and
+  the bot appears in its team column.
+- `CrewScreen.test.ts` mocks `@/lib/analytics` because posthog-js reads
+  `window.addEventListener` at import time and the fixture's window is a bare
+  object. Any future test that reaches the team library from the roster needs
+  the same mock.
+
+### For the next agent
+
+- `crewRoster()` is the one place a lead is chosen. Do not promote a bot to
+  head a team anywhere else, and do not rename one.
+- `BotSectionBody` and `useBotProfileData` are shared by the panel and the
+  page. Adding a control means adding it there, once.
+- `crewView` in `App.tsx` is a *view*, not a destination. `activeView` is
+  untouched and still says Crew for all three of them.
+- The roster reuses the sidebar's exported `BotContextMenu`, `SectionPicker`,
+  `ArchivedBotsPanel` and `BotProjectDialog`. If one of those needs a change,
+  change it there.
+- `GlassSheet`/`GlassCard`/… now take `ref`; use it rather than wrapping a
+  glass surface in an extra `<div>` just to get the element.
+- Do not run prettier. See phase 3's note.

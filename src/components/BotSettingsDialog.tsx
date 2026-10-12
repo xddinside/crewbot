@@ -1,39 +1,28 @@
 // Per-bot settings as a right sidebar with fold-out (accordion) categories —
 // same shell pattern as InspectorPanel. Every section lives under
-// bot-settings/; this dialog owns only the fetches (overview, system-prompt,
-// history) and which accordion row is expanded.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// bot-settings/; this dialog owns only which accordion row is expanded, and
+// the fetches it shares with the Crew profile page.
+//
+// The Crew profile (BotProfilePage) shows the same twelve sections as one
+// section at a time on the sky. Both hosts read their bodies and their data
+// from `BotSectionBody` / `useBotProfileData`, so "the panel" and "the page"
+// cannot drift into showing different controls for the same bot.
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Search, X } from "lucide-react";
 
-import { api, useStore, type Bot } from "@/state/store";
-import type { BotOverview } from "@/lib/bot-overview-types";
+import { useStore, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { BOT_SECTIONS } from "./bot-settings/sections";
-import { useBotSettingsDerived } from "./bot-settings/useBotSettingsDerived";
-import { OverviewSection } from "./bot-settings/OverviewSection";
-import { IdentitySection } from "./bot-settings/IdentitySection";
-import { SoulSection } from "./bot-settings/SoulSection";
-import { SkillsSection } from "./bot-settings/SkillsSection";
-import { MemorySection } from "./bot-settings/MemorySection";
-import { RoutinesSection } from "./bot-settings/RoutinesSection";
-import { AccessSection } from "./bot-settings/AccessSection";
-import { ModelSection } from "./bot-settings/ModelSection";
-import { PermissionsSection } from "./bot-settings/PermissionsSection";
-import { VoiceSection } from "./bot-settings/VoiceSection";
-import { HistorySection, type HistoryRow } from "./bot-settings/HistorySection";
-import { UsageSection } from "./bot-settings/UsageSection";
-import type { PromptPreviewData } from "./bot-settings/PromptPreview";
+import { BOT_SECTIONS, sectionMatches } from "./bot-settings/sections";
+import { BotSectionBody } from "./bot-settings/BotSectionBody";
+import { useBotProfileData } from "./bot-settings/useBotProfileData";
 
-function sectionMatches(entry: (typeof BOT_SECTIONS)[number], query: string): boolean {
-  if (!query) return true;
-  return [entry.label, ...entry.keywords].some((part) => part.toLowerCase().includes(query));
-}
+export { sectionMatches };
 
 export function BotSettingsDialog({ bot }: { bot: Bot }) {
-  const { state, dispatch, flushBotPatches } = useStore();
+  const { state, dispatch } = useStore();
   const section = state.botSettingsSection;
-  const derived = useBotSettingsDerived(bot);
+  const data = useBotProfileData(bot, section);
   const dialogRef = useRef<HTMLElement | null>(null);
   const [query, setQuery] = useState("");
   // Keep expansion in the store too: header deep links can arrive while
@@ -41,143 +30,6 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
   const collapsed = !state.botSettingsExpandAccordion;
   const q = query.trim().toLowerCase();
   const visibleSections = BOT_SECTIONS.filter((entry) => sectionMatches(entry, q));
-
-  const [overview, setOverview] = useState<BotOverview | null>(null);
-  const [overviewError, setOverviewError] = useState(false);
-  const [prompt, setPrompt] = useState<PromptPreviewData | null>(null);
-  const [promptError, setPromptError] = useState(false);
-  const [historyRows, setHistoryRows] = useState<HistoryRow[] | null>(null);
-  const [historyError, setHistoryError] = useState(false);
-  const [historyRevision, setHistoryRevision] = useState<string | null>(null);
-  const historyRequest = useRef(0);
-  const [rollingBack, setRollingBack] = useState(false);
-  const [rollbackTarget, setRollbackTarget] = useState<{ id: string; expectedRevision: string } | null>(null);
-
-  // The bot-record fields the server-built overview and system-prompt
-  // preview actually read (OverviewFacts.bot plus the prompt's persona
-  // inputs). A streamed message or unread flag replaces the bot object but
-  // must not refetch an unchanged overview.
-  const factsSignature = useMemo(
-    () =>
-      JSON.stringify([
-        bot.name,
-        bot.title,
-        bot.description,
-        bot.soul,
-        bot.computer,
-        bot.cloudBackend,
-        bot.cwd,
-        bot.autoApprove,
-        bot.approvePeerComms,
-        bot.peers,
-        bot.section,
-        bot.composio,
-        bot.browser,
-        bot.mcpServers,
-        bot.chiefOfStaff,
-        bot.managedSections,
-        bot.modelSelection,
-      ]),
-    [
-      bot.name,
-      bot.title,
-      bot.description,
-      bot.soul,
-      bot.computer,
-      bot.cloudBackend,
-      bot.cwd,
-      bot.autoApprove,
-      bot.approvePeerComms,
-      bot.peers,
-      bot.section,
-      bot.composio,
-      bot.browser,
-      bot.mcpServers,
-      bot.chiefOfStaff,
-      bot.managedSections,
-      bot.modelSelection,
-    ],
-  );
-
-  // Fetch on entry: skills and memory are files, not bot-record fields, so
-  // returning from either editor must reload their overview/prompt too.
-  // Await the existing write queue instead of racing a second debounce.
-  useEffect(() => {
-    if (section !== "overview") return;
-    let cancelled = false;
-    const fetchOverviewAndPrompt = async () => {
-      await flushBotPatches(bot.id);
-      if (cancelled) return;
-      void api(`/api/bots/${bot.id}/overview`)
-        .then((data: BotOverview) => {
-          if (cancelled) return;
-          setOverview(data);
-          setOverviewError(false);
-        })
-        .catch(() => {
-          if (!cancelled) setOverviewError(true);
-        });
-      void api(`/api/bots/${bot.id}/system-prompt`)
-        .then((data: PromptPreviewData) => {
-          if (cancelled) return;
-          setPrompt(data);
-          setPromptError(false);
-        })
-        .catch(() => {
-          if (!cancelled) setPromptError(true);
-        });
-    };
-
-    void fetchOverviewAndPrompt();
-    return () => {
-      cancelled = true;
-    };
-  }, [bot.id, section, factsSignature, state.routines, state.webhooks, flushBotPatches]);
-
-  // Read the file-backed history only when its section is opened. A newer
-  // load (or leaving History) invalidates older rows, revision, and errors.
-  const loadHistory = useCallback(() => {
-    const request = ++historyRequest.current;
-    setHistoryError(false);
-    return flushBotPatches(bot.id)
-      .then(() => api(`/api/bots/${bot.id}/history?limit=100`))
-      .then((data: { rows: HistoryRow[]; revision: string }) => {
-        if (request !== historyRequest.current) return;
-        setHistoryRows(data.rows);
-        setHistoryRevision(data.revision);
-      })
-      .catch(() => {
-        if (request === historyRequest.current) setHistoryError(true);
-      });
-  }, [bot.id, flushBotPatches]);
-
-  useEffect(() => {
-    if (section !== "history") return;
-    void loadHistory();
-    return () => { historyRequest.current++; };
-  }, [section, loadHistory]);
-
-  // A rollback failure (the row's soul text no longer round-trips the
-  // server's validation, say) still reloads history so the list matches
-  // the server's actual state, but also surfaces the server's message
-  // through the app's error toast — mirrors SoulField's Apply/Discard.
-  const rollbackHistory = async (target: { id: string; expectedRevision: string }) => {
-    if (rollingBack) return;
-    setRollbackTarget(null);
-    setRollingBack(true);
-    try {
-      await flushBotPatches(bot.id);
-      await api(`/api/bots/${bot.id}/history/rollback`, {
-        method: "POST",
-        body: JSON.stringify(target),
-      });
-    } catch (e: unknown) {
-        dispatch({ type: "error", message: e instanceof Error ? e.message : "Couldn't undo that change." });
-    } finally {
-      await loadHistory();
-      setRollingBack(false);
-    }
-  };
 
   useEffect(() => {
     // Search narrows the collapsed row list. Choosing a row (or following
@@ -218,82 +70,6 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
       previousFocus?.focus();
     };
   }, [dispatch]);
-
-  const renderSectionBody = (id: (typeof BOT_SECTIONS)[number]["id"]) => {
-    switch (id) {
-      case "overview":
-        return overview === null && overviewError ? (
-          <div className="rounded-xl bg-card p-4 text-[13px] text-ink-secondary">Couldn’t load the overview.</div>
-        ) : (
-          // Data wins over a transient refetch failure: once an overview has
-          // loaded once, a later failed refetch (routines/webhooks/bot-record
-          // changed, the request errored) keeps showing it rather than
-          // replacing a fully populated card with an error block — the same
-          // precedence PromptPreview already gives its own data vs. error.
-          <OverviewSection
-            overview={overview}
-            refreshError={overview !== null && overviewError}
-            prompt={prompt}
-            promptError={promptError}
-            onOpen={(target) => dispatch({ type: "toggleSettings", open: true, section: target })}
-            onSetup={derived.canCoordinate && !bot.busy ? () => {
-              dispatch({ type: "toggleSettings", open: false });
-              dispatch({ type: "send", botId: bot.id, text: "/setup", threadId: bot.threadId });
-            } : undefined}
-          />
-        );
-      case "identity":
-        return (
-          <IdentitySection
-            bot={bot}
-            patch={derived.patch}
-            activeState={derived.activeState}
-            mascotMotion={derived.mascotMotion}
-          />
-        );
-      case "soul":
-        return <SoulSection bot={bot} patch={derived.patch} />;
-      case "skills":
-        return <SkillsSection bot={bot} />;
-      case "memory":
-        // Memory has an explicit Save button; preserve its unsaved draft
-        // while the user consults another section. It fetches when it
-        // becomes the active section. Always mounted; visibility toggled
-        // via hidden on the accordion body wrapper.
-        return <MemorySection bot={bot} active={!collapsed && section === "memory"} />;
-      case "routines":
-        return <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} />;
-      case "access":
-        return <AccessSection bot={bot} derived={derived} />;
-      case "model":
-        return <ModelSection bot={bot} />;
-      case "permissions":
-        return <PermissionsSection bot={bot} derived={derived} />;
-      case "voice":
-        return <VoiceSection bot={bot} derived={derived} />;
-      case "history":
-        return historyRows === null && historyError ? (
-          <div className="rounded-xl bg-card p-4 text-[13px] text-ink-secondary">Couldn’t load history.</div>
-        ) : (
-          // Same precedence as the Overview: rows already on screen
-          // survive a failed reload (after an undo, say) with a quiet
-          // note rather than being replaced by an error block.
-          <HistorySection
-            bot={bot}
-            rows={historyRows}
-            refreshError={historyRows !== null && historyError}
-            onRollback={(id) => {
-              if (historyRevision) setRollbackTarget({ id, expectedRevision: historyRevision });
-            }}
-            rollingBack={rollingBack || !historyRevision}
-          />
-        );
-      case "usage":
-        return <UsageSection bot={bot} />;
-      default:
-        return null;
-    }
-  };
 
   return (
     <>
@@ -388,10 +164,14 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
                     other sections only mount while expanded. */}
                 {id === "memory" ? (
                   <div hidden={!open} className="px-4 pb-4 pt-1">
-                    {renderSectionBody("memory")}
+                    <BotSectionBody bot={bot} section="memory" data={data} memoryActive={open} />
                   </div>
                 ) : (
-                  open && <div className="px-4 pb-4 pt-1">{renderSectionBody(id)}</div>
+                  open && (
+                    <div className="px-4 pb-4 pt-1">
+                      <BotSectionBody bot={bot} section={id} data={data} />
+                    </div>
+                  )
                 )}
               </div>
             );
@@ -399,14 +179,14 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
         </div>
       </aside>
       <ConfirmDialog
-        open={rollbackTarget !== null}
+        open={data.rollbackTarget !== null}
         title="Restore previous instructions?"
         body="Replaces current SOUL with the version before this change. Current version stays in History."
         confirmLabel="Restore instructions"
         tone="neutral"
         returnFocusRef={dialogRef}
-        onCancel={() => setRollbackTarget(null)}
-        onConfirm={() => { if (rollbackTarget) void rollbackHistory(rollbackTarget); }}
+        onCancel={data.cancelRollback}
+        onConfirm={() => void data.performRollback()}
       />
     </>
   );
