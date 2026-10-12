@@ -34,7 +34,7 @@ export function ConnectionDetail({ label, value }: { label: string; value: strin
   };
 
   return (
-    <div className="flex items-center gap-3 rounded-lg bg-inset px-3 py-2">
+    <div className="flex items-center gap-3 rounded-xl bg-inset/60 px-3 py-2 ring-1 ring-hairline/40">
       <div className="min-w-0 flex-1">
         <div className="text-[11px] font-medium uppercase tracking-wide text-ink-secondary">{label}</div>
         <div className="mt-0.5 truncate font-mono text-[11.5px] text-ink">
@@ -43,7 +43,7 @@ export function ConnectionDetail({ label, value }: { label: string; value: strin
       </div>
       <button
         onClick={() => setRevealed((current) => !current)}
-        className="shrink-0 rounded px-2 py-1 text-[11px] text-ink-secondary hover:bg-control hover:text-ink"
+        className="ui-button shrink-0"
       >
         {revealed ? "Hide" : "Reveal"}
       </button>

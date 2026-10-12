@@ -2607,5 +2607,7 @@
   "settings.footer.releases": "Releases",
   "settings.footer.repository": "Source code",
   "settings.footer.license": "License",
-  "settings.footer.version": "Version {version}"
+  "settings.footer.version": "Version {version}",
+  "settings.profile.namePlaceholder": "Your name",
+  "settings.profile.emailLabel": "Email"
 }

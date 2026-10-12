@@ -206,7 +206,7 @@ export function CompanionSection({ profileEmail = "" }: { profileEmail?: string 
         title={t("remote.pairing.tailscale.title")}
         subtitle={t("remote.tailscaleCard.subtitle")}
       >
-        <div className="rounded-xl bg-inset px-3 py-3" aria-live="polite">
+        <div className="rounded-xl bg-inset/60 px-3 py-3 ring-1 ring-hairline/40" aria-live="polite">
           <div className="flex items-start gap-2.5">
             <ShieldCheck
               size={16}
@@ -256,7 +256,7 @@ export function CompanionSection({ profileEmail = "" }: { profileEmail?: string 
         {pairedCount > 0 && (
           <ul className="flex flex-col gap-2">
             {state.devices.map((device) => (
-              <li key={device.id} className="rounded-xl bg-inset px-3 py-3">
+              <li key={device.id} className="rounded-xl bg-inset/60 px-3 py-3 ring-1 ring-hairline/40">
                 <div className="flex items-center gap-3">
                   <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-control text-ink-secondary">
                     <Smartphone size={15} />

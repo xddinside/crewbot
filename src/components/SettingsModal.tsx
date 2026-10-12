@@ -92,7 +92,12 @@ const sectionLabel = (section: SettingsSection) => t(section.labelKey);
 // label resolved here at module scope would freeze the language the app booted
 // in. The English keywords stay untranslated — they are a search index, and a
 // pack that omits them still matches what people type.
-/** Name + email, persisted to /api/config {profile} on blur. */
+/** Name + email, persisted to /api/config {profile} on blur.
+ *
+ * Labelled rows rather than placeholder-only fields: a field that shows its
+ * label only while it is empty cannot be read at a glance, and these two are
+ * the first thing anyone sets. Each saves on blur, so a person who tabs
+ * through the page has already filled both in. */
 function ProfileFields() {
   const { state, dispatch } = useStore();
   const [name, setName] = useState(state.config?.profile?.name ?? "");
@@ -102,31 +107,38 @@ function ProfileFields() {
     setEmail(state.config?.profile?.email ?? "");
   }, [state.config?.profile?.name, state.config?.profile?.email]);
 
-  const save = () => {
+  const save = (field: "name" | "email", value: string) => {
+    const next = field === "name" ? { name: value.trim(), email: email.trim().toLowerCase() } : { name: name.trim(), email: value.trim().toLowerCase() };
     void fetch("/api/config", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ profile: { name: name.trim(), email: email.trim().toLowerCase() } }),
+      body: JSON.stringify({ profile: next }),
     })
       .then((r) => r.json())
       .then((config) => dispatch({ type: "configStatus", config }))
       .catch(() => {});
   };
 
-  const inputClass =
-    "w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none";
+  const field =
+    "w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink placeholder:text-ink-secondary focus:border-focus focus:outline-none";
   return (
-    <div className="flex flex-col gap-3">
-      <input aria-label={t("settings.profile.name")} value={name} onChange={(e) => setName(e.target.value)} onBlur={save} placeholder={t("settings.profile.name")} className={inputClass} />
-      <input
-        type="email"
-        aria-label={t("phone.signIn.email")}
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        onBlur={save}
-        placeholder="you@example.com"
-        className={inputClass}
-      />
+    <div className="grid gap-3 sm:grid-cols-[minmax(0,9rem)_minmax(0,1fr)] sm:items-start sm:gap-4">
+      <div className="flex items-center gap-3 sm:flex-col sm:items-start">
+        <span className="flex size-14 items-center justify-center rounded-full bg-raised text-[18px] font-semibold text-ink-secondary ring-1 ring-hairline/50">
+          {(name || state.config?.profile?.email || "?").trim().slice(0, 1).toUpperCase()}
+        </span>
+        <p className="text-[12px] leading-relaxed text-ink-secondary sm:mt-1">{t("settings.profile.subtitle")}</p>
+      </div>
+      <div className="grid min-w-0 gap-3">
+        <label className="grid gap-1.5 text-[12px] font-medium text-ink-secondary">
+          {t("settings.profile.name")}
+          <input aria-label={t("settings.profile.name")} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => save("name", name)} placeholder={t("settings.profile.namePlaceholder")} className={field} />
+        </label>
+        <label className="grid gap-1.5 text-[12px] font-medium text-ink-secondary">
+          {t("settings.profile.emailLabel")}
+          <input type="email" aria-label={t("settings.profile.emailLabel")} value={email} onChange={(e) => setEmail(e.target.value)} onBlur={() => save("email", email)} placeholder="you@example.com" className={field} />
+        </label>
+      </div>
     </div>
   );
 }
@@ -742,7 +754,7 @@ export function SettingsModal() {
             {section === "organization" && window.ogb?.organization && !remoteActive && <OrganizationSettings />}
             {section === "general" && (
               <>
-                <Card title={t("settings.profile.title")} subtitle={t("settings.profile.subtitle")}>
+                <Card title={t("settings.profile.title")}>
                   <ProfileFields />
                 </Card>
                 <GlassPanel className="px-4">
